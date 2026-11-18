@@ -76,3 +76,34 @@ COLOR_VIVA = "#4fd1c5"
 COLOR_DORMIDA = "#6b7694"
 COLOR_CUERPO = "#1b2333"
 COLOR_ESCUCHA = "#ffd166"
+
+# Lista de permisos (allowlist) para control de la PC
+PROGRAMAS_PERMITIDOS = {
+    "bloc de notas": "notepad.exe",
+    "notas": "notepad.exe",
+    "calculadora": "calc.exe",
+    "navegador": "msedge.exe",
+    "edge": "msedge.exe",
+    "explorador": "explorer.exe",
+    "archivos": "explorer.exe",
+    "vs code": "code",
+    "antigravity": "code",
+    "codigo": "code",
+}
+
+SITIOS_PERMITIDOS = {
+    "youtube": "https://www.youtube.com",
+    "google": "https://www.google.com",
+    "github": "https://www.github.com",
+    "wikipedia": "https://es.wikipedia.org",
+    "gmail": "https://mail.google.com",
+    "correo": "https://mail.google.com",
+}
+
+DOMINIOS_WEB_PERMITIDOS = [
+    "youtube.com",
+    "google.com",
+    "github.com",
+    "wikipedia.org",
+    "gmail.com",
+]

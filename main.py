@@ -47,6 +47,7 @@ import acciones
 import camara
 import casa
 import config
+import control_pc
 import conversacion
 import cuidado
 import diario
@@ -118,6 +119,7 @@ class Silvestra:
         self.propuestas = propuestas.instalar(self)
         self.origen_entrada_actual = "chat"
         voz_dueno.instalar(self)
+        control_pc.instalar(self)
 
         self.cara.root.after(100, self.revisar_cola)
 

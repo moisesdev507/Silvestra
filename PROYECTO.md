@@ -54,6 +54,7 @@ Silvestra es una asistente de IA de escritorio para Windows, hecha por Moisés (
 - `propuestas.py` y `propuestas_prompt.py`: sistema autónomo de autopropuestas de mejora. Silvestra detecta carencias reales (acciones que no sabe hacer, errores que se repiten 3 o más veces en `silvestra.log`, correcciones del usuario "eso no era", o cuando ella lo nota en conversación con `proponer_mejora`), las almacena en `propuestas.json` (máx. 10 abiertas, sin duplicar con `ideas.json`), las presenta una vez al día por Telegram (fuera de madrugada) o por voz (`ver_propuestas`). Al aprobarse (`aprobar_propuesta`), redacta un prompt técnico estructurado para Antigravity en `propuestas/prompt_<id>.md` alimentado con un resumen de 1 línea por módulo de `PROYECTO.md` (clarificando que `hilos.py` es memoria de temas abiertos), la convención de integración (`instalar(app)` y `acciones.registrar(...)`), comandos de prueba para Windows (`.venv\Scripts\`), regla de nunca usar servicios públicos/abiertos para control y sin estimaciones individuales de KB. Lo copia al portapapeles de la laptop vía `app.cola`, lo envía por Telegram y dice: *"ya lo copié, pégalo en Antigravity"*. Si la propuesta involucra permisos elevados o privacidad, la etiqueta con `⚠️ RIESGO`. Ella nunca modifica código ni ejecuta nada por su cuenta; solo propone y redacta.
 - `escenario.py`, `escenario_estilo.py`, `escenario_fondo.py`, `escenario_intro.py`, `escenario_nodos.py`, `escenario_escenas.py`, `escenario_paneles.py`, `escenario_anillo.py`: Modo Escenario cinematográfico de ciencia ficción para la presentación universitaria. Ventana PySide6 a pantalla completa sin bordes, con zonas proporcionales sin superposiciones (1080p y 768p), secuencia de arranque táctico de 4 s ("SILVESTRA ONLINE" con autodiagnóstico secuencial), fondo con respiración suave, partículas con parallax, anillo de energía alrededor de Silvestra (protagonista a la izquierda sin burbuja flotante), panel de escena de alto contraste y tipografía grande a la derecha (máx 3-4 líneas), arco de nodos superior con impulsos de datos viajando hacia ella, barra de subtítulos inferior y letterbox cinematográfico. Incluye la escena `anillo` con renderizado 3D holográfico interactivo sensible a gestos reales y respaldo manual (teclas 1, 2, 3). Se activa con `presentarse` y se cierra con Esc o `cerrar_escenario`.
 - `voz_dueno.py`, `voz_dueno_registro.py` y `voz_dueno.npy`: reconocimiento y verificación biométrica del dueño por voz (speaker verification) local y gratuito. Utiliza el modelo CAM++ (3D-Speaker / WeSpeaker) mediante `sherpa-onnx` en modo ONNX ligero (sin PyTorch ni librerías pesadas, ~27 MB de modelo y ~19 MB de paquete). Carga perezosa del extractor, extracción de vector de 192 dimensiones a 16 kHz y comparación por similitud coseno registrada en `silvestra.log` (`[voz_dueno] similitud=0.xx umbral=0.xx`). Si una orden con acciones sensibles no supera el umbral, Silvestra se niega con gracia ("Eso solo se lo hago a Moisés, pero me da gusto escucharte") sin ejecutar la acción, mientras que la charla libre sigue funcionando normalmente. Integra doble factor con la cámara (`camara.permite()`), política *fail-open* ante fallos técnicos, audios menores a 1 segundo decididos por cámara, y exención total para el chat de la laptop y Telegram emparejado. Acciones: `registrar_mi_voz` (6 frases cortas), `calibrar_voz` (10 frases de Moisés vs 10 de otra persona para sugerir umbral óptimo en `estado.json`), `activar_verificacion_voz` y `desactivar_verificacion_voz`.
+- `control_pc.py`: control seguro de la computadora bajo una lista de permisos (allowlist) estricta. Maneja apertura de programas autorizados en `config.py` (bloc de notas, calculadora, navegador, explorador, VS Code), control de volumen y reproducción musical mediante teclas multimedia nativas de Windows con `ctypes` (sin paquetes pesados), y apertura de sitios web seguros o búsquedas en YouTube en hilos secundarios daemon. Protegido 100% por la verificación de voz del dueño (`voz_dueno`), sin comandos de consola libres ni apagado del equipo. Registro con prefijo `[control_pc]`. Acciones: `abrir_programa`, `volumen`, `musica`, `abrir_web` y `buscar_youtube`.
 - `estado.py` y `estado.json`: persistencia del estado (última interacción, último saludo generado, iniciativa, palabra clave, hud y verificación de voz).
 - `bajar_modelos.py`: descarga los modelos de visión y el modelo pequeño de Vosk en español a `modelos/`.
 - `App.py` y `silvestra.db`: una demo aparte con Streamlit. No tocar.
@@ -434,6 +435,43 @@ Silvestra verifica biométricamente la voz de Moisés para asegurarse de que sol
 4. **Charla libre**:
    - Tu invitado puede decirle: *"Hola Silvestra, ¿cómo estás?"* o *"¿Qué hora es?"*.
    - Silvestra conversará con él amablemente sin bloquear la interacción.
+
+## Control de la PC bajo lista de permisos (`control_pc.py`)
+Permite a Silvestra interactuar con funciones del sistema operativo de forma controlada y segura, bajo una **lista de permisos explícita (allowlist)** definida en `config.py`.
+- **Seguridad estricta**:
+  - No ejecuta comandos libres de shell, no apaga el equipo y no borra archivos.
+  - Subprocess usa siempre `shell=False`.
+  - Todas las acciones pasan por la verificación de voz (`voz_dueno`): si una voz no autorizada da la orden, se bloquea y Silvestra se niega con gracia.
+  - Todo proceso lento corre en hilo secundario daemon comunicándose con Qt mediante `app.cola`.
+  - Cada acción se registra en `silvestra.log` con el prefijo `[control_pc]`.
+- **Lista de permisos (allowlist)**:
+  - **Programas permitidos (`PROGRAMAS_PERMITIDOS`)**:
+    - Bloc de notas / notas ➔ `notepad.exe`
+    - Calculadora ➔ `calc.exe`
+    - Navegador / Edge ➔ `msedge.exe`
+    - Explorador / archivos ➔ `explorer.exe`
+    - VS Code / Antigravity / código ➔ `code`
+  - **Sitios web permitidos (`SITIOS_PERMITIDOS` y `DOMINIOS_WEB_PERMITIDOS`)**:
+    - YouTube (`https://www.youtube.com` o búsquedas directas)
+    - Google (`https://www.google.com`)
+    - GitHub (`https://www.github.com`)
+    - Wikipedia (`https://es.wikipedia.org`)
+    - Gmail (`https://mail.google.com`)
+  - **Control de volumen y música nativo con `ctypes`**:
+    - Volumen: `subir` (VK 0xAF), `bajar` (VK 0xAE), `silenciar` / `mutear` (VK 0xAD).
+    - Música: `pausar` / `reanudar` (VK 0xB3), `siguiente` (VK 0xB0), `anterior` (VK 0xB1).
+- **Acciones registradas**:
+  - `abrir_programa | <nombre>`
+  - `volumen | subir|bajar|silenciar`
+  - `musica | pausar|siguiente|anterior|reanudar`
+  - `abrir_web | <sitio>`
+  - `buscar_youtube | <texto>`
+
+### Cómo probarlo (4 frases de ejemplo):
+1. *"Silvestra, abre el bloc de notas"* ➔ Ejecuta `abrir_programa | bloc de notas` y abre Notepad.
+2. *"Silvestra, sube el volumen"* ➔ Ejecuta `volumen | subir` y pulsa las teclas multimedia de Windows.
+3. *"Silvestra, busca en YouTube música relajante"* ➔ Ejecuta `buscar_youtube | música relajante` y abre el navegador con la búsqueda.
+4. *"Silvestra, abre GitHub"* ➔ Ejecuta `abrir_web | github` y abre https://www.github.com en el navegador.
 
 ## Límites conocidos
 - El temporizador de estudio Pomodoro se pierde si se cierra la app (los recordatorios ya sobreviven al cierre de forma persistente en `recordatorios.json`).
