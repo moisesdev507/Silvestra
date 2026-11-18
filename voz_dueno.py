@@ -45,12 +45,22 @@ def obtener_extractor():
         return _extractor
 
 
-def extraer_embedding(audio_int16, samplerate=16000):
-    """Calcula el vector de embedding de 192 dimensiones a partir de un array de audio int16."""
+def extraer_embedding(audio, samplerate=16000):
+    """Calcula el vector de embedding de 192 dimensiones a partir de un array de audio int16 o float32."""
     ext = obtener_extractor()
     stream = ext.create_stream()
-    audio_f32 = audio_int16.astype(np.float32) / 32768.0
-    stream.accept_waveform(samplerate, audio_f32)
+
+    # Convertir a arreglo 1D contiguo de float32
+    audio_arr = np.asarray(audio, dtype=np.float32)
+    if audio_arr.ndim > 1:
+        audio_arr = audio_arr[:, 0]  # Si viene con varios canales, usa el primero
+    audio_1d = np.ascontiguousarray(audio_arr.reshape(-1), dtype=np.float32)
+
+    # Si los valores están en escala int16 (amplitud máxima > 1.0), normalizar dividiendo por 32768.0
+    if len(audio_1d) > 0 and np.abs(audio_1d).max() > 1.0:
+        audio_1d = audio_1d / 32768.0
+
+    stream.accept_waveform(samplerate, audio_1d)
     stream.input_finished()
     emb = ext.compute(stream)
     emb_arr = np.array(emb, dtype=np.float32)

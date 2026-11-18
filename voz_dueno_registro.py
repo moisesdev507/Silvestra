@@ -56,10 +56,11 @@ def esta_activo():
 
 
 def cancelar():
-    """Señaliza la cancelación inmediata del proceso actual."""
+    """Señaliza la cancelación inmediata del proceso actual si está activo."""
     global _cancelar_operacion
-    _cancelar_operacion = True
-    print("[voz_dueno_registro] Señal de cancelación recibida.", flush=True)
+    if _operacion_en_curso:
+        _cancelar_operacion = True
+        print("[voz_dueno_registro] Señal de cancelación recibida.", flush=True)
 
 
 def comunicar(app, voz_txt, burbuja_txt=None, esperar=True, timeout=10.0):
@@ -129,17 +130,33 @@ def _capturar_lote(app, frases, prefijo_burbuja, prefijo_voz="Frase", reintentos
                 break
 
             if audio is not None:
-                dur = len(audio) / 16000.0
-                nivel = float(np.abs(audio).mean())
-                if dur >= 1.0 and nivel >= 100.0:
+                audio_arr = np.asarray(audio, dtype=np.float32).reshape(-1)
+                rms = float(np.sqrt(np.mean(audio_arr ** 2))) if len(audio_arr) > 0 else 0.0
+                pico = float(np.max(np.abs(audio_arr))) if len(audio_arr) > 0 else 0.0
+                print(f"[voz_dueno_registro] frase={i + 1} rms={rms:.1f} pico={pico:.1f}", flush=True)
+
+                if pico < 40.0 or len(audio_arr) < 8000:
+                    if intento < reintentos and not _cancelar_operacion:
+                        comunicar(app, "No te escuché. Repitamos esta frase.", f"⚠️ Sin audio detectado (pico={pico:.0f}).\nRepite {prefijo_burbuja} {i + 1}:\n«{frase}»", esperar=True, timeout=6.0)
+                        continue
+
+                try:
                     emb = voz_dueno.extraer_embedding(audio)
                     embeddings.append(emb)
                     exito = True
                     comunicar(app, "Bien.", f"{prefijo_burbuja} {i + 1} de {total}:\n✅ Capturada.", esperar=True, timeout=3.0)
                     time.sleep(0.3)
                     break
+                except Exception as e:
+                    print(f"[voz_dueno_registro] Error extrayendo embedding frase {i + 1}: {e}", flush=True)
+                    traceback.print_exc()
+                    if intento < reintentos and not _cancelar_operacion:
+                        time.sleep(0.4)
+                        continue
+                    else:
+                        raise
 
-            if intento < reintentos and not _cancelar_operacion:
+            if intento < reintentos and not _cancelar_operacion and not exito:
                 comunicar(app, "Fue muy corto o silencioso. Repitamos esta frase.", f"⚠️ Repite {prefijo_burbuja} {i + 1}:\n«{frase}»", esperar=True, timeout=6.0)
 
         if not exito and not _cancelar_operacion:
@@ -198,10 +215,10 @@ def iniciar_registro(app, vd):
                 comunicar(app, "¡Excelente, Moisés! Tu voz ha sido registrada y la verificación quedó activada.", "✅ ¡Voz registrada con éxito!\nVerificación activada.")
             else:
                 comunicar(app, "No pude captar todas las frases con claridad. Lo intentamos de nuevo más tarde.", "Registro no completado.")
-        except Exception:
-            print("[voz_dueno_registro] Error durante el registro de voz:", flush=True)
+        except Exception as e:
+            print(f"[voz_dueno_registro] Error durante el registro de voz: {e}", flush=True)
             traceback.print_exc()
-            comunicar(app, "No pude terminar el registro, lo intentamos otra vez cuando quieras.", "Error en registro.")
+            comunicar(app, "No pude terminar el registro por un problema técnico. Lo intentamos otra vez cuando quieras.", "Error interno en registro.", esperar=False)
         finally:
             _operacion_en_curso = False
             _cancelar_operacion = False
@@ -251,8 +268,11 @@ def iniciar_calibracion(app, vd):
                 return
 
             embs_d = _capturar_lote(app, FRASES_CALIBRACION_DUENO, "Calibración (Tú)", "Frase")
-            if _cancelar_operacion or not embs_d:
-                comunicar(app, "Calibración cancelada.", "Calibración cancelada.")
+            if _cancelar_operacion:
+                comunicar(app, "Calibración cancelada. Lo intentamos otra vez cuando quieras.", "Calibración cancelada.")
+                return
+            if not embs_d:
+                comunicar(app, "No se completaron las muestras de calibración.", "Calibración no completada.")
                 return
 
             sims_d = [voz_dueno.calcular_similitud(e, vd.vector_dueno) for e in embs_d]
@@ -274,10 +294,10 @@ def iniciar_calibracion(app, vd):
 
             print(f"[calibrar_voz] Moisés: {min_d:.2f}-{max_d:.2f}. Otro: {min_o:.2f}-{max_o:.2f}. Umbral={umbral:.2f}", flush=True)
             comunicar(app, f"Calibración completada. Tus frases alcanzaron entre {min_d:.2f} y {max_d:.2f}. El umbral óptimo guardado es {umbral:.2f}.", f"✅ Calibración completada.\nMoisés: {min_d:.2f} - {max_d:.2f}\nInvitado: {min_o:.2f} - {max_o:.2f}\nUmbral: {umbral:.2f}")
-        except Exception:
-            print("[voz_dueno_registro] Error durante calibración:", flush=True)
+        except Exception as e:
+            print(f"[voz_dueno_registro] Error durante calibración: {e}", flush=True)
             traceback.print_exc()
-            comunicar(app, "No pude terminar la calibración, lo intentamos otra vez cuando quieras.", "Error en calibración.")
+            comunicar(app, "No pude terminar la calibración por un problema técnico. Lo intentamos otra vez cuando quieras.", "Error en calibración.", esperar=False)
         finally:
             _operacion_en_curso = False
             _cancelar_operacion = False

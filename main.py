@@ -8,10 +8,12 @@ import traceback
 # Diario de errores: como corre sin ventana, todo se guarda en silvestra.log
 _ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "silvestra.log")
 try:
-    _diario = open(_ruta, "a", buffering=1, encoding="utf-8")
+    import logging
+    _diario = open(_ruta, "a", buffering=1, encoding="utf-8", errors="replace")
     sys.stdout = _diario
     sys.stderr = _diario
     faulthandler.enable(file=_diario, all_threads=True)
+    logging.basicConfig(filename=_ruta, encoding="utf-8", level=logging.INFO, force=True)
 except Exception:
     _diario = sys.stderr
 
