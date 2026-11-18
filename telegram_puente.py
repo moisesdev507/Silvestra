@@ -190,7 +190,7 @@ class TelegramPuente:
         hablar_en_voz_alta = bool(re.search(r"\b(dilo en voz alta|en voz alta|leelo en voz alta|léelo en voz alta)\b", texto, re.I))
 
         try:
-            resp, accion = self.app.cerebro.responder(texto)
+            resp, accion, *resto = self.app.cerebro.responder(texto)
         except Exception as e:
             print(f"[telegram] Error en cerebro: {e}", flush=True)
             self._enviar_telegram(chat_id, "Tuve un problema para procesar tu mensaje.")

@@ -43,6 +43,25 @@ PASOS = [
      "Gracias por su atención. Pueden hacerme preguntas.", "ocultar_casa+ir_esquina_derecha", 0, "memoria"),
 ]
 
+EMOCIONES_PASO = {
+    0: "animada",  # Saludo inicial y bienvenida
+    1: "animada",  # Presentación de su origen
+    2: "seria",    # Explicación de capacidades y hora
+    3: "animada",  # Demostración de movimiento en pantalla
+    4: "animada",  # Baile con gracia
+    5: "animada",  # Presentación de la casa inteligente
+    6: "seria",    # Demostración comando luz
+    7: "seria",    # Demostración comando ventilador
+    8: "seria",    # Demostración comando puerta
+    9: "seria",    # Explicación técnica de cámara y gestos
+    10: "seria",   # Gesto palma
+    11: "seria",   # Gesto un dedo
+    12: "seria",   # Explicación técnica del anillo inteligente y domótica
+    13: "seria",   # Seguridad biométrica y reconocimiento del dueño
+    14: "animada", # Sueño a futuro
+    15: "animada", # Despedida y preguntas del público
+}
+
 ESPERA = {"bailar": 5, "ir_centro": 3, "ir_esquina_derecha": 3, "ir_esquina_izquierda": 3}
 
 _token = 0
@@ -134,8 +153,9 @@ def ejecutar(app):
             app.cola.put(("escenario_subtitulo", texto))
         estado = {"fin": False}
         inicio = time.time()
+        emocion_paso = EMOCIONES_PASO.get(i, "animada" if i in (0, 1, 3, 4, 5, 14, 15) else "seria")
         app.cara.decir(texto, 60000)
-        app.voz.hablar(texto, lambda: estado.__setitem__("fin", True))
+        app.voz.hablar(texto, lambda: estado.__setitem__("fin", True), emocion=emocion_paso)
         minimo = 0
         if accion:
             if retraso:

@@ -10,10 +10,10 @@ def responder_flujo(cerebro, texto, al_frase):
 
     crudo = proveedores.completar_flujo(mensajes, al_frase)
 
-    respuesta, accion, recuerdo = separar(crudo)
+    respuesta, accion, recuerdo, emocion = separar(crudo)
     if recuerdo:
         cerebro.memoria.recordar(recuerdo)
     cerebro.historial.append({"role": "assistant", "content": respuesta})
     if hasattr(cerebro, "_podar_historial"):
         cerebro._podar_historial()
-    return respuesta, accion
+    return respuesta, accion, emocion

@@ -39,7 +39,19 @@ def atender_evento(app, tipo, texto):
         app.decir(texto, 4500)
 
     elif tipo == "respuesta":
-        respuesta, accion = texto
+        if isinstance(texto, (list, tuple)):
+            if len(texto) >= 3:
+                respuesta, accion, emocion = texto[0], texto[1], texto[2]
+            elif len(texto) == 2:
+                respuesta, accion = texto[0], texto[1]
+                emocion = "neutral"
+            else:
+                respuesta = texto[0]
+                accion = None
+                emocion = "neutral"
+        else:
+            respuesta, accion, emocion = str(texto), None, "neutral"
+
         if accion and hasattr(app, "voz_dueno") and app.voz_dueno:
             permitido, frase_negativa = app.voz_dueno.autorizar_accion(accion)
             if not permitido:
@@ -48,7 +60,7 @@ def atender_evento(app, tipo, texto):
                     app.flujo = None
                 app.ultimo_dicho = frase_negativa
                 app.cara.decir(frase_negativa, None)
-                app.decir(frase_negativa)
+                app.decir(frase_negativa, emocion="calida")
                 return
 
         if app.flujo is not None:
@@ -57,7 +69,7 @@ def atender_evento(app, tipo, texto):
             app.ultimo_dicho = respuesta
             app.cara.decir(respuesta, None)
         else:
-            app.decir(respuesta)
+            app.decir(respuesta, emocion=emocion)
         if accion:
             app.ejecutar(accion)
 
@@ -84,7 +96,12 @@ def atender_evento(app, tipo, texto):
         app.ejecutar(texto)
 
     elif tipo == "hablar":
-        app.decir(texto)
+        if isinstance(texto, (list, tuple)):
+            msg = texto[0]
+            emo = texto[1] if len(texto) > 1 else None
+            app.decir(msg, emocion=emo)
+        else:
+            app.decir(texto)
 
     elif tipo == "hablar_registro":
         voz_txt, burbuja_txt = texto

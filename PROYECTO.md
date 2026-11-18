@@ -26,10 +26,10 @@ Silvestra es una asistente de IA de escritorio para Windows, hecha por Moisés (
 - `eventos.py`: procesador de eventos de la cola (`self.cola`), ejecutado estrictamente en el hilo principal de Qt. Paciencia aumentada en demos (hasta 5 silencios consecutivos durante el modo escenario o presentación antes de callarse; 2 en modo normal).
 - `conversacion.py`: conversación por voz, control de escucha con Whisper, filtro de eco, chat de texto y envío en streaming.
 - `nacimiento.py`: ciclo de vida inicial, diálogo de nacimiento (nombre, creador, propósito), saludo dinámico inicial y renacer.
-- `cerebro.py`: arma el prompt del sistema (`instrucciones()`), incluye `SOBRE_MI`, la lista de acciones, la fecha y hora, la memoria y las ideas. Tiene `separar()` que lee la salida del modelo con el formato **RESPUESTA / ACCION / RECUERDO** (limpiando posibles etiquetas de razonamiento interno como `<think>`), y los ayudantes `_respuesta_parcial` y `_cortar` para el modo streaming. Usa `proveedores.completar()` para llamadas síncronas.
+- `cerebro.py`: arma el prompt del sistema (`instrucciones()`), incluye `SOBRE_MI`, la lista de acciones, la fecha y hora, la memoria, las ideas y las emociones disponibles. Tiene `separar()` que lee la salida del modelo con el formato **EMOCION / RESPUESTA / ACCION / RECUERDO** de forma tolerante (limpiando posibles etiquetas de razonamiento interno como `<think>`), y los ayudantes `_respuesta_parcial` y `_cortar` para el modo streaming. Usa `proveedores.completar()` para llamadas síncronas.
 - `proveedores.py`: cadena de respaldo de proveedores LLM compatibles con OpenAI (`Groq` -> `Google Gemini` -> `OpenRouter` -> `Cerebras`). Conmuta en streaming antes de la primera frase si hay error de cuota (429), modelo inaccesible o >8 s sin primer token. Enfriamiento de 60 s tras 429, registro en `silvestra.log` y aviso hablado ("Estoy usando mi cerebro de respaldo") al saltar a un proveedor secundario.
-- `respuesta_flujo.py`: respuesta en streaming. Conecta el cerebro con `proveedores.completar_flujo()` entregando frases completas (`al_frase`) mientras el modelo escribe, manteniendo la personalidad y el formato de salida.
-- `voz.py`: voz con `edge-tts` (es-PA-MargaritaNeural) y pygame. Si falla, usa la voz de Windows. `Voz.hablar(texto, al_terminar)` y `Voz.flujo(al_terminar)` (que devuelve un objeto con `.agregar(frase)` y `.cerrar()`). Un contador `version` cancela el habla anterior.
+- `respuesta_flujo.py`: respuesta en streaming. Conecta el cerebro con `proveedores.completar_flujo()` entregando frases completas (`al_frase`) mientras el modelo escribe, manteniendo la personalidad y el formato de salida con emoción asociada.
+- `voz.py`: voz con `edge-tts` (es-PA-MargaritaNeural) y pygame. Modulación emocional sutil mediante prosodia SSML estándar (`rate`, `pitch`, `volume`) definida en `config.EMOCIONES_VOZ` (`neutral`, `alegre`, `animada`, `calida`, `seria`, `preocupada`), sin depender de estilos propietarios de Azure que esa voz no soporta. Respaldo local tolerante por contexto (exclamaciones `¡!` ➔ `animada`, errores o fallos ➔ `seria`, cuidado ➔ `preocupada`, mañana ➔ `alegre`). Si falla o no hay internet, conmuta a la voz de Windows (SAPI) ignorando la emoción limpiamente sin fallar. `Voz.hablar(texto, al_terminar, emocion)` y `Voz.flujo(al_terminar, emocion)`. Registro en log `[voz] emocion=… rate=… pitch=…`.
 - `oido.py`: micrófono con `sounddevice`, detector de voz por energía y transcripción con Whisper de Groq (`whisper-large-v3-turbo`). Filtra alucinaciones de Whisper (lista FALSAS, no_speech_prob, avg_logprob). **No pongas listas de órdenes en el prompt de Whisper**: provoca frases inventadas. Oído de respaldo local con Vosk (`vosk-model-small-es-0.42` sin gramática restringida y carga perezosa) si Whisper falla por red, timeout o cuota (429), con registro en log `[oido] respaldo=vosk` y aviso hablado ("Te escucho con mi oído de respaldo") una sola vez por sesión.
 - `memoria.py` y `memoria.json`: nombre, creador, propósito y hechos que recuerda.
 - `acciones.py`: registro de acciones. `registrar(nombre, funcion, descripcion, con_texto=False)`. Las acciones con texto se escriben `ACCION: nombre | texto`. `interpretar()` y `ejecutar()` validan contra una lista permitida: el modelo solo puede usar acciones registradas.
@@ -500,6 +500,44 @@ Permite a Silvestra aprender de sus errores en tiempo real y no repetirlos:
 4. **Olvidar una corrección**:
    - Di o escribe: *"Olvidar corrección 1"* (acción `olvidar_correccion | 1`).
    - Silvestra confirmará: *"Olvidé la corrección número 1."*
+
+## Modulación emocional de voz (Edge-TTS)
+Silvestra modula su voz de forma sutil y realista según la intención comunicativa y el contexto, utilizando exclusivamente prosodia SSML estándar (`rate`, `pitch`, `volume`) en la voz panameña `es-PA-MargaritaNeural` (sin depender de estilos de Azure que no existen en esta voz):
+- **Diccionario de emociones (`config.py` - `EMOCIONES_VOZ`)**:
+  - `neutral`: tono conversacional estándar (`rate: +0%`, `pitch: +0Hz`, `volume: +0%`).
+  - `alegre`: más rápida y aguda (`rate: +8%`, `pitch: +6Hz`, `volume: +0%`).
+  - `animada`: entusiasmo y dinamismo (`rate: +12%`, `pitch: +8Hz`, `volume: +0%`).
+  - `calida`: suave, empática y pausada (`rate: -4%`, `pitch: -2Hz`, `volume: +0%`).
+  - `seria`: más grave y formal (`rate: -6%`, `pitch: -6Hz`, `volume: +0%`).
+  - `preocupada`: tono reflexivo y bajo (`rate: -8%`, `pitch: -4Hz`, `volume: -5%`).
+- **Respaldo y deducción local tolerante**:
+  - Si el cerebro omite `EMOCION:` o envía una palabra desconocida, el sistema deduce automáticamente:
+    - Exclamaciones `¡!` en la frase ➔ `animada`.
+    - Errores, fallos o negaciones técnicas ➔ `seria`.
+    - Chequeos de cuidado (`cuidado.py`) ➔ `preocupada`.
+    - Saludo matutino (`nacimiento.py`, `diario.py`) ➔ `alegre`.
+- **Modo presentación y escenario cinematográfico**:
+  - En `presentacion.py`, Silvestra adapta automáticamente su entonación a `animada` (bienvenida, baile, sueños, despedida) o `seria` (explicaciones técnicas de visión, gestos, domótica y seguridad biométrica), sin alterar las frases del guion.
+- **Respaldo de Windows (SAPI)**:
+  - Si falla Edge-TTS o no hay internet, la voz local de Windows ignora el parámetro `emocion` limpiamente sin generar excepciones.
+- **Registro en log**:
+  - Cada frase sintetizada registra en `silvestra.log`: `[voz] emocion=… rate=… pitch=…`.
+
+### Cómo probar la modulación de voz emocional:
+1. **Frase alegre / matutina**:
+   - Di o escribe: *"¡Buenos días Silvestra! Qué buen día hace hoy."*
+   - Verás en `silvestra.log`: `[voz] emocion=alegre rate=+8% pitch=+6Hz` (o `animada`).
+2. **Frase seria (errores o consultas técnicas)**:
+   - Di o escribe: *"Tengo un problema con un error de compilación en mi código."*
+   - Verás en `silvestra.log`: `[voz] emocion=seria rate=-6% pitch=-6Hz`.
+3. **Frase animada (celebración o entusiasmo)**:
+   - Di o escribe: *"¡Pasé el examen de programación con la nota más alta!"*
+   - Verás en `silvestra.log`: `[voz] emocion=animada rate=+12% pitch=+8Hz`.
+4. **Frase cálida / empatía**:
+   - Di o escribe: *"Hoy fue un día largo y agotador, me siento un poco cansado."*
+   - Verás en `silvestra.log`: `[voz] emocion=calida rate=-4% pitch=-2Hz`.
+5. **Modo presentación**:
+   - Di: *"Silvestra, preséntate"*. Observa cómo el saludo inicial suena animado y al explicar los gestos y la domótica cambia a un tono técnico y serio, todo registrado en el log.
 
 ## Límites conocidos
 - El temporizador de estudio Pomodoro se pierde si se cierra la app (los recordatorios ya sobreviven al cierre de forma persistente en `recordatorios.json`).

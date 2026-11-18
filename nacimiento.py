@@ -75,11 +75,15 @@ def generar_saludo(app):
         est["ultima_vez"] = time.time()
         est["ultimo_saludo"] = limpio
         estado.guardar(est)
-        app.decir(limpio)
+        hora_actual = time.localtime().tm_hour
+        emocion_saludo = "alegre" if 5 <= hora_actual < 12 else "calida"
+        app.decir(limpio, emocion=emocion_saludo)
     except Exception:
         est["ultima_vez"] = time.time()
         estado.guardar(est)
-        app.decir(frase_fija, 3000)
+        hora_actual = time.localtime().tm_hour
+        emocion_saludo = "alegre" if 5 <= hora_actual < 12 else "calida"
+        app.decir(frase_fija, 3000, emocion=emocion_saludo)
 
 
 def renacer(app):

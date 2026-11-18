@@ -107,3 +107,15 @@ DOMINIOS_WEB_PERMITIDOS = [
     "wikipedia.org",
     "gmail.com",
 ]
+
+# Modulación emocional de voz para Edge-TTS (es-PA-MargaritaNeural)
+# Ajustes sutiles de prosodia: rate (velocidad), pitch (tono) y volume (volumen)
+EMOCIONES_VOZ = {
+    "neutral": {"rate": "+0%", "pitch": "+0Hz", "volume": "+0%"},
+    "alegre": {"rate": "+8%", "pitch": "+6Hz", "volume": "+0%"},
+    "animada": {"rate": "+12%", "pitch": "+8Hz", "volume": "+0%"},
+    "calida": {"rate": "-4%", "pitch": "-2Hz", "volume": "+0%"},
+    "seria": {"rate": "-6%", "pitch": "-6Hz", "volume": "+0%"},
+    "preocupada": {"rate": "-8%", "pitch": "-4Hz", "volume": "-5%"},
+}
+

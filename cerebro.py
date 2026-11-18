@@ -19,13 +19,13 @@ def ahora_texto():
 
 
 def separar(texto):
-    """Separa RESPUESTA, ACCION y RECUERDO de lo que devuelve el modelo (tolera asteriscos y texto extra)."""
+    """Separa RESPUESTA, ACCION, RECUERDO y EMOCION de lo que devuelve el modelo (tolera asteriscos y texto extra)."""
     # Eliminar posibles etiquetas de razonamiento interno de modelos avanzados
     texto = re.sub(r"(?is)<think>.*?</think>", "", texto or "").strip()
-    etiqueta = re.compile(r"^[\W_]*(RESPUESTA|ACCI[OÓ]N|RECUERDO)[\s*_]*:[\s*_]*(.*)$", re.I)
+    etiqueta = re.compile(r"^[\W_]*(RESPUESTA|ACCI[OÓ]N|RECUERDO|EMOCI[OÓ]N)[\s*_]*:[\s*_]*(.*)$", re.I)
     # A veces el modelo pega la etiqueta sin salto de línea ("...ayudándote.RESPUESTA: ..."): la separo.
-    texto = re.sub(r"\s*\*{0,2}(RESPUESTA|ACCI[OÓ]N|RECUERDO)\*{0,2}\s*:", r"\n\1:", texto)
-    antes, resp, recuerdo, accion = [], [], None, None
+    texto = re.sub(r"\s*\*{0,2}(RESPUESTA|ACCI[OÓ]N|RECUERDO|EMOCI[OÓ]N)\*{0,2}\s*:", r"\n\1:", texto)
+    antes, resp, recuerdo, accion, emocion = [], [], None, None, None
     actual = None
     for linea in texto.splitlines():
         s = linea.strip()
@@ -39,6 +39,8 @@ def separar(texto):
                 resp.append(valor)
             elif actual == "ACCION":
                 accion = valor
+            elif actual == "EMOCION":
+                emocion = valor
             else:
                 recuerdo = valor
         elif actual == "RESPUESTA":
@@ -47,16 +49,28 @@ def separar(texto):
             antes.append(s)
     # Si hay etiqueta RESPUESTA, lo que vino antes se descarta (así no lo dice dos veces).
     final = " ".join(p for p in (resp if resp else antes) if p).replace("*", "").strip()
+    final = re.sub(r"(?i)\bEMOCI[OÓ]N\s*:\s*[a-zA-ZáéíóúÁÉÍÓÚñÑ]+", "", final).strip()
     if recuerdo is not None and recuerdo.lower().strip(" .*") in ("", "ninguno", "ninguna", "nada"):
         recuerdo = None
     if accion is not None:
         accion = accion.strip(" *")
         if accion.lower().strip(" .") in ("", "ninguno", "ninguna", "nada"):
             accion = None
-    return final or texto.strip(), accion, recuerdo
+
+    try:
+        from voz import normalizar_emocion, deducir_emocion
+        if emocion:
+            palabra = emocion.split()[0].strip(" *.,;:-") if emocion.split() else ""
+            emocion_final = normalizar_emocion(palabra)
+        else:
+            emocion_final = deducir_emocion(final)
+    except Exception:
+        emocion_final = "neutral"
+
+    return final or (texto.strip() if texto else ""), accion, recuerdo, emocion_final
 
 _ETIQ_RESP = re.compile(r"RESPUESTA\s*\*{0,2}\s*:\s*\*{0,2}", re.I)
-_ETIQ_FIN = re.compile(r"\s*\*{0,2}(ACCI[OÓ]N|RECUERDO)\*{0,2}\s*:", re.I)
+_ETIQ_FIN = re.compile(r"\s*\*{0,2}(ACCI[OÓ]N|RECUERDO|EMOCI[OÓ]N)\*{0,2}\s*:", re.I)
 
 
 def _respuesta_parcial(crudo):
@@ -191,7 +205,16 @@ class Cerebro:
             "Si la pantalla muestra claves, tokens o contraseñas, jamás las leas en voz alta ni las guardes en RECUERDO.\n\n"
             f"Lo que sabes:\n{hechos}\n\n"
             f"{bloque_correcciones}"
-            "FORMATO OBLIGATORIO de tu salida, exactamente estas tres líneas:\n"
+            "EMOCIONES DISPONIBLES para modular tu voz (úsalas con moderación y sutileza, solo cuando la situación lo amerite):\n"
+            "- neutral: tono conversacional y tranquilo por defecto.\n"
+            "- alegre: para buenas noticias, saludos entusiastas o momentos felices.\n"
+            "- animada: más rápida y expresiva, para momentos de emoción o celebración.\n"
+            "- calida: suave y pausada, para apoyo, cercanía o empatía.\n"
+            "- seria: más grave y pausada, para temas importantes, explicaciones técnicas o errores.\n"
+            "- preocupada: cuidadosa y reflexiva, para preguntar por el bienestar del usuario.\n"
+            "Si ninguna aplica con claridad, no incluyas la línea de emoción o usa neutral.\n\n"
+            "FORMATO OBLIGATORIO de tu salida:\n"
+            "EMOCION: <opcional: neutral | alegre | calida | seria | preocupada | animada>\n"
             "RESPUESTA: <lo que dices en voz alta>\n"
             "ACCION: <el nombre de una acción de la lista, o la palabra ninguna>\n"
             f"RECUERDO: <un dato duradero que {m.creador} te acaba de contar sobre su vida, su "
@@ -203,16 +226,16 @@ class Cerebro:
         return proveedores.completar(mensajes)
 
     def responder(self, texto):
-        """Devuelve (respuesta, accion). accion es None o 'nombre' / 'nombre | texto'."""
+        """Devuelve (respuesta, accion, emocion). accion es None o 'nombre' / 'nombre | texto'."""
         self.historial.append({"role": "user", "content": texto})
         mensajes = [{"role": "system", "content": self.instrucciones(texto)}] + self.historial[-20:]
         crudo = self._pedir(mensajes)
-        respuesta, accion, recuerdo = separar(crudo)
+        respuesta, accion, recuerdo, emocion = separar(crudo)
         if recuerdo:
             self.memoria.recordar(recuerdo)
         self.historial.append({"role": "assistant", "content": respuesta})
         self._podar_historial()
-        return respuesta, accion
+        return respuesta, accion, emocion
 
     def reflexionar(self, modulo_hilos):
         """Reflexiona sobre la conversación reciente para extraer hechos y temas pendientes."""

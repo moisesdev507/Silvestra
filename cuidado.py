@@ -10,12 +10,19 @@ import proveedores
 from telegram_puente import sanitizar_privacidad
 
 
-def sintetizar_audio_mp3(texto):
+def sintetizar_audio_mp3(texto, emocion="preocupada"):
     try:
         import edge_tts
+        from voz import normalizar_emocion, EMOCIONES_VOZ
+        emo = normalizar_emocion(emocion)
+        ajustes = EMOCIONES_VOZ.get(emo) or EMOCIONES_VOZ.get("preocupada", {"rate": "-8%", "pitch": "-4Hz", "volume": "-5%"})
+        rate = ajustes.get("rate", "-8%")
+        pitch = ajustes.get("pitch", "-4Hz")
+        volume = ajustes.get("volume", "-5%")
+        print(f"[voz] emocion={emo} rate={rate} pitch={pitch}", flush=True)
         async def _crear():
             datos = bytearray()
-            async for t in edge_tts.Communicate(texto, "es-PA-MargaritaNeural").stream():
+            async for t in edge_tts.Communicate(texto, "es-PA-MargaritaNeural", rate=rate, pitch=pitch, volume=volume).stream():
                 if t.get("type") == "audio":
                     datos += t.get("data", b"")
             return bytes(datos)

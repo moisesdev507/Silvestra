@@ -13,6 +13,23 @@ os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 # Si falla o no hay internet, usa la voz de Windows.
 VOZ_EDGE = "es-PA-MargaritaNeural"
 
+# Diccionario de respaldo por si config no define EMOCIONES_VOZ
+EMOCIONES_DEFECTO = {
+    "neutral": {"rate": "+0%", "pitch": "+0Hz", "volume": "+0%"},
+    "alegre": {"rate": "+8%", "pitch": "+6Hz", "volume": "+0%"},
+    "animada": {"rate": "+12%", "pitch": "+8Hz", "volume": "+0%"},
+    "calida": {"rate": "-4%", "pitch": "-2Hz", "volume": "+0%"},
+    "seria": {"rate": "-6%", "pitch": "-6Hz", "volume": "+0%"},
+    "preocupada": {"rate": "-8%", "pitch": "-4Hz", "volume": "-5%"},
+}
+
+try:
+    from config import EMOCIONES_VOZ
+except Exception:
+    EMOCIONES_VOZ = EMOCIONES_DEFECTO
+
+EMOCIONES_VALIDAS = set(EMOCIONES_VOZ.keys())
+
 GUION_WINDOWS = (
     "Add-Type -AssemblyName System.Speech;"
     "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;"
@@ -21,6 +38,46 @@ GUION_WINDOWS = (
     "$s.Rate = 0;"
     "$s.Speak($env:SILVESTRA_TEXTO)"
 )
+
+
+def normalizar_emocion(emocion):
+    """Devuelve un nombre de emoción válido o 'neutral' si no se reconoce."""
+    if not emocion:
+        return "neutral"
+    e = str(emocion).strip().lower().replace("á", "a")
+    if e in EMOCIONES_VOZ:
+        return e
+    return "neutral"
+
+
+def deducir_emocion(texto, contexto=None):
+    """Deduce una emoción sutil según el contexto o el contenido del texto."""
+    if contexto:
+        ctx = str(contexto).lower()
+        if any(c in ctx for c in ("cuidado", "checkin", "salida")):
+            return "preocupada"
+        if any(c in ctx for c in ("manana", "saludo_manana", "matutino")):
+            return "alegre"
+        if any(c in ctx for c in ("error", "fallo", "advertencia")):
+            return "seria"
+
+    txt = (texto or "").strip().lower()
+    if not txt:
+        return "neutral"
+
+    # Errores o fallos técnicos -> seria
+    if any(p in txt for p in ("error", "falló", "fallo", "problema", "no pude", "no reconozco", "no te conozco")):
+        return "seria"
+
+    # Exclamaciones -> animada
+    if "!" in txt or "¡" in txt:
+        return "animada"
+
+    # Saludos matutinos o entusiasmo
+    if any(p in txt for p in ("buenos días", "buen día", "bienvenido", "qué gusto", "excelente")):
+        return "alegre"
+
+    return "neutral"
 
 
 def dividir_frases(texto):
@@ -61,18 +118,22 @@ class Voz:
                 pass
         return False
 
-    def hablar(self, texto, al_terminar=None):
-        flujo = self.flujo(al_terminar)
+    def hablar(self, texto, al_terminar=None, emocion=None):
+        """Dice el texto completo frase por frase con la emoción indicada o deducida."""
+        emo_base = normalizar_emocion(emocion) if emocion else deducir_emocion(texto)
+        flujo = self.flujo(al_terminar, emocion=emo_base)
         for frase in dividir_frases(texto):
-            flujo.agregar(frase)
+            frase_emo = normalizar_emocion(emocion) if emocion else deducir_emocion(frase)
+            flujo.agregar(frase, emocion=frase_emo)
         flujo.cerrar()
 
-    def flujo(self, al_terminar=None):
+    def flujo(self, al_terminar=None, emocion="neutral"):
         """Empieza a hablar frase por frase conforme van llegando. Usa .agregar(frase) y al final .cerrar()."""
         self.version += 1
         self._activos += 1
-        flujo = Flujo()
-        threading.Thread(target=self._hablar, args=(flujo, al_terminar, self.version), daemon=True).start()
+        emo = normalizar_emocion(emocion)
+        flujo = Flujo(emocion=emo)
+        threading.Thread(target=self._hablar, args=(flujo, al_terminar, self.version, emo), daemon=True).start()
         return flujo
 
     def _parar(self):
@@ -85,19 +146,28 @@ class Voz:
             self.proceso.terminate()
 
     @staticmethod
-    def _audio(frase):
+    def _audio(frase, emocion="neutral"):
         import edge_tts
+
+        emo = normalizar_emocion(emocion)
+        ajustes = EMOCIONES_VOZ.get(emo) or EMOCIONES_VOZ.get("neutral", {"rate": "+0%", "pitch": "+0Hz", "volume": "+0%"})
+        rate = ajustes.get("rate", "+0%")
+        pitch = ajustes.get("pitch", "+0Hz")
+        volume = ajustes.get("volume", "+0%")
+
+        print(f"[voz] emocion={emo} rate={rate} pitch={pitch}", flush=True)
 
         async def crear():
             datos = bytearray()
-            async for trozo in edge_tts.Communicate(frase, VOZ_EDGE).stream():
+            async for trozo in edge_tts.Communicate(frase, VOZ_EDGE, rate=rate, pitch=pitch, volume=volume).stream():
                 if trozo["type"] == "audio":
                     datos += trozo["data"]
             return bytes(datos)
 
         return asyncio.run(asyncio.wait_for(crear(), 10))
 
-    def _voz_windows(self, texto, version):
+    def _voz_windows(self, texto, version, emocion="neutral"):
+        """Voz de respaldo local (Windows SAPI). Ignora la emoción limpiamente sin dar error."""
         entorno = os.environ.copy()
         entorno["SILVESTRA_TEXTO"] = texto
         try:
@@ -112,20 +182,26 @@ class Voz:
         while proc.poll() is None and version == self.version:
             time.sleep(0.05)
 
-    def _hablar(self, flujo, al_terminar, version):
+    def _hablar(self, flujo, al_terminar, version, emocion_defecto="neutral"):
         try:
             self._parar()
             buzon = queue.Queue()
 
             def productor():
                 while True:
-                    frase = flujo.entrada.get()
-                    if frase is None or version != self.version:
+                    item = flujo.entrada.get()
+                    if item is None or version != self.version:
                         break
+                    if isinstance(item, tuple):
+                        frase, emo = item
+                    else:
+                        frase = item
+                        emo = getattr(flujo, "emocion", emocion_defecto)
                     try:
-                        buzon.put((frase, self._audio(frase)))
+                        audio = self._audio(frase, emo)
+                        buzon.put((frase, audio, emo))
                     except Exception:
-                        buzon.put((frase, None))
+                        buzon.put((frase, None, emo))
                 buzon.put(None)
 
             threading.Thread(target=productor, daemon=True).start()
@@ -136,7 +212,7 @@ class Voz:
                     break
                 if version != self.version:
                     return
-                frase, audio = item
+                frase, audio, emo = item
                 if audio and self.pg is not None:
                     try:
                         self.pg.mixer.music.load(io.BytesIO(audio))
@@ -146,7 +222,7 @@ class Voz:
                         continue
                     except Exception:
                         pass
-                self._voz_windows(frase, version)
+                self._voz_windows(frase, version, emocion=emo)
 
             if version == self.version and al_terminar:
                 al_terminar()
@@ -155,14 +231,16 @@ class Voz:
 
 
 class Flujo:
-    """Cola de frases que Voz va diciendo en orden."""
+    """Cola de frases que Voz va diciendo en orden con soporte para modulación emocional."""
 
-    def __init__(self):
+    def __init__(self, emocion="neutral"):
         self.entrada = queue.Queue()
+        self.emocion = normalizar_emocion(emocion)
 
-    def agregar(self, frase):
+    def agregar(self, frase, emocion=None):
         if frase and frase.strip():
-            self.entrada.put(frase.strip())
+            emo = normalizar_emocion(emocion) if emocion else (self.emocion if self.emocion != "neutral" else deducir_emocion(frase))
+            self.entrada.put((frase.strip(), emo))
 
     def cerrar(self):
         self.entrada.put(None)

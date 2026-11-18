@@ -278,7 +278,8 @@ class GestorMediosTelegram:
 
         # Seguridad: la nota de voz es pregunta conversacional, no ejecuta órdenes de sistema
         try:
-            resp, _ = self.app.cerebro.responder(texto)
+            resp, *resto = self.app.cerebro.responder(texto)
+            emocion_resp = resto[1] if len(resto) > 1 else (resto[0] if resto else "calida")
         except Exception as e:
             print(f"[telegram] Error en cerebro para nota de voz: {e}", flush=True)
             self.puente._enviar_telegram(chat_id, "Tuve un problema para procesar tu nota de voz.")
@@ -286,7 +287,7 @@ class GestorMediosTelegram:
 
         resp_sani = sanitizar_privacidad(resp)
         import cuidado
-        audio_resp = cuidado.sintetizar_audio_mp3(resp_sani)
+        audio_resp = cuidado.sintetizar_audio_mp3(resp_sani, emocion=emocion_resp)
         if audio_resp:
             self.puente.enviar_audio(audio_resp, caption=resp_sani)
         else:

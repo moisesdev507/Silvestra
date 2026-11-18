@@ -135,11 +135,11 @@ class Silvestra:
         """True solo si Silvestra no está hablando ni escuchando al usuario."""
         return not self.voz.ocupada() and not self.escuchando
 
-    def decir(self, texto, ms=None, con_voz=True):
+    def decir(self, texto, ms=None, con_voz=True, emocion=None):
         self.cara.decir(texto, ms)
         if con_voz:
             self.ultimo_dicho = texto
-            self.voz.hablar(texto, lambda: self.cola.put(("fin_voz", None)))
+            self.voz.hablar(texto, lambda: self.cola.put(("fin_voz", None)), emocion=emocion)
 
     def ejecutar(self, linea):
         if not self.puede_hablar_sola():
