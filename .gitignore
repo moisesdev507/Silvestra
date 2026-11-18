@@ -23,6 +23,8 @@ modelos/
 *.npy
 dueno.npy
 **/dueno.npy
+voz_dueno.npy
+**/voz_dueno.npy
 
 # Logs de ejecución
 *.log
