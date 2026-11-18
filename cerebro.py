@@ -139,9 +139,19 @@ class Cerebro:
         if len(self.historial) > 60:
             self.historial = self.historial[-40:]
 
-    def instrucciones(self):
+    def instrucciones(self, texto_actual=None):
         m = self.memoria
         hechos = "\n".join(f"- {h}" for h in m.hechos) or "- (todavía nada)"
+
+        bloque_correcciones = ""
+        try:
+            import correcciones
+            res = correcciones.resumen_para_prompt(texto_actual)
+            if res:
+                bloque_correcciones = f"\n{res}\n"
+        except Exception:
+            pass
+
         return (
             f"Te llamas {m.nombre}. Vives en la laptop de {m.creador}, quien te dio vida. "
             f"Tu propósito, según {m.creador}: {m.proposito}.\n"
@@ -180,6 +190,7 @@ class Cerebro:
             "Regla estricta de privacidad: la captura de pantalla solo se hace cuando te lo pidan expresamente. "
             "Si la pantalla muestra claves, tokens o contraseñas, jamás las leas en voz alta ni las guardes en RECUERDO.\n\n"
             f"Lo que sabes:\n{hechos}\n\n"
+            f"{bloque_correcciones}"
             "FORMATO OBLIGATORIO de tu salida, exactamente estas tres líneas:\n"
             "RESPUESTA: <lo que dices en voz alta>\n"
             "ACCION: <el nombre de una acción de la lista, o la palabra ninguna>\n"
@@ -194,7 +205,7 @@ class Cerebro:
     def responder(self, texto):
         """Devuelve (respuesta, accion). accion es None o 'nombre' / 'nombre | texto'."""
         self.historial.append({"role": "user", "content": texto})
-        mensajes = [{"role": "system", "content": self.instrucciones()}] + self.historial[-20:]
+        mensajes = [{"role": "system", "content": self.instrucciones(texto)}] + self.historial[-20:]
         crudo = self._pedir(mensajes)
         respuesta, accion, recuerdo = separar(crudo)
         if recuerdo:

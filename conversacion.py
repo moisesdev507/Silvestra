@@ -120,6 +120,13 @@ def enviar(app, texto):
 
 def pensar(app, texto):
     """Llama al cerebro en streaming y envía los fragmentos a la cola (en hilo aparte)."""
+    try:
+        import correcciones
+        if correcciones.es_correccion(texto):
+            correcciones.registrar_correccion(getattr(app, "ultimo_dicho", ""), texto)
+    except Exception as e:
+        print(f"[correcciones] Error detectando corrección: {e}", flush=True)
+
     if getattr(app.oido, "debe_avisar_respaldo", False):
         app.oido.debe_avisar_respaldo = False
         app.cola.put(("frase", "Te escucho con mi oído de respaldo."))

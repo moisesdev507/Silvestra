@@ -49,6 +49,7 @@ import casa
 import config
 import control_pc
 import conversacion
+import correcciones
 import cuidado
 import diario
 import escenario
@@ -120,6 +121,7 @@ class Silvestra:
         self.origen_entrada_actual = "chat"
         voz_dueno.instalar(self)
         control_pc.instalar(self)
+        correcciones.instalar(self)
 
         self.cara.root.after(100, self.revisar_cola)
 

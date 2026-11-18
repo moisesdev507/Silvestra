@@ -55,6 +55,7 @@ Silvestra es una asistente de IA de escritorio para Windows, hecha por Moisés (
 - `escenario.py`, `escenario_estilo.py`, `escenario_fondo.py`, `escenario_intro.py`, `escenario_nodos.py`, `escenario_escenas.py`, `escenario_paneles.py`, `escenario_anillo.py`: Modo Escenario cinematográfico de ciencia ficción para la presentación universitaria. Ventana PySide6 a pantalla completa sin bordes, con zonas proporcionales sin superposiciones (1080p y 768p), secuencia de arranque táctico de 4 s ("SILVESTRA ONLINE" con autodiagnóstico secuencial), fondo con respiración suave, partículas con parallax, anillo de energía alrededor de Silvestra (protagonista a la izquierda sin burbuja flotante), panel de escena de alto contraste y tipografía grande a la derecha (máx 3-4 líneas), arco de nodos superior con impulsos de datos viajando hacia ella, barra de subtítulos inferior y letterbox cinematográfico. Incluye la escena `anillo` con renderizado 3D holográfico interactivo sensible a gestos reales y respaldo manual (teclas 1, 2, 3). Se activa con `presentarse` y se cierra con Esc o `cerrar_escenario`.
 - `voz_dueno.py`, `voz_dueno_registro.py` y `voz_dueno.npy`: reconocimiento y verificación biométrica del dueño por voz (speaker verification) local y gratuito. Utiliza el modelo CAM++ (3D-Speaker / WeSpeaker) mediante `sherpa-onnx` en modo ONNX ligero (sin PyTorch ni librerías pesadas, ~27 MB de modelo y ~19 MB de paquete). Carga perezosa del extractor, extracción de vector de 192 dimensiones a 16 kHz y comparación por similitud coseno registrada en `silvestra.log` (`[voz_dueno] similitud=0.xx umbral=0.xx`). Si una orden con acciones sensibles no supera el umbral, Silvestra se niega con gracia ("Eso solo se lo hago a Moisés, pero me da gusto escucharte") sin ejecutar la acción, mientras que la charla libre sigue funcionando normalmente. Integra doble factor con la cámara (`camara.permite()`), política *fail-open* ante fallos técnicos, audios menores a 1 segundo decididos por cámara, y exención total para el chat de la laptop y Telegram emparejado. Acciones: `registrar_mi_voz` (6 frases cortas), `calibrar_voz` (10 frases de Moisés vs 10 de otra persona para sugerir umbral óptimo en `estado.json`), `activar_verificacion_voz` y `desactivar_verificacion_voz`.
 - `control_pc.py`: control seguro de la computadora bajo una lista de permisos (allowlist) estricta. Maneja apertura de programas autorizados en `config.py` (bloc de notas, calculadora, navegador, explorador, VS Code), control de volumen y reproducción musical mediante teclas multimedia nativas de Windows con `ctypes` (sin paquetes pesados), y apertura de sitios web seguros o búsquedas en YouTube en hilos secundarios daemon. Protegido 100% por la verificación de voz del dueño (`voz_dueno`), sin comandos de consola libres ni apagado del equipo. Registro con prefijo `[control_pc]`. Acciones: `abrir_programa`, `volumen`, `musica`, `abrir_web` y `buscar_youtube`.
+- `correcciones.py` y `correcciones.json`: sistema de lecciones aprendidas y correcciones del usuario. Detecta cuando Moisés corrige a Silvestra ("no, eso no", "así no", "te equivocaste", "mejor haz..."), almacena qué dijo ella y qué pidió el usuario (máx. 50 entradas FIFO con filtro estricto contra claves/contraseñas), e inyecta las 5 correcciones más relevantes en el prompt del sistema (`instrucciones()`) para que el cerebro aprenda y no repita errores. No duplica con `memoria.json`. Acciones: `mis_correcciones` (las lee/muestra) y `olvidar_correccion` (elimina una por número).
 - `estado.py` y `estado.json`: persistencia del estado (última interacción, último saludo generado, iniciativa, palabra clave, hud y verificación de voz).
 - `bajar_modelos.py`: descarga los modelos de visión y el modelo pequeño de Vosk en español a `modelos/`.
 - `App.py` y `silvestra.db`: una demo aparte con Streamlit. No tocar.
@@ -473,6 +474,33 @@ Permite a Silvestra interactuar con funciones del sistema operativo de forma con
 3. *"Silvestra, busca en YouTube música relajante"* ➔ Ejecuta `buscar_youtube | música relajante` y abre el navegador con la búsqueda.
 4. *"Silvestra, abre GitHub"* ➔ Ejecuta `abrir_web | github` y abre https://www.github.com en el navegador.
 
+## Sistema de correcciones y lecciones aprendidas (`correcciones.py`)
+Permite a Silvestra aprender de sus errores en tiempo real y no repetirlos:
+- **Detección inteligente de correcciones**:
+  - Reconoce frases como *"no, eso no"*, *"así no"*, *"te equivocaste"*, *"mejor haz..."*, *"no me digas..."*.
+  - Guarda en `correcciones.json`: fecha, qué dijo ella (`dijo_ella`) y qué pidió el usuario en su lugar (`pidio_usuario`).
+  - Límite FIFO de máximo 50 entradas (las más antiguas se eliminan automáticamente).
+  - **Filtro estricto de privacidad**: descarta cualquier corrección que contenga claves, tokens, contraseñas o credenciales.
+  - **No duplicación**: correcciones se almacenan en su propio archivo `correcciones.json`, manteniendo limpia la memoria biográfica duradera (`memoria.json`).
+- **Inyección dinámica en el cerebro**:
+  - Antes de cada respuesta, `cerebro.py` recibe las 5 correcciones más relevantes o recientes como reglas obligatorias (*"Reglas aprendidas de correcciones previas de tu creador"*).
+- **Acciones registradas**:
+  - `mis_correcciones`: resume en voz alta y despliega en la burbuja la lista numerada de correcciones activas.
+  - `olvidar_correccion | <número>`: elimina permanentemente una corrección por su identificador.
+
+### Cómo probar el sistema de correcciones:
+1. **Enseñar una corrección**:
+   - Di o escribe: *"No, eso no, cuando te pida un resumen de código quiero que seas muy breve y sin explicaciones largas."*
+   - Verás en `silvestra.log`: `[correcciones] Guardada corrección #1: ...`.
+2. **Consultar lo aprendido**:
+   - Di o escribe: *"¿Qué correcciones tienes mías?"* o la acción `mis_correcciones`.
+   - Silvestra te dirá en voz alta y mostrará en la burbuja la lista numerada de lecciones.
+3. **Comprobar que no repite el error**:
+   - Pídele lo mismo de nuevo: el cerebro leerá la regla obligatoria en su prompt y responderá acatando tu preferencia.
+4. **Olvidar una corrección**:
+   - Di o escribe: *"Olvidar corrección 1"* (acción `olvidar_correccion | 1`).
+   - Silvestra confirmará: *"Olvidé la corrección número 1."*
+
 ## Límites conocidos
 - El temporizador de estudio Pomodoro se pierde si se cierra la app (los recordatorios ya sobreviven al cierre de forma persistente en `recordatorios.json`).
 - Los gestos asumen mano derecha con los dedos hacia arriba.
@@ -491,7 +519,7 @@ Permite a Silvestra interactuar con funciones del sistema operativo de forma con
 El proyecto cuenta con un repositorio local Git para respaldar el código de forma segura sin subir datos sensibles a internet:
 - **Archivos protegidos e ignorados (`.gitignore`)**:
   - Claves privadas y tokens: `config.py` (usa [config.example.py](file:///c:/Proyecto_Silvestra/config.example.py) como plantilla sin claves), archivos `.env`.
-  - Datos personales de Moisés: `dueno.npy` (vector biométrico facial), `memoria.json`, `estado.json`, `diario.md`, `recordatorios.json`, `hilos.json`, `ideas.json`, `notas.json`.
+  - Datos personales de Moisés: `dueno.npy` (vector biométrico facial), `voz_dueno.npy` (biometría de voz), `memoria.json`, `correcciones.json`, `estado.json`, `diario.md`, `recordatorios.json`, `hilos.json`, `ideas.json`, `notas.json`.
   - Archivos pesados y generados: carpeta `modelos/`, `propuestas/`, `propuestas.json`, registros `silvestra.log`, base de datos `silvestra.db` y caché `__pycache__/`, `.venv/`.
 - **Regla de oro de control de versiones:**
   - **Haz siempre un commit antes de pedir un cambio grande a Gemini / Antigravity**. De este modo, si alguna modificación rompe la estabilidad o no te gusta el resultado, podrás volver al estado anterior inmediatamente con un solo comando.

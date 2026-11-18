@@ -6,7 +6,7 @@ import proveedores
 def responder_flujo(cerebro, texto, al_frase):
     """Genera la respuesta con streaming y conmutación automática de proveedores si hay fallos."""
     cerebro.historial.append({"role": "user", "content": texto})
-    mensajes = [{"role": "system", "content": cerebro.instrucciones()}] + cerebro.historial[-20:]
+    mensajes = [{"role": "system", "content": cerebro.instrucciones(texto)}] + cerebro.historial[-20:]
 
     crudo = proveedores.completar_flujo(mensajes, al_frase)
 
