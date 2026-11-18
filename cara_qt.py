@@ -111,6 +111,11 @@ class Cara(QWidget):
         self.pensando = False
         self.pensando_hasta = 0.0
         self.feliz_hasta = 0.0
+        self.emocion_actual = "neutral"
+        self.emocion_objetivo = "neutral"
+        self._ref_voz = None
+        self._timer_retorno_neutral = None
+        self._nivel_volumen_manual = 0.0
         self.mx = 0
         self.my = 0
         self.destino = None
@@ -156,10 +161,10 @@ class Cara(QWidget):
         self.menu.addSeparator()
         self.menu.addAction("Salir").triggered.connect(lambda *_: QApplication.quit())
 
-        # Relojes: dibujo (~40 cuadros/s) y movimiento
+        # Relojes: dibujo (~30 cuadros/s máximo) y movimiento
         self.reloj_dibujo = QTimer(self)
         self.reloj_dibujo.timeout.connect(self.update)
-        self.reloj_dibujo.start(25)
+        self.reloj_dibujo.start(33)
         self.reloj_mover = QTimer(self)
         self.reloj_mover.timeout.connect(self._mover)
         self.reloj_mover.start(30)
@@ -185,6 +190,33 @@ class Cara(QWidget):
 
     def poner_escuchando(self, escuchando):
         self.escuchando = escuchando
+
+    @property
+    def nivel_volumen(self):
+        if self._ref_voz is not None:
+            return getattr(self._ref_voz, "nivel_volumen", 0.0)
+        return self._nivel_volumen_manual
+
+    @nivel_volumen.setter
+    def nivel_volumen(self, val):
+        self._nivel_volumen_manual = float(val)
+
+    def fijar_emocion(self, emocion):
+        emo = str(emocion or "neutral").strip().lower().replace("á", "a")
+        if emo not in ("neutral", "alegre", "animada", "calida", "seria", "preocupada"):
+            emo = "neutral"
+        self.emocion_objetivo = emo
+        self.emocion_actual = emo
+
+    def programar_retorno_neutral(self, delay_ms=3000):
+        if self._timer_retorno_neutral is not None:
+            self._timer_retorno_neutral.stop()
+        self._timer_retorno_neutral = QTimer(self)
+        self._timer_retorno_neutral.setSingleShot(True)
+        self._timer_retorno_neutral.timeout.connect(
+            lambda: self.fijar_emocion("neutral") if not self.hablando else None
+        )
+        self._timer_retorno_neutral.start(int(delay_ms))
 
     # ---------- Dibujo ----------
     def paintEvent(self, _):
@@ -376,8 +408,10 @@ class Cara(QWidget):
         else:
             self.pensando = False
 
-    def decir(self, texto, ms=None):
+    def decir(self, texto, ms=None, emocion=None):
         self.ultima_interaccion = time.time()
+        if emocion:
+            self.fijar_emocion(emocion)
         if ms is None:
             ms = max(3000, len(texto) * 80)
         self._emocion(texto)
@@ -388,7 +422,10 @@ class Cara(QWidget):
                 self.burbuja.deleteLater()
                 self.burbuja = None
             self.hablando = True
-            QTimer.singleShot(int(ms), lambda: setattr(self, "hablando", False))
+            def _terminar_silencio():
+                self.hablando = False
+                self.programar_retorno_neutral(2500)
+            QTimer.singleShot(int(ms), _terminar_silencio)
             return
         if self.burbuja is not None:
             self.burbuja.close()
@@ -419,6 +456,7 @@ class Cara(QWidget):
             b.deleteLater()
             self.burbuja = None
             self.hablando = False
+            self.programar_retorno_neutral(2500)
 
     # ---------- Diálogos ----------
     def preguntar(self, titulo, texto):

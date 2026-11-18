@@ -33,7 +33,7 @@ Silvestra es una asistente de IA de escritorio para Windows, hecha por Moisés (
 - `oido.py`: micrófono con `sounddevice`, detector de voz por energía y transcripción con Whisper de Groq (`whisper-large-v3-turbo`). Filtra alucinaciones de Whisper (lista FALSAS, no_speech_prob, avg_logprob). **No pongas listas de órdenes en el prompt de Whisper**: provoca frases inventadas. Oído de respaldo local con Vosk (`vosk-model-small-es-0.42` sin gramática restringida y carga perezosa) si Whisper falla por red, timeout o cuota (429), con registro en log `[oido] respaldo=vosk` y aviso hablado ("Te escucho con mi oído de respaldo") una sola vez por sesión.
 - `memoria.py` y `memoria.json`: nombre, creador, propósito y hechos que recuerda.
 - `acciones.py`: registro de acciones. `registrar(nombre, funcion, descripcion, con_texto=False)`. Las acciones con texto se escriben `ACCION: nombre | texto`. `interpretar()` y `ejecutar()` validan contra una lista permitida: el modelo solo puede usar acciones registradas.
-- `cara_qt.py` y `cara_dibujo.py`: la cara (PySide6). Estados: reposo, hablando, pensando, escuchando, feliz. Se mueve por la pantalla. Incluye un adaptador `root.after()/destroy()` para que el resto del código funcione igual. `cara.py` (Tkinter) queda solo como respaldo; `cara_preview.py` es una vista previa.
+- `cara_qt.py` y `cara_dibujo.py`: la cara (PySide6). Expresiones faciales reactivas a la emoción (`neutral`, `alegre`, `animada`, `calida`, `seria`, `preocupada`) con interpolación suave (~300 ms), sincronía labial basada en envolvente de volumen RMS en hilo secundario (o animación suave silábica si no se mide), vida en reposo (parpadeo cada 3 a 6 s con variación de parpadeo doble, micro-miradas sacádicas e inclinación orgánica) a 30 FPS máximo. Estados clásicos preservados (reposo, hablando, pensando, escuchando, feliz, bailando). Compatible con el modo Escenario (escalado vectorial proporcional) y el HUD. Pintado 100% protegido con try/finally en QPainter. Incluye un adaptador `root.after()/destroy()` para que el resto del código funcione igual. `cara.py` (Tkinter) queda solo como respaldo; `cara_preview.py` es una vista previa.
 - `presentacion.py`: modo presentación ("Silvestra, preséntate"). Lista `PASOS` con (idea, frase de respaldo, acciones, retraso). Ella improvisa cada paso con el cerebro y usa la frase de respaldo si falla. Al terminar queda escuchando preguntas del público.
 - `camara.py`: OpenCV con YuNet (detección) y SFace (reconocimiento de cara del dueño, guardada en `dueno.npy`), y MediaPipe HandLandmarker para gestos (palma, puño, dos dedos, un dedo). `permite()` decide si obedece: solo al dueño cuando la cámara está activa. Saludo cortés a invitados (profesores o compañeros) con antirrebote (al menos 3 detecciones consecutivas ~1.8 s) generado dinámicamente por el cerebro, sin repetir en 2 minutos y sin guardar imágenes en disco.
 - `casa.py`: panel de la casa inteligente de juguete (luz, ventilador, puerta) con sus acciones.
@@ -538,6 +538,38 @@ Silvestra modula su voz de forma sutil y realista según la intención comunicat
    - Verás en `silvestra.log`: `[voz] emocion=calida rate=-4% pitch=-2Hz`.
 5. **Modo presentación**:
    - Di: *"Silvestra, preséntate"*. Observa cómo el saludo inicial suena animado y al explicar los gestos y la domótica cambia a un tono técnico y serio, todo registrado en el log.
+
+## Expresiones faciales, sincronía labial y vida en reposo (`cara_dibujo.py`, `cara_qt.py`)
+La interfaz visual de Silvestra incluye animaciones orgánicas e inteligentes sin sobrecargar la CPU:
+- **Expresiones por emoción con interpolación suave (~300 ms)**:
+  - Cambia cejas (altura e inclinación), curvatura de la boca, apertura de ojos, nivel de rubor en mejillas y el tinte de color de su halo/anillos según la emoción activa (`neutral`, `alegre`, `animada`, `calida`, `seria`, `preocupada`).
+  - Las transiciones convergen de forma continua mediante interpolación geométrica (lerp exponencial a 30 FPS) sin cortes ni saltos bruscos.
+  - Al terminar de hablar, la expresión vuelve automáticamente a `neutral` tras un breve intervalo (2.5 s).
+- **Sincronía labial (Lip-sync)**:
+  - Durante la reproducción de audio, un hilo secundario precalcula con `numpy` la envolvente RMS del audio y actualiza un valor compartido en memoria (`self.nivel_volumen`).
+  - La boca abre su altura proporcionalmente al volumen medido, modulando vocales y pausas.
+  - Si la voz es Windows SAPI o no se puede medir el nivel, Silvestra utiliza automáticamente una animación suave por sílabas que evita movimientos aleatorios bruscos.
+- **Vida en reposo (Idle alive)**:
+  - Parpadeo natural cada 3 a 6 segundos con variación (probabilidad de doble parpadeo rápido como un ser vivo).
+  - Micro-miradas sacádicas (desplazamiento suave de pupilas cuando el mouse no se mueve).
+  - Respiración sutil en escala y posición vertical, más una leve inclinación orgánica de cabeza (±1°).
+- **Rendimiento y arquitectura limpia**:
+  - Tasa de refresco limitada a 30 FPS (33 ms).
+  - Cero operaciones de disco o red durante el pintado.
+  - Todos los `QPainter` protegidos con `try: ... finally: p.end()`.
+  - Hilos secundarios comunican eventos exclusivamente por `app.cola` y leen el volumen desde variables primitivas compartidas.
+  - Escala perfectamente en el modo Escenario (ventana agrandada) y se coordina con el orbe del HUD.
+
+### Cómo probar las expresiones y la cara:
+1. **Comprobar sincronía de boca**:
+   - Haz que hable con cualquier frase larga (ej. *"Silvestra, ¿qué puedes hacer?"*). Observa cómo la boca modula su apertura según el volumen del audio hablado.
+2. **Comprobar expresiones emocionales**:
+   - Para expresión **animada/alegre**: Di *"¡Qué emoción verte hoy!"*. Observa las cejas levantadas, ojos luminosos, halo dorado/verde y amplia sonrisa.
+   - Para expresión **seria**: Di *"Tengo un grave problema de seguridad"*. Observa las cejas inclinadas hacia el entrecejo, ojos concentrados y boca calmada con halo azul.
+   - Para expresión **preocupada**: Simula o pídele un chequeo de cuidado. Observa las cejas en ángulo compasivo elevado al centro y curvatura reflexiva.
+   - Al terminar de hablar, observa cómo su cara regresa suavemente al estado `neutral` cian tras unos 2.5 segundos.
+3. **Comprobar vida en reposo**:
+   - Deja a Silvestra en silencio sin mover el mouse durante 10 segundos: observarás la respiración continua, el parpadeo natural variado y pequeñas micro-miradas sacádicas.
 
 ## Límites conocidos
 - El temporizador de estudio Pomodoro se pierde si se cierra la app (los recordatorios ya sobreviven al cierre de forma persistente en `recordatorios.json`).

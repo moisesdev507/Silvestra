@@ -100,6 +100,7 @@ class Silvestra:
             self.renacer,
             self.pedir_descanso,
         )
+        self.cara._ref_voz = self.voz
         self.cara.poner_viva(bool(self.memoria.nombre))
         presentacion.instalar(self)
         self.casa = casa.instalar(self)
@@ -136,10 +137,13 @@ class Silvestra:
         return not self.voz.ocupada() and not self.escuchando
 
     def decir(self, texto, ms=None, con_voz=True, emocion=None):
-        self.cara.decir(texto, ms)
+        emo = emocion or getattr(self.voz, "deducir_emocion", lambda t: "neutral")(texto)
+        if hasattr(self.cara, "fijar_emocion"):
+            self.cara.fijar_emocion(emo)
+        self.cara.decir(texto, ms, emocion=emo)
         if con_voz:
             self.ultimo_dicho = texto
-            self.voz.hablar(texto, lambda: self.cola.put(("fin_voz", None)), emocion=emocion)
+            self.voz.hablar(texto, lambda: self.cola.put(("fin_voz", None)), emocion=emo)
 
     def ejecutar(self, linea):
         if not self.puede_hablar_sola():

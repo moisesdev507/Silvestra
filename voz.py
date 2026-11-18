@@ -92,12 +92,37 @@ def dividir_frases(texto):
     return frases or [texto]
 
 
+def calcular_envolvente_rms(audio_bytes, fps=30):
+    """Calcula la envolvente RMS en hilo secundario para sincronía labial no bloqueante."""
+    try:
+        import numpy as np
+        import pygame
+        snd = pygame.mixer.Sound(io.BytesIO(audio_bytes))
+        arr = pygame.sndarray.array(snd)
+        if arr is None or len(arr) == 0:
+            return None, snd
+        mono = arr.mean(axis=1) if arr.ndim > 1 else arr
+        mono = mono.astype(np.float32) / 32768.0
+        frec, _, _ = pygame.mixer.get_init()
+        muestras_por_cuadro = max(1, int(frec / fps))
+        num_cuadros = len(mono) // muestras_por_cuadro
+        if num_cuadros == 0:
+            return None, snd
+        recortado = mono[:num_cuadros * muestras_por_cuadro].reshape(num_cuadros, muestras_por_cuadro)
+        rms = np.sqrt(np.mean(recortado**2, axis=1))
+        rms_norm = np.clip(rms * 4.2, 0.0, 1.0).tolist()
+        return rms_norm, snd
+    except Exception:
+        return None, None
+
+
 class Voz:
     def __init__(self):
         self.version = 0
         self._activos = 0
         self.proceso = None
         self.pg = None
+        self.nivel_volumen = 0.0
         try:
             import pygame
 
@@ -137,9 +162,11 @@ class Voz:
         return flujo
 
     def _parar(self):
+        self.nivel_volumen = 0.0
         if self.pg is not None:
             try:
                 self.pg.mixer.music.stop()
+                self.pg.mixer.stop()
             except Exception:
                 pass
         if self.proceso is not None and self.proceso.poll() is None:
@@ -215,18 +242,38 @@ class Voz:
                 frase, audio, emo = item
                 if audio and self.pg is not None:
                     try:
-                        self.pg.mixer.music.load(io.BytesIO(audio))
-                        self.pg.mixer.music.play()
-                        while self.pg.mixer.music.get_busy() and version == self.version:
-                            time.sleep(0.05)
-                        continue
+                        rms_norm, snd = calcular_envolvente_rms(audio)
+                        if snd is not None:
+                            canal = snd.play()
+                            t_inicio = time.time()
+                            while canal.get_busy() and version == self.version:
+                                if rms_norm:
+                                    dt = time.time() - t_inicio
+                                    idx = int(dt * 30)
+                                    self.nivel_volumen = rms_norm[idx] if idx < len(rms_norm) else 0.0
+                                else:
+                                    self.nivel_volumen = -1.0
+                                time.sleep(0.025)
+                            self.nivel_volumen = 0.0
+                            continue
+                        else:
+                            self.pg.mixer.music.load(io.BytesIO(audio))
+                            self.pg.mixer.music.play()
+                            self.nivel_volumen = -1.0
+                            while self.pg.mixer.music.get_busy() and version == self.version:
+                                time.sleep(0.04)
+                            self.nivel_volumen = 0.0
+                            continue
                     except Exception:
                         pass
+                self.nivel_volumen = -1.0
                 self._voz_windows(frase, version, emocion=emo)
+                self.nivel_volumen = 0.0
 
             if version == self.version and al_terminar:
                 al_terminar()
         finally:
+            self.nivel_volumen = 0.0
             self._activos = max(0, self._activos - 1)
 
 

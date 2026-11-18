@@ -106,7 +106,19 @@ class OrbeJarvis(QWidget):
             elif est == "pensando":
                 col_base, col_pulso = QColor(124, 58, 237), QColor(192, 132, 252)
             elif est == "hablando":
-                col_base, col_pulso = QColor(6, 182, 212), QColor(165, 243, 252)
+                emo = getattr(getattr(self.app, "cara", None), "emocion_objetivo", "neutral")
+                if emo == "alegre":
+                    col_base, col_pulso = QColor(16, 185, 129), QColor(167, 243, 208)
+                elif emo == "animada":
+                    col_base, col_pulso = QColor(245, 158, 11), QColor(254, 240, 138)
+                elif emo == "calida":
+                    col_base, col_pulso = QColor(244, 114, 182), QColor(251, 207, 232)
+                elif emo == "seria":
+                    col_base, col_pulso = QColor(59, 130, 246), QColor(191, 219, 254)
+                elif emo == "preocupada":
+                    col_base, col_pulso = QColor(139, 92, 246), QColor(221, 214, 254)
+                else:
+                    col_base, col_pulso = QColor(6, 182, 212), QColor(165, 243, 252)
             else:
                 col_base, col_pulso = QColor(14, 165, 233), QColor(186, 230, 253)
 
