@@ -1,0 +1,49 @@
+# Entorno virtual y dependencias
+.venv/
+env/
+venv/
+ENV/
+
+# Bytecode y caché de Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Archivos de configuración con claves de API y tokens privados
+config.py
+.env
+.env.*
+*.env
+*token*
+*secret*
+
+# Modelos pesados de IA y reconocimiento facial
+modelos/
+*.npy
+dueno.npy
+**/dueno.npy
+
+# Logs de ejecución
+*.log
+silvestra.log
+
+# Datos personales y archivos de persistencia local
+memoria.json
+estado.json
+diario.md
+recordatorios.json
+propuestas.json
+propuestas/
+hilos.json
+ideas.json
+notas.json
+*.db
+*.sqlite
+silvestra.db
+
+# Configuraciones de editores de código (opcional/seguro)
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
