@@ -1,0 +1,224 @@
+"""Reconocimiento y verificación del dueño por voz (speaker verification) local y gratis.
+
+Utiliza el modelo CAM++ (3D-Speaker / WeSpeaker) mediante sherpa-onnx en modo ONNX ligero,
+sin PyTorch. Carga perezosa del modelo, similitud coseno y política fail-open.
+"""
+import os
+import random
+import threading
+import time
+import numpy as np
+
+import acciones
+import estado
+
+BASE = os.path.dirname(os.path.abspath(__file__))
+ARCHIVO_VOZ = os.path.join(BASE, "voz_dueno.npy")
+MODELO_ONNX = os.path.join(BASE, "modelos", "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx")
+
+_extractor = None
+_lock_extractor = threading.Lock()
+
+FRASES_NEGATIVA = [
+    "Eso solo se lo hago a Moisés, pero me da gusto escucharte.",
+    "Esa orden solo se la obedezco a Moisés. Pero podemos seguir conversando.",
+    "Solo le hago caso a mi creador para las cosas de la casa, pero me alegra hablar contigo.",
+    "Me caes bien, pero esa acción está reservada solo para Moisés.",
+]
+
+
+def obtener_extractor():
+    """Carga perezosa del extractor CAM++ para no subir la RAM ni ralentizar el arranque."""
+    global _extractor
+    with _lock_extractor:
+        if _extractor is None:
+            if not os.path.exists(MODELO_ONNX):
+                raise RuntimeError(f"No se encontró el modelo de voz en {MODELO_ONNX}. Ejecuta bajar_modelos.py")
+            import sherpa_onnx
+            config = sherpa_onnx.SpeakerEmbeddingExtractorConfig(
+                model=MODELO_ONNX,
+                num_threads=2,
+                provider="cpu",
+            )
+            _extractor = sherpa_onnx.SpeakerEmbeddingExtractor(config)
+            print("[voz_dueno] Extractor CAM++ de sherpa-onnx cargado con éxito.", flush=True)
+        return _extractor
+
+
+def extraer_embedding(audio_int16, samplerate=16000):
+    """Calcula el vector de embedding de 192 dimensiones a partir de un array de audio int16."""
+    ext = obtener_extractor()
+    stream = ext.create_stream()
+    audio_f32 = audio_int16.astype(np.float32) / 32768.0
+    stream.accept_waveform(samplerate, audio_f32)
+    stream.input_finished()
+    emb = ext.compute(stream)
+    emb_arr = np.array(emb, dtype=np.float32)
+    norm = np.linalg.norm(emb_arr)
+    if norm > 1e-6:
+        emb_arr /= norm
+    return emb_arr
+
+
+def calcular_similitud(emb1, emb2):
+    """Calcula la similitud coseno entre dos vectores normalizados."""
+    return float(np.dot(emb1, emb2))
+
+
+class VozDueno:
+    """Controlador de verificación de voz del dueño y autorización de acciones."""
+
+    def __init__(self, app):
+        self.app = app
+        self.vector_dueno = None
+        self.activa = False
+        self.umbral = 0.65
+        self.ultima_verificacion = {"es_dueno": True, "similitud": 1.0, "motivo": "inicial"}
+        self._cargar_configuracion()
+        self._cargar_vector()
+
+    def _cargar_configuracion(self):
+        try:
+            datos = estado.cargar()
+            self.activa = bool(datos.get("verificacion_voz_activa", False))
+            self.umbral = float(datos.get("umbral_voz_dueno", 0.65))
+        except Exception:
+            self.activa = False
+            self.umbral = 0.65
+
+    def _cargar_vector(self):
+        try:
+            if os.path.exists(ARCHIVO_VOZ):
+                vec = np.load(ARCHIVO_VOZ).astype(np.float32)
+                norm = np.linalg.norm(vec)
+                if norm > 1e-6:
+                    vec /= norm
+                self.vector_dueno = vec
+            else:
+                self.vector_dueno = None
+        except Exception as e:
+            print(f"[voz_dueno] Error cargando vector biométrico: {e}", flush=True)
+            self.vector_dueno = None
+
+    def recargar_vector(self):
+        """Vuelve a cargar el vector del dueño tras un registro o calibración."""
+        self._cargar_vector()
+        self._cargar_configuracion()
+
+    def evaluar_entrada_voz(self, texto):
+        """Evalúa la identidad del hablante al recibir un audio del micrófono."""
+        if not self.activa or self.vector_dueno is None:
+            self.ultima_verificacion = {"es_dueno": True, "similitud": 1.0, "motivo": "inactivo"}
+            return
+
+        audio = getattr(self.app.oido, "ultimo_audio", None)
+        duracion = float(getattr(self.app.oido, "duracion_ultimo_audio", 0.0))
+
+        # Doble factor con cámara
+        camara_ok = bool(
+            hasattr(self.app, "camara")
+            and self.app.camara
+            and self.app.camara.activa
+            and self.app.camara.permite()
+        )
+
+        # Audios muy cortos (< 1 segundo): decide la cámara; si no hay cámara, no permite acciones
+        if audio is None or duracion < 1.0:
+            es_dueno = camara_ok
+            self.ultima_verificacion = {
+                "es_dueno": es_dueno,
+                "similitud": 0.0,
+                "camara": camara_ok,
+                "motivo": "audio_corto_camara_ok" if camara_ok else "audio_corto_sin_camara",
+            }
+            print(f"[voz_dueno] audio_corto={duracion:.2f}s camara_ok={camara_ok} permitido={es_dueno}", flush=True)
+            return
+
+        try:
+            emb = extraer_embedding(audio)
+            sim = calcular_similitud(emb, self.vector_dueno)
+            # Log exacto requerido: [voz_dueno] similitud=0.xx umbral=0.xx
+            print(f"[voz_dueno] similitud={sim:.2f} umbral={self.umbral:.2f} duracion={duracion:.2f}s camara={camara_ok}", flush=True)
+
+            # Doble factor: si la cámara ve al dueño, es válido aunque el puntaje de voz sea bajo
+            es_dueno = (sim >= self.umbral) or camara_ok
+            self.ultima_verificacion = {
+                "es_dueno": es_dueno,
+                "similitud": sim,
+                "camara": camara_ok,
+                "motivo": "camara" if (camara_ok and sim < self.umbral) else ("voz_ok" if es_dueno else "rechazado"),
+            }
+        except Exception as e:
+            # Política fail-open: nunca dejar fuera al dueño ante fallos técnicos
+            print(f"[voz_dueno] Error al verificar voz (fail-open activado): {e}", flush=True)
+            self.ultima_verificacion = {"es_dueno": True, "similitud": 1.0, "motivo": "error_tolerado"}
+
+    def autorizar_accion(self, accion):
+        """Decide si una acción solicitada se ejecuta o se bloquea con una frase amable."""
+        origen = getattr(self.app, "origen_entrada_actual", "chat")
+        # Chat en laptop y Telegram emparejado siempre se aceptan
+        if origen in ("chat", "telegram"):
+            return True, ""
+
+        if not self.activa or self.vector_dueno is None:
+            return True, ""
+
+        if self.ultima_verificacion.get("es_dueno", True):
+            return True, ""
+
+        # Rechazo con gracia para acciones sensibles
+        frase = random.choice(FRASES_NEGATIVA)
+        sim = self.ultima_verificacion.get("similitud", 0.0)
+        print(f"[voz_dueno] Acción '{accion}' bloqueada. Similitud={sim:.2f} < Umbral={self.umbral:.2f}", flush=True)
+        return False, frase
+
+    def activar(self):
+        """Activa la verificación de voz del dueño."""
+        if not os.path.exists(ARCHIVO_VOZ) or self.vector_dueno is None:
+            self.app.decir("Aún no has registrado tu voz. Di 'registrar mi voz' para calibrarla primero.")
+            return
+        self.activa = True
+        datos = estado.cargar()
+        datos["verificacion_voz_activa"] = True
+        estado.guardar(datos)
+        print("[voz_dueno] Verificación de voz activada.", flush=True)
+        self.app.decir("Verificación de voz activada. A partir de ahora solo obedeceré tus órdenes.")
+
+    def desactivar(self):
+        """Desactiva la verificación de voz del dueño."""
+        self.activa = False
+        datos = estado.cargar()
+        datos["verificacion_voz_activa"] = False
+        estado.guardar(datos)
+        print("[voz_dueno] Verificación de voz desactivada.", flush=True)
+        self.app.decir("Verificación de voz desactivada. Responderé a cualquiera que me hable.")
+
+
+def instalar(app):
+    """Instala el subsistema de voz del dueño y registra sus acciones."""
+    import voz_dueno_registro
+
+    vd = VozDueno(app)
+    app.voz_dueno = vd
+
+    acciones.registrar(
+        "registrar_mi_voz",
+        lambda: voz_dueno_registro.iniciar_registro(app, vd),
+        "Guía a Moisés para registrar su voz leyendo 6 frases cortas para reconocimiento biométrico.",
+    )
+    acciones.registrar(
+        "calibrar_voz",
+        lambda: voz_dueno_registro.iniciar_calibracion(app, vd),
+        "Calibra el umbral de verificación comparando frases de Moisés con frases de otra persona.",
+    )
+    acciones.registrar(
+        "activar_verificacion_voz",
+        vd.activar,
+        "Activa la verificación biométrica de voz para que Silvestra solo obedezca a su dueño.",
+    )
+    acciones.registrar(
+        "desactivar_verificacion_voz",
+        vd.desactivar,
+        "Desactiva la verificación biométrica de voz permitiendo órdenes de cualquier persona.",
+    )
+    print("[voz_dueno] Módulo instalado correctamente.", flush=True)

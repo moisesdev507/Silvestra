@@ -72,7 +72,12 @@ def abrir_chat(app):
     """Abre la ventana flotante para escribirle por texto."""
     if not app.memoria.nombre:
         return
-    app.cara.abrir_entrada(f"Hablar con {app.memoria.nombre}", app.enviar)
+
+    def _enviar_chat(texto):
+        app.origen_entrada_actual = "chat"
+        app.enviar(texto)
+
+    app.cara.abrir_entrada(f"Hablar con {app.memoria.nombre}", _enviar_chat)
 
 
 def enviar(app, texto):

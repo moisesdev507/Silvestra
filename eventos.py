@@ -40,6 +40,17 @@ def atender_evento(app, tipo, texto):
 
     elif tipo == "respuesta":
         respuesta, accion = texto
+        if accion and hasattr(app, "voz_dueno") and app.voz_dueno:
+            permitido, frase_negativa = app.voz_dueno.autorizar_accion(accion)
+            if not permitido:
+                if app.flujo is not None:
+                    app.flujo.cerrar()
+                    app.flujo = None
+                app.ultimo_dicho = frase_negativa
+                app.cara.decir(frase_negativa, None)
+                app.decir(frase_negativa)
+                return
+
         if app.flujo is not None:
             app.flujo.cerrar()
             app.flujo = None
@@ -111,10 +122,11 @@ def atender_evento(app, tipo, texto):
             app.silencios = 0
             if app._es_eco(texto):
                 app.escuchar()
-            elif app.camara.permite():
-                app.enviar(texto)
             else:
-                app.decir("Lo siento, solo obedezco a mi dueño.", 3500)
+                app.origen_entrada_actual = "microfono"
+                if hasattr(app, "voz_dueno") and app.voz_dueno:
+                    app.voz_dueno.evaluar_entrada_voz(texto)
+                app.enviar(texto)
 
     elif tipo == "silencio":
         app._dejar_de_escuchar()

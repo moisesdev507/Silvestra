@@ -21,6 +21,8 @@ class Oido:
         self.aviso_respaldo_dicho = False
         self._modelo_vosk = None
         self._reconocedor_vosk = None
+        self.ultimo_audio = None
+        self.duracion_ultimo_audio = 0.0
 
     def _obtener_reconocedor_vosk(self):
         """Carga perezosa del modelo Vosk sin gramática restringida para no subir el arranque ni la RAM."""
@@ -121,9 +123,13 @@ class Oido:
             raise RuntimeError("No pude usar el micrófono: " + str(e)[:120])
 
         if not hablo or len(trozos) < 5:
+            self.ultimo_audio = None
+            self.duracion_ultimo_audio = 0.0
             return None
 
         audio = np.concatenate(trozos)
+        self.ultimo_audio = audio
+        self.duracion_ultimo_audio = len(audio) / float(rate)
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as w:
             w.setnchannels(1)

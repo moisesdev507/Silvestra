@@ -63,6 +63,7 @@ import presentacion
 import propuestas
 import recordatorios
 import telegram_puente
+import voz_dueno
 from cara_qt import Cara
 from cerebro import Cerebro
 from memoria import Memoria
@@ -113,6 +114,8 @@ class Silvestra:
         self.recordatorios = recordatorios.instalar(self)
         self.cuidado = cuidado.instalar(self)
         self.propuestas = propuestas.instalar(self)
+        self.origen_entrada_actual = "chat"
+        voz_dueno.instalar(self)
 
         self.cara.root.after(100, self.revisar_cola)
 

@@ -18,6 +18,9 @@ MODELOS = {
     "hand_landmarker.task": [
         "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task",
     ],
+    "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx": [
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx",
+    ],
 }
 
 

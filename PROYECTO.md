@@ -52,7 +52,8 @@ Silvestra es una asistente de IA de escritorio para Windows, hecha por Moisés (
 - `cuidado.py`: módulo de cuidado y acompañamiento. Registro de salidas con hora prevista de regreso (`registrar_salida`, guardado en `estado.json`). Chequeos escalonados si pasan 20, 40 y 60 minutos sin señal del usuario (Telegram, voz, chat o cámara), con tono cariñoso generado por LLM y respaldo. A la segunda insistencia (40 min) envía una **nota de voz** por Telegram generada con Edge-TTS (`sendAudio` en MP3 sin requerir ffmpeg). Acción `enviar_nota_voz` y `cancelar_salida`. Respeto al descanso nocturno (22:00 a 07:00) y cancelación automática al detectar al dueño.
 - `propuestas.py` y `propuestas_prompt.py`: sistema autónomo de autopropuestas de mejora. Silvestra detecta carencias reales (acciones que no sabe hacer, errores que se repiten 3 o más veces en `silvestra.log`, correcciones del usuario "eso no era", o cuando ella lo nota en conversación con `proponer_mejora`), las almacena en `propuestas.json` (máx. 10 abiertas, sin duplicar con `ideas.json`), las presenta una vez al día por Telegram (fuera de madrugada) o por voz (`ver_propuestas`). Al aprobarse (`aprobar_propuesta`), redacta un prompt técnico estructurado para Antigravity en `propuestas/prompt_<id>.md` alimentado con un resumen de 1 línea por módulo de `PROYECTO.md` (clarificando que `hilos.py` es memoria de temas abiertos), la convención de integración (`instalar(app)` y `acciones.registrar(...)`), comandos de prueba para Windows (`.venv\Scripts\`), regla de nunca usar servicios públicos/abiertos para control y sin estimaciones individuales de KB. Lo copia al portapapeles de la laptop vía `app.cola`, lo envía por Telegram y dice: *"ya lo copié, pégalo en Antigravity"*. Si la propuesta involucra permisos elevados o privacidad, la etiqueta con `⚠️ RIESGO`. Ella nunca modifica código ni ejecuta nada por su cuenta; solo propone y redacta.
 - `escenario.py`, `escenario_estilo.py`, `escenario_fondo.py`, `escenario_intro.py`, `escenario_nodos.py`, `escenario_escenas.py`, `escenario_paneles.py`, `escenario_anillo.py`: Modo Escenario cinematográfico de ciencia ficción para la presentación universitaria. Ventana PySide6 a pantalla completa sin bordes, con zonas proporcionales sin superposiciones (1080p y 768p), secuencia de arranque táctico de 4 s ("SILVESTRA ONLINE" con autodiagnóstico secuencial), fondo con respiración suave, partículas con parallax, anillo de energía alrededor de Silvestra (protagonista a la izquierda sin burbuja flotante), panel de escena de alto contraste y tipografía grande a la derecha (máx 3-4 líneas), arco de nodos superior con impulsos de datos viajando hacia ella, barra de subtítulos inferior y letterbox cinematográfico. Incluye la escena `anillo` con renderizado 3D holográfico interactivo sensible a gestos reales y respaldo manual (teclas 1, 2, 3). Se activa con `presentarse` y se cierra con Esc o `cerrar_escenario`.
-- `estado.py` y `estado.json`: persistencia del estado (última interacción, último saludo generado, iniciativa, palabra clave y hud).
+- `voz_dueno.py`, `voz_dueno_registro.py` y `voz_dueno.npy`: reconocimiento y verificación biométrica del dueño por voz (speaker verification) local y gratuito. Utiliza el modelo CAM++ (3D-Speaker / WeSpeaker) mediante `sherpa-onnx` en modo ONNX ligero (sin PyTorch ni librerías pesadas, ~27 MB de modelo y ~19 MB de paquete). Carga perezosa del extractor, extracción de vector de 192 dimensiones a 16 kHz y comparación por similitud coseno registrada en `silvestra.log` (`[voz_dueno] similitud=0.xx umbral=0.xx`). Si una orden con acciones sensibles no supera el umbral, Silvestra se niega con gracia ("Eso solo se lo hago a Moisés, pero me da gusto escucharte") sin ejecutar la acción, mientras que la charla libre sigue funcionando normalmente. Integra doble factor con la cámara (`camara.permite()`), política *fail-open* ante fallos técnicos, audios menores a 1 segundo decididos por cámara, y exención total para el chat de la laptop y Telegram emparejado. Acciones: `registrar_mi_voz` (6 frases cortas), `calibrar_voz` (10 frases de Moisés vs 10 de otra persona para sugerir umbral óptimo en `estado.json`), `activar_verificacion_voz` y `desactivar_verificacion_voz`.
+- `estado.py` y `estado.json`: persistencia del estado (última interacción, último saludo generado, iniciativa, palabra clave, hud y verificación de voz).
 - `bajar_modelos.py`: descarga los modelos de visión y el modelo pequeño de Vosk en español a `modelos/`.
 - `App.py` y `silvestra.db`: una demo aparte con Streamlit. No tocar.
 
@@ -400,6 +401,38 @@ Al aprobar una propuesta:
 4. **Ver propuestas por voz en la laptop**:
    - Pregúntale a Silvestra: *"¿qué quieres mejorar?"*.
    - Te dirá en voz alta la propuesta pendiente.
+
+## Reconocimiento del dueño por voz (`voz_dueno.py` y `voz_dueno_registro.py`)
+Silvestra verifica biométricamente la voz de Moisés para asegurarse de que solo él pueda ejecutar acciones sensibles en la laptop, manteniéndose abierta a la conversación amistosa con invitados.
+- **Tecnología ultraligera**: modelo ONNX de WeSpeaker/3D-Speaker CAM++ (`3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx`, ~27 MB) ejecutado localmente con `sherpa-onnx` (~19 MB de paquete). Cero dependencias de PyTorch.
+- **Carga perezosa**: el extractor se carga en memoria solo cuando se requiere inferencia (< 50 MB de RAM).
+- **Registro guiado (`registrar_mi_voz`)**: Silvestra pide leer 6 frases cortas en español (~30 a 40 segundos en total), calcula sus embeddings, promedia el vector normalizado y lo guarda en `voz_dueno.npy` (excluido en `.gitignore`).
+- **Verificación y doble factor**:
+  - Al ingresar una orden por micrófono, extrae el embedding del audio y calcula la similitud coseno con el dueño.
+  - Registra cada intento en `silvestra.log`: `[voz_dueno] similitud=0.xx umbral=0.xx duracion=...`.
+  - Si la cámara está activa y reconoce la cara de Moisés (`camara.permite()`), la orden se autoriza como doble factor aunque la voz tenga puntaje bajo por ruido o lejanía.
+  - Audios < 1 segundo no se verifican por voz: decide la cámara; si no hay cámara activa, se permite charla pero no acciones.
+  - Si la similitud no alcanza el umbral y no hay cámara, Silvestra se niega con gracia y frases variadas (*"Eso solo se lo hago a Moisés, pero me da gusto escucharte"*) bloqueando la acción, pero permitiendo seguir charlando.
+  - Escribir por chat de la laptop o por Telegram emparejado siempre se acepta (nunca te deja fuera). Decir "soy Moisés" no evade la verificación biométrica.
+- **Calibración empírica (`calibrar_voz`)**: compara 10 frases de Moisés y 10 de otra persona, calculando el umbral que minimiza falsos positivos y falsos negativos, y guardándolo en `estado.json`.
+- **Modo apagable**: `activar_verificacion_voz` y `desactivar_verificacion_voz` (apagado por defecto hasta registrarse). Política *fail-open* ante cualquier error técnico.
+
+### Cómo probar la verificación de voz:
+1. **Registrar tu voz**:
+   - Di o escribe: `registrar mi voz` (o acción `registrar_mi_voz`).
+   - Lee en voz alta las 6 frases que Silvestra te irá pidiendo.
+   - Al terminar, tu vector quedará guardado en `voz_dueno.npy` y la verificación quedará activada.
+2. **Probar una orden tuya**:
+   - Di por micrófono: *"Silvestra, enciende la luz"*.
+   - Verás en `silvestra.log`: `[voz_dueno] similitud=0.9X umbral=0.65 ...`.
+   - La luz se encenderá de inmediato.
+3. **Probar con otra persona o tono impostor**:
+   - Pídele a un amigo o familiar que diga: *"Silvestra, apaga la luz"*.
+   - Verás en `silvestra.log`: `[voz_dueno] similitud=0.4X umbral=0.65 ...`.
+   - Silvestra responderá con gracia: *"Eso solo se lo hago a Moisés, pero me da gusto escucharte"* y la luz no se apagará.
+4. **Charla libre**:
+   - Tu invitado puede decirle: *"Hola Silvestra, ¿cómo estás?"* o *"¿Qué hora es?"*.
+   - Silvestra conversará con él amablemente sin bloquear la interacción.
 
 ## Límites conocidos
 - El temporizador de estudio Pomodoro se pierde si se cierra la app (los recordatorios ya sobreviven al cierre de forma persistente en `recordatorios.json`).
