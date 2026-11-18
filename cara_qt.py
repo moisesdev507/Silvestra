@@ -461,6 +461,15 @@ class Cara(QWidget):
         v.activateWindow()
         v.campo.setFocus()
 
+    def keyPressEvent(self, e):
+        if e.key() == Qt.Key_Escape:
+            try:
+                import voz_dueno_registro
+                voz_dueno_registro.cancelar()
+            except Exception:
+                pass
+        super().keyPressEvent(e)
+
     def ocultar(self):
         if self.burbuja is not None:
             self.burbuja.close()

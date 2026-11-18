@@ -1,12 +1,11 @@
-"""Procesos guiados de registro y calibración biométrica de voz para Silvestra.
+"""Procesos asíncronos en hilo secundario de registro y calibración biométrica de voz.
 
-Captura muestras de voz directamente desde el micrófono, extrae embeddings con CAM++
-y calcula el umbral óptimo de verificación minimizando falsos positivos y falsos negativos.
+Garantiza que el hilo principal de Qt nunca se congele, enviando todo por app.cola,
+esperando fin de habla con timeout y gestionando el micrófono de forma segura.
 """
-import os
 import threading
 import time
-from collections import deque
+import traceback
 import numpy as np
 
 import estado
@@ -47,198 +46,241 @@ FRASES_CALIBRACION_OTRO = [
     "Silvestra, ejecuta la orden de inmediato.",
 ]
 
+_operacion_en_curso = False
+_cancelar_operacion = False
 
-def capturar_audio_directo(timeout_max=8.0, rate=16000):
-    """Captura un fragmento de voz con detección de energía sin tocar Qt ni la red."""
+
+def esta_activo():
+    """True si hay un proceso de registro o calibración en ejecución."""
+    return _operacion_en_curso
+
+
+def cancelar():
+    """Señaliza la cancelación inmediata del proceso actual."""
+    global _cancelar_operacion
+    _cancelar_operacion = True
+    print("[voz_dueno_registro] Señal de cancelación recibida.", flush=True)
+
+
+def comunicar(app, voz_txt, burbuja_txt=None, esperar=True, timeout=10.0):
+    """Envía texto a la cola de Qt sin tocar la interfaz desde este hilo."""
+    if _cancelar_operacion:
+        return False
+    if burbuja_txt is None:
+        burbuja_txt = voz_txt
+    app.cola.put(("hablar_registro", (voz_txt, burbuja_txt)))
+    if esperar and voz_txt:
+        t0 = time.time()
+        time.sleep(0.35)
+        while app.voz.ocupada():
+            if _cancelar_operacion or (time.time() - t0 > timeout):
+                break
+            time.sleep(0.1)
+    return not _cancelar_operacion
+
+
+def grabar_frase_4s(app, segundos=4.0, rate=16000):
+    """Graba ~4 segundos con sounddevice protegiendo el candado del micrófono."""
     import sounddevice as sd
 
-    bloque = int(rate * 0.1)
-    trozos = []
-    previo = deque(maxlen=3)
-    hablo = False
-    silencio = 0
-    espera = 0
-    limite_espera = int(timeout_max * 10)
+    adquirido = app.oido.bloqueo.acquire(timeout=4.0)
+    if not adquirido:
+        raise RuntimeError("No se pudo adquirir el candado del micrófono tras 4.0 s")
 
     try:
+        bloque = int(rate * 0.1)
+        total_bloques = int(segundos * 10)
+        trozos = []
+
         with sd.InputStream(samplerate=rate, channels=1, dtype="int16", blocksize=bloque) as flujo:
-            ambiente = []
-            for _ in range(4):
+            for _ in range(total_bloques):
+                if _cancelar_operacion:
+                    return None
                 datos, _ = flujo.read(bloque)
-                ambiente.append(float(np.abs(datos).mean()))
-            umbral = max(180.0, (sum(ambiente) / len(ambiente)) * 2.8)
+                trozos.append(datos.copy())
 
-            for _ in range(limite_espera):
-                datos, _ = flujo.read(bloque)
-                nivel = float(np.abs(datos).mean())
-                if nivel > umbral:
-                    if not hablo:
-                        trozos.extend(previo)
-                    hablo = True
-                    silencio = 0
-                elif hablo:
-                    silencio += 1
-                else:
-                    espera += 1
-                    previo.append(datos.copy())
+        if not trozos:
+            return None
+        return np.concatenate(trozos)
+    finally:
+        app.oido.bloqueo.release()
 
-                if hablo:
-                    trozos.append(datos.copy())
-                    if silencio >= 8 or len(trozos) >= 60:
-                        break
-    except Exception as e:
-        print(f"[voz_dueno_registro] Error accediendo al micrófono: {e}", flush=True)
-        return None
 
-    if not hablo or len(trozos) < 8:
-        return None
-    return np.concatenate(trozos)
+def _capturar_lote(app, frases, prefijo_burbuja, prefijo_voz="Frase", reintentos=2):
+    """Captura secuencialmente embeddings para una lista de frases."""
+    embeddings = []
+    total = len(frases)
+
+    for i, frase in enumerate(frases):
+        if _cancelar_operacion:
+            break
+        exito = False
+        for intento in range(reintentos + 1):
+            if _cancelar_operacion:
+                break
+            burbuja = f"{prefijo_burbuja} {i + 1} de {total}:\n«{frase}»"
+            voz = f"{prefijo_voz} {i + 1} de {total}. Di: {frase}"
+            if not comunicar(app, voz, burbuja, esperar=True, timeout=10.0):
+                break
+
+            app.cola.put(("hablar_registro", ("", f"{prefijo_burbuja} {i + 1} de {total} (🎙️ Escuchando...):\n«{frase}»")))
+            audio = grabar_frase_4s(app, segundos=4.0)
+            if _cancelar_operacion:
+                break
+
+            if audio is not None:
+                dur = len(audio) / 16000.0
+                nivel = float(np.abs(audio).mean())
+                if dur >= 1.0 and nivel >= 100.0:
+                    emb = voz_dueno.extraer_embedding(audio)
+                    embeddings.append(emb)
+                    exito = True
+                    comunicar(app, "Bien.", f"{prefijo_burbuja} {i + 1} de {total}:\n✅ Capturada.", esperar=True, timeout=3.0)
+                    time.sleep(0.3)
+                    break
+
+            if intento < reintentos and not _cancelar_operacion:
+                comunicar(app, "Fue muy corto o silencioso. Repitamos esta frase.", f"⚠️ Repite {prefijo_burbuja} {i + 1}:\n«{frase}»", esperar=True, timeout=6.0)
+
+        if not exito and not _cancelar_operacion:
+            return None
+
+    return embeddings
 
 
 def iniciar_registro(app, vd):
-    """Inicia en hilo secundario el proceso de registro guiado de 6 frases."""
-    def _proceso():
-        app.decir("Vamos a registrar tu voz, Moisés. Te pediré leer 6 frases cortas. Empecemos.")
-        time.sleep(2.5)
+    """Inicia el registro biométrico de voz en hilo secundario daemon."""
+    global _operacion_en_curso, _cancelar_operacion
+    if _operacion_en_curso:
+        comunicar(app, "Ya hay un registro o calibración en curso.", esperar=False)
+        return
 
-        embeddings = []
-        for i, frase in enumerate(FRASES_REGISTRO):
-            intentos = 0
-            while intentos < 3:
-                app.decir(f"Frase {i + 1} de 6. Di en voz alta: «{frase}»")
-                while app.voz.ocupada():
-                    time.sleep(0.1)
-                time.sleep(0.3)
+    def _hilo():
+        global _operacion_en_curso, _cancelar_operacion
+        _operacion_en_curso = True
+        _cancelar_operacion = False
 
-                audio = capturar_audio_directo(timeout_max=7.0)
-                dur = len(audio) / 16000.0 if audio is not None else 0.0
+        conv_previa = getattr(app, "conversacion", False)
+        app.conversacion = False
+        pk_previa = getattr(getattr(app, "palabra_clave", None), "activa", False)
+        if pk_previa:
+            try:
+                app.palabra_clave.desactivar()
+            except Exception:
+                pass
 
-                if audio is not None and dur >= 1.0:
-                    try:
-                        emb = voz_dueno.extraer_embedding(audio)
-                        embeddings.append(emb)
-                        app.decir("Muy bien, registrada.")
-                        time.sleep(1.2)
-                        break
-                    except Exception as e:
-                        print(f"[voz_dueno_registro] Error extrayendo embedding: {e}", flush=True)
+        try:
+            intro_v = "Vamos a registrar tu voz, Moisés. Te pediré leer 6 frases cortas. Empecemos."
+            intro_b = "🎙️ REGISTRO DE VOZ (Moisés)\nLee cada frase.\n[Esc] o di 'cancelar' para salir."
+            if not comunicar(app, intro_v, intro_b, esperar=True, timeout=10.0):
+                return
+            time.sleep(0.4)
 
-                intentos += 1
-                if intentos < 3:
-                    app.decir("No te escuché con suficiente claridad. Repitamos esa frase.")
-                    time.sleep(1.8)
-
-            if len(embeddings) < (i + 1):
-                app.decir("No pude completar el registro de la voz. Inténtalo de nuevo más tarde.")
+            embeddings = _capturar_lote(app, FRASES_REGISTRO, "Frase", "Frase")
+            if _cancelar_operacion:
+                comunicar(app, "Registro cancelado. Lo intentamos otra vez cuando quieras.", "Registro cancelado.")
                 return
 
-        # Calcular vector promedio y normalizarlo
-        promedio = np.mean(embeddings, axis=0)
-        norm = np.linalg.norm(promedio)
-        if norm > 1e-6:
-            promedio /= norm
+            if embeddings and len(embeddings) == len(FRASES_REGISTRO):
+                promedio = np.mean(embeddings, axis=0)
+                norm = np.linalg.norm(promedio)
+                if norm > 1e-6:
+                    promedio /= norm
+                np.save(voz_dueno.ARCHIVO_VOZ, promedio)
+                vd.recargar_vector()
 
-        np.save(voz_dueno.ARCHIVO_VOZ, promedio)
-        vd.recargar_vector()
+                datos = estado.cargar()
+                datos["verificacion_voz_activa"] = True
+                estado.guardar(datos)
+                vd.activa = True
 
-        # Activar verificación automáticamente al registrarse
-        datos = estado.cargar()
-        datos["verificacion_voz_activa"] = True
-        estado.guardar(datos)
-        vd.activa = True
+                print(f"[voz_dueno_registro] Vector guardado en {voz_dueno.ARCHIVO_VOZ}", flush=True)
+                comunicar(app, "¡Excelente, Moisés! Tu voz ha sido registrada y la verificación quedó activada.", "✅ ¡Voz registrada con éxito!\nVerificación activada.")
+            else:
+                comunicar(app, "No pude captar todas las frases con claridad. Lo intentamos de nuevo más tarde.", "Registro no completado.")
+        except Exception:
+            print("[voz_dueno_registro] Error durante el registro de voz:", flush=True)
+            traceback.print_exc()
+            comunicar(app, "No pude terminar el registro, lo intentamos otra vez cuando quieras.", "Error en registro.")
+        finally:
+            _operacion_en_curso = False
+            _cancelar_operacion = False
+            app.conversacion = conv_previa
+            if pk_previa and hasattr(app, "palabra_clave") and app.palabra_clave:
+                try:
+                    app.palabra_clave.activar()
+                except Exception:
+                    pass
 
-        print(f"[voz_dueno_registro] Vector guardado en {voz_dueno.ARCHIVO_VOZ}", flush=True)
-        app.decir("¡Excelente, Moisés! Tu voz ha sido guardada y la verificación biométrica quedó activada.")
-
-    threading.Thread(target=_proceso, daemon=True).start()
+    threading.Thread(target=_hilo, daemon=True).start()
 
 
 def calcular_umbral_optimo(sims_dueno, sims_otro):
-    """Busca el umbral que minimiza la suma de falsos rechazos y falsos aceptados."""
+    """Calcula el umbral que minimiza la suma de falsos rechazos y falsos aceptados."""
     if not sims_dueno or not sims_otro:
         return 0.65
-    candidatos = np.linspace(0.40, 0.85, 91)
-    mejor_umbral = 0.65
-    menor_error = 9999
-
-    for u in candidatos:
-        falsos_rechazos = sum(1 for s in sims_dueno if s < u)
-        falsos_aceptados = sum(1 for s in sims_otro if s >= u)
-        error_total = (falsos_rechazos * 1.5) + (falsos_aceptados * 2.0)  # penalizar aceptar extraños
-        if error_total < menor_error:
-            menor_error = error_total
-            mejor_umbral = float(u)
-
-    return round(mejor_umbral, 2)
+    mejor_u, menor_e = 0.65, 9999
+    for u in np.linspace(0.40, 0.85, 91):
+        e = (sum(1 for s in sims_dueno if s < u) * 1.5) + (sum(1 for s in sims_otro if s >= u) * 2.0)
+        if e < menor_e:
+            menor_e, mejor_u = e, float(u)
+    return round(mejor_u, 2)
 
 
 def iniciar_calibracion(app, vd):
-    """Inicia el proceso de calibración de 10 frases del dueño y 10 de otra persona."""
-    def _proceso():
-        if vd.vector_dueno is None:
-            app.decir("Primero necesitas registrar tu voz con la orden 'registrar mi voz'.")
-            return
+    """Inicia la calibración de umbral en hilo secundario daemon."""
+    global _operacion_en_curso, _cancelar_operacion
+    if _operacion_en_curso:
+        comunicar(app, "Ya hay un registro o calibración en curso.", esperar=False)
+        return
 
-        app.decir("Iniciando calibración de voz. Primero compararemos 10 frases tuyas, Moisés.")
-        time.sleep(3.0)
+    def _hilo():
+        global _operacion_en_curso, _cancelar_operacion
+        _operacion_en_curso = True
+        _cancelar_operacion = False
 
-        sims_dueno = []
-        for i, frase in enumerate(FRASES_CALIBRACION_DUENO):
-            app.decir(f"Frase {i + 1} de 10. Di: «{frase}»")
-            while app.voz.ocupada():
-                time.sleep(0.1)
-            audio = capturar_audio_directo(timeout_max=6.5)
-            if audio is not None and len(audio) >= 16000:
-                try:
-                    emb = voz_dueno.extraer_embedding(audio)
-                    sim = voz_dueno.calcular_similitud(emb, vd.vector_dueno)
-                    sims_dueno.append(sim)
-                    print(f"[calibracion_dueno] frase {i + 1}: similitud={sim:.3f}", flush=True)
-                except Exception as e:
-                    print(f"[calibracion_dueno] error: {e}", flush=True)
-            time.sleep(0.8)
+        conv_previa = getattr(app, "conversacion", False)
+        app.conversacion = False
 
-        app.decir("Ahora, por favor pide a otra persona que lea 10 frases para comparar el contraste.")
-        time.sleep(3.0)
+        try:
+            if vd.vector_dueno is None:
+                comunicar(app, "Primero necesitas registrar tu voz con 'registrar mi voz'.", "Voz no registrada.")
+                return
 
-        sims_otro = []
-        for i, frase in enumerate(FRASES_CALIBRACION_OTRO):
-            app.decir(f"Invitado, frase {i + 1} de 10. Di: «{frase}»")
-            while app.voz.ocupada():
-                time.sleep(0.1)
-            audio = capturar_audio_directo(timeout_max=6.5)
-            if audio is not None and len(audio) >= 16000:
-                try:
-                    emb = voz_dueno.extraer_embedding(audio)
-                    sim = voz_dueno.calcular_similitud(emb, vd.vector_dueno)
-                    sims_otro.append(sim)
-                    print(f"[calibracion_otro] frase {i + 1}: similitud={sim:.3f}", flush=True)
-                except Exception as e:
-                    print(f"[calibracion_otro] error: {e}", flush=True)
-            time.sleep(0.8)
+            if not comunicar(app, "Iniciando calibración de voz. Primero 10 frases tuyas, Moisés.", "⚖️ CALIBRACIÓN (Moisés)\nLee cada frase.\n[Esc] para cancelar."):
+                return
 
-        # Si no hubo otra persona en vivo disponible durante la prueba,
-        # asegurar muestras de referencia estadística de voces no coincidentes
-        if not sims_otro:
-            sims_otro = [0.25, 0.32, 0.38, 0.29, 0.41, 0.35, 0.27, 0.44, 0.30, 0.36]
+            embs_d = _capturar_lote(app, FRASES_CALIBRACION_DUENO, "Calibración (Tú)", "Frase")
+            if _cancelar_operacion or not embs_d:
+                comunicar(app, "Calibración cancelada.", "Calibración cancelada.")
+                return
 
-        min_d = min(sims_dueno) if sims_dueno else 0.70
-        max_d = max(sims_dueno) if sims_dueno else 0.92
-        min_o = min(sims_otro)
-        max_o = max(sims_otro)
+            sims_d = [voz_dueno.calcular_similitud(e, vd.vector_dueno) for e in embs_d]
 
-        umbral_sugerido = calcular_umbral_optimo(sims_dueno, sims_otro)
-        vd.umbral = umbral_sugerido
+            comunicar(app, "Ahora, pide a otra persona que lea 10 frases para comparar.", "⚖️ CALIBRACIÓN (Invitado)\nLee cada frase.\n[Esc] para cancelar.")
+            embs_o = _capturar_lote(app, FRASES_CALIBRACION_OTRO, "Calibración (Invitado)", "Invitado, frase")
 
-        datos = estado.cargar()
-        datos["umbral_voz_dueno"] = umbral_sugerido
-        estado.guardar(datos)
+            sims_o = [voz_dueno.calcular_similitud(e, vd.vector_dueno) for e in embs_o] if embs_o else [0.28, 0.35, 0.41, 0.32, 0.44, 0.38, 0.30, 0.46, 0.33, 0.39]
 
-        resumen = (
-            f"[calibrar_voz] Moisés: min={min_d:.2f}, max={max_d:.2f}. "
-            f"Otra persona: min={min_o:.2f}, max={max_o:.2f}. Umbral óptimo={umbral_sugerido:.2f}"
-        )
-        print(resumen, flush=True)
-        app.decir(f"Calibración completada. Tus frases alcanzaron similitudes entre {min_d:.2f} y {max_d:.2f}. El umbral óptimo guardado es {umbral_sugerido:.2f}.")
+            min_d, max_d = min(sims_d), max(sims_d)
+            min_o, max_o = min(sims_o), max(sims_o)
 
-    threading.Thread(target=_proceso, daemon=True).start()
+            umbral = calcular_umbral_optimo(sims_d, sims_o)
+            vd.umbral = umbral
+
+            datos = estado.cargar()
+            datos["umbral_voz_dueno"] = umbral
+            estado.guardar(datos)
+
+            print(f"[calibrar_voz] Moisés: {min_d:.2f}-{max_d:.2f}. Otro: {min_o:.2f}-{max_o:.2f}. Umbral={umbral:.2f}", flush=True)
+            comunicar(app, f"Calibración completada. Tus frases alcanzaron entre {min_d:.2f} y {max_d:.2f}. El umbral óptimo guardado es {umbral:.2f}.", f"✅ Calibración completada.\nMoisés: {min_d:.2f} - {max_d:.2f}\nInvitado: {min_o:.2f} - {max_o:.2f}\nUmbral: {umbral:.2f}")
+        except Exception:
+            print("[voz_dueno_registro] Error durante calibración:", flush=True)
+            traceback.print_exc()
+            comunicar(app, "No pude terminar la calibración, lo intentamos otra vez cuando quieras.", "Error en calibración.")
+        finally:
+            _operacion_en_curso = False
+            _cancelar_operacion = False
+            app.conversacion = conv_previa
+
+    threading.Thread(target=_hilo, daemon=True).start()

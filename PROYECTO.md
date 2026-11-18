@@ -12,7 +12,8 @@ Silvestra es una asistente de IA de escritorio para Windows, hecha por Moisés (
 7. **Pintado en Qt (QPainter):** todo dispositivo de dibujo iniciado con `p = QPainter(self)` debe cerrarse dentro de un bloque `try: ... finally: p.end()`.
 8. **Mantén los archivos por debajo de unos 15 KB.** Si crecen, sepáralos en módulos.
 9. **Moisés es principiante.** Explica en español sencillo y comenta el código en español.
-10. Después de cada cambio: verifica con compilación de sintaxis, ejecuta `.venv\Scripts\python.exe main.py` y revisa `silvestra.log`.
+10. **Toda acción que espere audio, red o procesamiento debe correr en un hilo secundario; el hilo principal solo dibuja y atiende app.cola.**
+11. Después de cada cambio: verifica con compilación de sintaxis, ejecuta `.venv\Scripts\python.exe main.py` y revisa `silvestra.log`.
 
 ## Cómo se ejecuta
 - Python 3.12 con entorno virtual en `.venv`. Comando: `.venv\Scripts\python.exe main.py`

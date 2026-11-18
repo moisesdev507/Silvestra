@@ -92,6 +92,15 @@ def enviar(app, texto):
     app.cara.decir(f"«{texto}»", 60000)
 
     t_norm = normalizar(texto)
+    if "cancelar" in t_norm:
+        try:
+            import voz_dueno_registro
+            if voz_dueno_registro.esta_activo():
+                voz_dueno_registro.cancelar()
+                return
+        except Exception:
+            pass
+
     if "dejame trabajar" in t_norm:
         if getattr(app.oido, "debe_avisar_respaldo", False):
             app.oido.debe_avisar_respaldo = False

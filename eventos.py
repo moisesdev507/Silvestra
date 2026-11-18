@@ -86,6 +86,14 @@ def atender_evento(app, tipo, texto):
     elif tipo == "hablar":
         app.decir(texto)
 
+    elif tipo == "hablar_registro":
+        voz_txt, burbuja_txt = texto
+        if burbuja_txt:
+            app.cara.decir(burbuja_txt, None)
+        if voz_txt:
+            app.ultimo_dicho = voz_txt
+            app.voz.hablar(voz_txt)
+
     elif tipo == "copiar_portapapeles":
         copiado = False
         try:
