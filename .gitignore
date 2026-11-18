@@ -40,6 +40,7 @@ propuestas/
 hilos.json
 ideas.json
 notas.json
+correcciones.json
 *.db
 *.sqlite
 silvestra.db
