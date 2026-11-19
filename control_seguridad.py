@@ -105,9 +105,17 @@ class ControlSeguridad:
         self.modo_simulacion = False
 
     def _notificar(self, mensaje):
-        """Envía respuesta hablada o a la cola sin tocar Qt desde hilos secundarios."""
+        """Envía respuesta hablada o a Telegram sin tocar Qt desde hilos secundarios."""
         if not self.app:
             return
+        if self.origen_pendiente == "telegram" or getattr(self.app, "origen_entrada_actual", "") == "telegram":
+            if hasattr(self.app, "telegram") and self.app.telegram:
+                chat_id = getattr(self.app.telegram, "chat_id_autorizado", None)
+                if chat_id:
+                    try:
+                        self.app.telegram._enviar_telegram(chat_id, mensaje)
+                    except Exception:
+                        pass
         if hasattr(self.app, "decir") and threading.current_thread() is threading.main_thread():
             self.app.decir(mensaje, 3500)
         elif hasattr(self.app, "cola"):
@@ -139,8 +147,14 @@ class ControlSeguridad:
         self.origen_pendiente = None
 
     def solicitar_accion_peligrosa(self, nombre_accion, callback_ejecutar, origen=None):
-        """Inicia el desafío de seguridad para apagar, reiniciar, suspender o cerrar sesión."""
+        """Inicia el desafío de seguridad exclusivo por Telegram para acciones peligrosas."""
         origen_act = origen or getattr(self.app, "origen_entrada_actual", "voz")
+
+        if origen_act != "telegram":
+            registrar_log("CON_CODIGO", nombre_accion, origen_act, "RECHAZADO",
+                          "Acción peligrosa no permitida por voz o chat local")
+            self._notificar("Eso solo puedo hacerlo por Telegram.")
+            return False, "Eso solo puedo hacerlo por Telegram."
 
         if time.time() < self.bloqueado_hasta:
             restante = int(self.bloqueado_hasta - time.time())

@@ -32,6 +32,13 @@ def dejar_de_escuchar(app):
     """Apaga el estado de escucha y el indicador visual en la cara."""
     app.escuchando = False
     app.cara.poner_escuchando(False)
+    if getattr(app, "musica_activa", False):
+        try:
+            import control_laptop
+            if not getattr(getattr(app, "voz", None), "ocupada", lambda: False)():
+                control_laptop.restaurar_ducking()
+        except Exception:
+            pass
 
 
 def escuchar(app):
@@ -40,6 +47,12 @@ def escuchar(app):
         return
     app.escuchando = True
     app.cara.poner_escuchando(True)
+    if getattr(app, "musica_activa", False):
+        try:
+            import control_laptop
+            control_laptop.aplicar_ducking()
+        except Exception:
+            pass
     threading.Thread(target=grabar, args=(app,), daemon=True).start()
 
 
@@ -113,6 +126,20 @@ def enviar(app, texto):
         pass
 
     if t_norm in ("para", "silencio", "callate", "alto", "stop", "ya"):
+        if getattr(app, "musica_activa", False):
+            if len(t_norm.split()) > 2:
+                return
+            import config
+            if getattr(config, "VERIFICAR_DUENO_CON_MUSICA", True):
+                uv = getattr(getattr(app, "voz_dueno", None), "ultima_verificacion", {})
+                if hasattr(app, "voz_dueno") and getattr(app.voz_dueno, "activa", False) and not uv.get("es_dueno", False):
+                    return
+            app.musica_activa = False
+            try:
+                import control_laptop
+                control_laptop.restaurar_ducking()
+            except Exception:
+                pass
         if hasattr(app, "voz") and hasattr(app.voz, "detener"):
             app.voz.detener()
         app.decir("Listo, me callo.", 2000)
@@ -125,6 +152,14 @@ def enviar(app, texto):
         return
 
     if t_norm in ("deja de escuchar", "dejar de escuchar", "apaga el microfono", "deja de oir"):
+        if getattr(app, "musica_activa", False):
+            if len(t_norm.split()) > 4:
+                return
+            import config
+            if getattr(config, "VERIFICAR_DUENO_CON_MUSICA", True):
+                uv = getattr(getattr(app, "voz_dueno", None), "ultima_verificacion", {})
+                if hasattr(app, "voz_dueno") and getattr(app.voz_dueno, "activa", False) and not uv.get("es_dueno", False):
+                    return
         if app.conversacion:
             app.alternar_conversacion()
         return

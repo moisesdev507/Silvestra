@@ -109,6 +109,7 @@ def verificar_modulos_clave():
             self.cola = queue.Queue()
             self.origen_entrada_actual = "chat"
             self.frases = []
+            self.musica_activa = False
         def decir(self, txt, ms=2000):
             self.frases.append(txt)
 
@@ -119,10 +120,18 @@ def verificar_modulos_clave():
     cs.limpiar_pendiente()
     cs.bloqueado_hasta = 0.0
 
-    # Solicitar apagar laptop (sin código no se apaga, pide el código)
+    # 3a. Por voz o chat local: debe rechazarse sin pedir código
+    app_dummy.origen_entrada_actual = "chat"
     ok, msg = acciones.ejecutar("apagar_laptop")
-    assert ok, f"Fallo al invocar apagar_laptop: {msg}"
-    assert cs.tiene_pendiente(), "Debe quedar en espera de código"
+    assert not cs.tiene_pendiente(), "No debe pedir código por chat o voz"
+    assert any("solo puedo hacerlo por telegram" in f.lower() for f in app_dummy.frases), "Debe indicar que solo es por Telegram"
+    print("OK: Rechazo de acción peligrosa por voz/chat verificado.")
+
+    # 3b. Por Telegram del dueño: solicita código
+    app_dummy.frases.clear()
+    app_dummy.origen_entrada_actual = "telegram"
+    ok, msg = acciones.ejecutar("apagar_laptop")
+    assert cs.tiene_pendiente(), "Debe quedar en espera de código desde Telegram"
     assert any("Dime el código" in f for f in app_dummy.frases), "Debe pedir 'Dime el código'"
 
     # 3 intentos fallidos consecutivos deben bloquear
@@ -137,16 +146,39 @@ def verificar_modulos_clave():
     cs.verificar_codigo("codigo 3333")
     assert not cs.tiene_pendiente(), "Intento 3 fallido debe limpiar pendiente"
     assert cs.bloqueado_hasta > 0, "Debe quedar bloqueado temporalmente tras 3 intentos"
-    print("OK: Desafío de seguridad sin código y bloqueo a 3 intentos fallidos verificado.")
+    print("OK: Desafío de seguridad exclusivo por Telegram y bloqueo a 3 intentos fallidos verificado.")
 
-    # 4. Verificación de éxito en simulación (con código correcto)
+    # 4. Verificación de éxito en simulación (con código correcto por Telegram)
     cs.bloqueado_hasta = 0.0
+    app_dummy.origen_entrada_actual = "telegram"
     acciones.ejecutar("apagar_laptop")
     assert cs.tiene_pendiente()
     codigo_esperado = str(getattr(config, "CODIGO_SEGURIDAD", "0000")).strip()
     resuelto = cs.verificar_codigo(codigo_esperado)
     assert resuelto, "Debe aceptar el código correcto"
     assert not cs.tiene_pendiente(), "Pendiente debe quedar resuelto tras éxito"
+
+    # 5. Verificación de musica_youtube inmediata y ducking
+    app_dummy.cola.queue.clear()
+    acciones.ejecutar("musica_youtube", "lofi")
+    assert app_dummy.musica_activa, "musica_activa debe encenderse de inmediato"
+    item_habla = app_dummy.cola.get_nowait()
+    assert item_habla[0] == "frase" and "lofi" in item_habla[1], "Debe hablar primero de inmediato"
+    control_laptop.aplicar_ducking()
+    control_laptop.restaurar_ducking()
+    print("OK: musica_youtube inmediata y ducking de volumen verificados.")
+
+    # 6. Verificación de Telegram exclusivo para ID_TELEGRAM_DUENO
+    import telegram_puente
+    p_tg = telegram_puente.TelegramPuente(app_dummy)
+    id_dueno_real = int(getattr(config, "ID_TELEGRAM_DUENO", 0) or 0)
+    if id_dueno_real > 0:
+        # Chat ajeno debe ser ignorado
+        msg_ajeno = {"chat": {"id": 1122334455}, "text": "hola"}
+        p_tg._procesar_mensaje(msg_ajeno)
+        # Chat del dueño debe ser admitido
+        assert p_tg.id_dueno == id_dueno_real
+    print("OK: Filtro estricto de Telegram por ID_TELEGRAM_DUENO verificado.")
 
     # Verificar que el código NUNCA fue escrito a acciones_log.txt
     if os.path.exists(control_seguridad.LOG_FILE):

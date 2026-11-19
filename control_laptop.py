@@ -166,10 +166,42 @@ def ir_a(app, destino):
     threading.Thread(target=_tarea, daemon=True).start()
 
 
+_ducking_aplicado = False
+_lock_ducking = threading.Lock()
+
+
+def aplicar_ducking():
+    """Baja el volumen ~24% mientras Silvestra habla o atiende con música de fondo."""
+    global _ducking_aplicado
+    import config
+    if not getattr(config, "DUCKING_AUDIO", True):
+        return
+    with _lock_ducking:
+        if not _ducking_aplicado:
+            _tecla(0xAE, 12)
+            _ducking_aplicado = True
+
+
+def restaurar_ducking():
+    """Restaura el volumen previo al ducking."""
+    global _ducking_aplicado
+    import config
+    if not getattr(config, "DUCKING_AUDIO", True):
+        return
+    with _lock_ducking:
+        if _ducking_aplicado:
+            _tecla(0xAF, 12)
+            _ducking_aplicado = False
+
+
 def musica_youtube(app, consulta):
-    """Busca y reproduce música en YouTube extrayendo el primer videoId con requests."""
+    """Busca y reproduce música en YouTube hablando primero y buscando en segundo plano."""
+    tema = consulta or "música"
+    app.musica_activa = True
+    app.cola.put(("frase", f"Poniendo {tema} en YouTube."))
+    control_seguridad.registrar_log("LIBRE", "musica_youtube", "app", "SOLICITADO", tema)
+
     def _tarea():
-        tema = consulta or ""
         url_busq = f"https://www.youtube.com/results?search_query={urllib.parse.quote(tema)}"
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         video_id = None
@@ -184,11 +216,9 @@ def musica_youtube(app, consulta):
 
         if video_id:
             webbrowser.open(f"https://www.youtube.com/watch?v={video_id}&autoplay=1")
-            app.cola.put(("frase", f"Poniendo {tema} en YouTube."))
             control_seguridad.registrar_log("LIBRE", "musica_youtube", "app", "EXITO", video_id)
         else:
             webbrowser.open(url_busq)
-            app.cola.put(("frase", f"Buscando {tema} en YouTube."))
             control_seguridad.registrar_log("LIBRE", "musica_youtube", "app", "FALLBACK", tema)
 
     threading.Thread(target=_tarea, daemon=True).start()
@@ -213,6 +243,9 @@ def multimedia(app, orden):
         for k, (vk, reps, msg, act) in MAPA_MULTIMEDIA.items():
             if k in o:
                 _tecla(vk, reps)
+                if k in ("pausa", "reanudar", "silenciar", "mute"):
+                    app.musica_activa = False
+                    restaurar_ducking()
                 app.cola.put(("frase", msg))
                 control_seguridad.registrar_log("LIBRE", act, "app", "EXITO")
                 return
@@ -287,19 +320,16 @@ def instalar(app):
     reg("guardar_captura", lambda: multimedia(app, "captura"), "guarda captura en el Escritorio")
     reg("bloquear_pantalla", lambda: multimedia(app, "bloquear"), "bloquea la pantalla de Windows")
 
-    # 2. Acciones con código
-    f_ap = _registrar_peligrosa(app, "apagar", ["shutdown", "/s", "/t", "10", "/c", "Silvestra"], "Apagando la laptop en diez segundos.")
-    f_re = _registrar_peligrosa(app, "reiniciar", ["shutdown", "/r", "/t", "10", "/c", "Silvestra"], "Reiniciando la laptop en diez segundos.")
-    f_su = _registrar_peligrosa(app, "suspender", ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"], "Suspendiendo la laptop.")
-    f_cs = _registrar_peligrosa(app, "cerrar_sesion", ["shutdown", "/l"], "Cerrando sesión de Windows.")
-
-    for n in ("apagar_laptop", "apagar_pc", "apagar_computadora"):
-        reg(n, f_ap, "apaga la laptop tras verificar el código")
-    for n in ("reiniciar_laptop", "reiniciar_pc"):
-        reg(n, f_re, "reinicia la laptop tras verificar el código")
-    for n in ("suspender_laptop", "suspender_pc"):
-        reg(n, f_su, "suspende la laptop tras verificar el código")
-    for n in ("cerrar_sesion_laptop", "cerrar_sesion"):
-        reg(n, f_cs, "cierra sesión tras verificar el código")
+    # 2. Acciones con código (solo por Telegram)
+    peligrosas = [
+        (("apagar_laptop", "apagar_pc", "apagar_computadora"), "apagar", ["shutdown", "/s", "/t", "10", "/c", "Silvestra"], "Apagando la laptop en diez segundos."),
+        (("reiniciar_laptop", "reiniciar_pc"), "reiniciar", ["shutdown", "/r", "/t", "10", "/c", "Silvestra"], "Reiniciando la laptop en diez segundos."),
+        (("suspender_laptop", "suspender_pc"), "suspender", ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"], "Suspendiendo la laptop."),
+        (("cerrar_sesion_laptop", "cerrar_sesion"), "cerrar_sesion", ["shutdown", "/l"], "Cerrando sesión de Windows."),
+    ]
+    for nombres, act, cmd, msg in peligrosas:
+        fn = _registrar_peligrosa(app, act, cmd, msg)
+        for n in nombres:
+            reg(n, fn, f"{act} tras código por Telegram")
 
     print("[control_laptop] Acciones registradas correctamente.", flush=True)

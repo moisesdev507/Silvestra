@@ -8,6 +8,12 @@ garantizando que ninguna operación sobre la interfaz gráfica ocurra desde hilo
 def atender_evento(app, tipo, texto):
     """Procesa un evento extraído de app.cola."""
     if tipo == "frase":
+        if getattr(app, "musica_activa", False):
+            try:
+                import control_laptop
+                control_laptop.aplicar_ducking()
+            except Exception:
+                pass
         if hasattr(app, "escenario") and app.escenario and app.escenario.isVisible():
             app.escenario.actualizar_subtitulo(texto)
         if app.flujo is None:
@@ -186,6 +192,12 @@ def atender_evento(app, tipo, texto):
 
     elif tipo == "fin_voz":
         app.flujo = None
+        if getattr(app, "musica_activa", False) and not app.escuchando:
+            try:
+                import control_laptop
+                control_laptop.restaurar_ducking()
+            except Exception:
+                pass
         if hasattr(app, "cara") and app.cara:
             app.cara.programar_retorno_neutral(2500)
         if app.pendiente_descanso:
@@ -207,6 +219,12 @@ def atender_evento(app, tipo, texto):
                 app.origen_entrada_actual = "microfono"
                 if hasattr(app, "voz_dueno") and app.voz_dueno:
                     app.voz_dueno.evaluar_entrada_voz(texto)
+                if getattr(app, "musica_activa", False) and getattr(config, "VERIFICAR_DUENO_CON_MUSICA", True):
+                    uv = getattr(getattr(app, "voz_dueno", None), "ultima_verificacion", {})
+                    if hasattr(app, "voz_dueno") and getattr(app.voz_dueno, "activa", False) and not uv.get("es_dueno", False):
+                        print(f"[oido] Audio ignorado durante música (no verificado como dueño CAM++): '{texto[:40]}'", flush=True)
+                        app.escuchar()
+                        return
                 app.enviar(texto)
 
     elif tipo == "silencio":

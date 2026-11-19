@@ -46,6 +46,8 @@ CLAVE_COHERE = ""
 # 11. Telegram Bot (Para hablar con Silvestra desde el celular - Opcional)
 # Crea tu bot gratis con @BotFather en Telegram y copia el token aquí
 TOKEN_TELEGRAM = ""
+# ID numérico de Telegram del dueño (consíguelo con @userinfobot). Solo este ID podrá interactuar con Silvestra.
+ID_TELEGRAM_DUENO = 0
 
 # Modelos en Groq (se prueban en orden; si uno falla o supera cuota, pasa al siguiente)
 MODELOS = [
@@ -351,5 +353,12 @@ EMOCIONES_VOZ = {
 
 # Código de seguridad para acciones peligrosas de la laptop (apagar, reiniciar, suspender, cerrar sesión)
 CODIGO_SEGURIDAD = "0000"
+
+# Atenuación automática de volumen (audio ducking ~25%) mientras Silvestra habla o atiende con música de fondo
+DUCKING_AUDIO = True
+
+# Verificación estricta del dueño (CAM++) durante reproducción de música
+VERIFICAR_DUENO_CON_MUSICA = True
+
 
 

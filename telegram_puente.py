@@ -35,13 +35,16 @@ class TelegramPuente:
         self.app = app
         self.token = getattr(config, "TOKEN_TELEGRAM", "").strip()
         self.activo = bool(self.token)
-        self.chat_id_autorizado = estado.cargar().get("telegram_chat_id")
+        self.id_dueno = int(getattr(config, "ID_TELEGRAM_DUENO", 0) or 0)
+        self.chat_id_autorizado = self.id_dueno if self.id_dueno > 0 else estado.cargar().get("telegram_chat_id")
         self.codigo_pendiente = None
         self.tiempo_codigo = 0.0
         self.historial_proactivo = []
         self._hilo = None
         self._detener = threading.Event()
         self.medios = GestorMediosTelegram(self)
+        if self.id_dueno <= 0:
+            print("[telegram] AVISO: ID_TELEGRAM_DUENO es 0 o falta en config.py. El bot NO ejecutará acciones.", flush=True)
 
     def _guardar_chat_autorizado(self, chat_id):
         datos = estado.cargar()
@@ -123,55 +126,54 @@ class TelegramPuente:
         if chat_id is None:
             return
 
+        id_dueno = int(getattr(config, "ID_TELEGRAM_DUENO", 0) or 0)
+        if id_dueno <= 0:
+            print(f"[telegram] AVISO: ID_TELEGRAM_DUENO no configurado. Mensaje ignorado de chat_id={chat_id}", flush=True)
+            try:
+                import control_seguridad
+                control_seguridad.registrar_log("TELEGRAM", "mensaje_ignorado", f"id={chat_id}", "RECHAZADO", "ID_TELEGRAM_DUENO es 0 o falta")
+            except Exception:
+                pass
+            return
+
+        if chat_id != id_dueno:
+            print(f"[telegram] Mensaje ignorado de usuario no autorizado: chat_id={chat_id}", flush=True)
+            try:
+                import control_seguridad
+                control_seguridad.registrar_log("TELEGRAM", "mensaje_ignorado", f"id={chat_id}", "RECHAZADO", "Usuario no coincide con ID_TELEGRAM_DUENO")
+            except Exception:
+                pass
+            return
+
+        self.chat_id_autorizado = chat_id
         texto = msg.get("text", "")
         texto_limpio = (texto or "").strip()
 
-        # Dueño ya registrado: autorizar solo a su chat_id, silencio absoluto al resto
-        if self.chat_id_autorizado is not None:
-            if chat_id != self.chat_id_autorizado:
-                print(f"[telegram] Mensaje ignorado de chat no autorizado: {chat_id}", flush=True)
-                return
-
-            # 1. Notas de voz o audios entrantes
-            if "voice" in msg or "audio" in msg:
-                self.medios.procesar_nota_voz(msg)
-                return
-
-            # 2. Fotos entrantes (con o sin texto)
-            if "photo" in msg:
-                self.medios.procesar_foto(msg)
-                return
-
-            # 3. Texto normal
-            if texto_limpio:
-                self._atender_dueno(chat_id, texto_limpio)
+        # 1. Notas de voz o audios entrantes
+        if "voice" in msg or "audio" in msg:
+            self.medios.procesar_nota_voz(msg)
             return
 
-        # Modo emparejamiento inicial
-        if texto_limpio.lower() == "/start":
-            self.codigo_pendiente = f"{random.randint(100000, 999999)}"
-            self.tiempo_codigo = time.time()
-            print(f"[telegram] Solicitud /start de chat_id={chat_id}. Código generado.", flush=True)
-            self._enviar_telegram(chat_id, "Dile a Silvestra el código que ve en la pantalla")
-            self.app.cola.put(("telegram_codigo", self.codigo_pendiente))
+        # 2. Fotos entrantes (con o sin texto)
+        if "photo" in msg:
+            self.medios.procesar_foto(msg)
             return
 
-        if self.codigo_pendiente and texto_limpio == self.codigo_pendiente:
-            if time.time() - self.tiempo_codigo <= 600:
-                self._guardar_chat_autorizado(chat_id)
-                self.codigo_pendiente = None
-                print(f"[telegram] Dispositivo vinculado con éxito chat_id={chat_id}", flush=True)
-                self._enviar_telegram(chat_id, "¡Vinculado con éxito! Ya puedes hablar conmigo.")
-                self.app.cola.put(("telegram_vinculado", None))
-                return
-            self.codigo_pendiente = None
-
-        print(f"[telegram] Mensaje ignorado en emparejamiento chat_id={chat_id}", flush=True)
+        # 3. Texto normal
+        if texto_limpio:
+            self._atender_dueno(chat_id, texto_limpio)
 
     def _atender_dueno(self, chat_id, texto):
-        print(f"[telegram] Mensaje recibido de chat_id={chat_id} (longitud={len(texto)})", flush=True)
+        print(f"[telegram] Mensaje recibido de dueño chat_id={chat_id} (longitud={len(texto)})", flush=True)
         if not texto:
             return
+
+        self.app.origen_entrada_actual = "telegram"
+
+        # Intercepción de código de seguridad antes del LLM
+        if hasattr(self.app, "control_seguridad") and self.app.control_seguridad.tiene_pendiente():
+            if self.app.control_seguridad.verificar_codigo(texto):
+                return
 
         if hasattr(self.app, "cuidado") and self.app.cuidado:
             try:

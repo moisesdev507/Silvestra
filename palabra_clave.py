@@ -220,6 +220,8 @@ class PalabraClave:
 
     def _disparar(self):
         # Solo enviar evento a la cola de la app. NO tocar Qt desde este hilo.
+        if getattr(self.app, "musica_activa", False):
+            return
         if self.app.descansando:
             self.app.cola.put(("despertar", None))
         elif self.siempre_atenta and not self.app.conversacion:

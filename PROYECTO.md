@@ -1051,11 +1051,12 @@ Para mantener todos los archivos bajo el límite de 15 KB, `cerebro.py` se divid
   - `apps_permitidas.json`: lista blanca editable de ejecutables (`chrome`, `edge`, `spotify`, `notepad`, `calculadora`, `word`, etc.).
   - `abrir_app` / `cerrar_app`: apertura y cierre controlado vía `subprocess` con lista de argumentos (sin `shell=True`). `cerrar_app` ejecuta `taskkill` sin `/F` primero y tiene prohibición estricta de cerrar procesos críticos (`python`, `code`, `antigravity`, `silvestra`, `main`).
   - `ir_a`: navegación a carpetas del sistema (Escritorio, Documentos, Descargas, Proyecto) y sitios web permitidos (YouTube, Google, Gmail, GitHub, Wikipedia), además de retorno a la ventana anterior con Alt+Tab (`ctypes`).
-  - `musica_youtube`: búsqueda del primer `videoId` con `requests` sin librerías externas y reproducción directa con autoplay (`watch?v=ID&autoplay=1`).
+  - `musica_youtube`: respuesta hablada inmediata ("Poniendo música en YouTube...") sin esperar peticiones de red, búsqueda de `videoId` en segundo plano con `requests` y reproducción directa con autoplay. Incluye atenuación de volumen automática (audio ducking ~25%, `DUCKING_AUDIO`) mientras Silvestra habla o escucha, y filtro estricto de órdenes durante música (`VERIFICAR_DUENO_CON_MUSICA`) para evitar disparos falsos de Whisper o activación de "Listo, dejo de escuchar".
   - `multimedia`: subir/bajar volumen, silenciar, pausar/reanudar, siguiente/anterior canción con `keybd_event` de Windows, minimizar todo (Win+D), captura de pantalla con `PIL.ImageGrab` guardada en Escritorio y bloqueo de estación de trabajo con `LockWorkStation()`. Todo en hilos secundarios entregando resultados a `app.cola`.
-- **Nivel CON CÓDIGO (seguridad estricta)**:
+- **Nivel CON CÓDIGO (exclusivo por Telegram)**:
   - Acciones peligrosas: `apagar_laptop`, `reiniciar_laptop`, `suspender_laptop`, `cerrar_sesion_laptop`.
-  - Validación del dueño: solo se aceptan si la voz fue verificada como el dueño (CAM++) o provienen de Telegram / chat local del dueño.
+  - Exclusividad Telegram: si se piden por voz o chat local, responde *"Eso solo puedo hacerlo por Telegram."* y no solicita código.
+  - Validación de dueño en Telegram: únicamente se atienden si el `chat_id` coincide con `ID_TELEGRAM_DUENO` de `config.py`. Mensajes de terceros se ignoran en silencio y se registran en `acciones_log.txt` (solo ID y hora, sin el mensaje). Si `ID_TELEGRAM_DUENO` es 0 o falta, el bot no ejecuta acciones.
   - Desafío interactivo: Silvestra responde *"Dime el código."* y la siguiente frase se procesa localmente contra `CODIGO_SEGURIDAD` en `config.py`.
   - Entiende números hablados ("dos cero cero seis") y dígitos ("2006").
   - Máximo 3 intentos y caducidad de 30 segundos. Al fallar 3 veces se bloquea temporalmente por 60 segundos.

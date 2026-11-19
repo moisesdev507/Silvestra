@@ -55,7 +55,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - Enrutamiento inteligente a múltiples LLM con fallback, pool Keep-Alive y enfriamiento 429 exacto.
 - Memoria duradera con fechas, categorías y filtro de privacidad.
 - Acciones por voz: recuerdos, recordatorios persistentes, estado de proveedores, silencio y control de escucha.
-- Control de laptop por niveles: libre (apps/sitios permitidos, volumen, multimedia, carpetas), con código (apagar, reiniciar, suspender con desafío local de 3 intentos/30s) y prohibido (comandos libres, borrar archivos) con log de auditoría.
+- Control de laptop por niveles: libre (apps/sitios, volumen, multimedia, música con habla inmediata y ducking ~25%), peligroso exclusivo por Telegram (apagar, reiniciar con código local `CODIGO_SEGURIDAD` y verificación `ID_TELEGRAM_DUENO`) y prohibido con log de auditoría.
 - Modo reposo y panel para tablet vía navegador web.
 - Suite de prueba de humo (`prueba_humo.py`) y arquitectura modular (todos los archivos <= 15 KB).
 
