@@ -41,6 +41,8 @@ hilos.json
 ideas.json
 notas.json
 correcciones.json
+conversaciones_dia.json
+perfil_conversacion.json
 *.db
 *.sqlite
 silvestra.db
