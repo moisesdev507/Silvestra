@@ -57,6 +57,7 @@ Silvestra es una asistente de IA de escritorio para Windows, hecha por Moisés (
 - `control_pc.py`: control seguro de la computadora bajo una lista de permisos (allowlist) estricta. Maneja apertura de programas autorizados en `config.py` (bloc de notas, calculadora, navegador, explorador, VS Code), control de volumen y reproducción musical mediante teclas multimedia nativas de Windows con `ctypes` (sin paquetes pesados), y apertura de sitios web seguros o búsquedas en YouTube en hilos secundarios daemon. Protegido 100% por la verificación de voz del dueño (`voz_dueno`), sin comandos de consola libres ni apagado del equipo. Registro con prefijo `[control_pc]`. Acciones: `abrir_programa`, `volumen`, `musica`, `abrir_web` y `buscar_youtube`.
 - `correcciones.py` y `correcciones.json`: sistema de lecciones aprendidas y correcciones del usuario. Detecta cuando Moisés corrige a Silvestra ("no, eso no", "así no", "te equivocaste", "mejor haz..."), almacena qué dijo ella y qué pidió el usuario (máx. 50 entradas FIFO con filtro estricto contra claves/contraseñas), e inyecta las 5 correcciones más relevantes en el prompt del sistema (`instrucciones()`) para que el cerebro aprenda y no repita errores. No duplica con `memoria.json`. Acciones: `mis_correcciones` (las lee/muestra) y `olvidar_correccion` (elimina una por número).
 - `resumen.py`: módulo de resumen inteligente de páginas web y videos de YouTube. Descarga páginas por HTTPS con `requests` (timeout 10 s, tamaño máx. 2 MB) y extrae texto limpio con `html.parser` de la biblioteca estándar (sin dependencias pesadas). Para videos de YouTube obtiene subtítulos reales sin inventar (con detección de disponibilidad). Incluye lectura directa del enlace copiado en el portapapeles (`resumir_portapapeles`), segmentación y aviso para textos extensos (~12,000 caracteres), defensas estrictas contra inyección de prompt (el contenido es tratado como dato e ignora cualquier orden interna) y bloqueo total de URLs no https o direcciones locales/internas (localhost, 192.168.x, 10.x). Todo se ejecuta en hilos secundarios y entrega el resultado a través de `app.cola`. Acciones: `resumir_pagina`, `resumir_video` y `resumir_portapapeles`.
+- `aprendizaje.py`, `aprendizaje_datos.py`, `conversaciones_dia.json` y `perfil_conversacion.json`: sistema de aprendizaje continuo y perfil conversacional. Registra las conversaciones del día (hasta 7 días) con hora y emoción, con filtro estricto contra contraseñas o tokens. Realiza una reflexión nocturna (9 PM o al cerrar la app) en hilo secundario enviando las charlas a la cadena multillm para extraer: estilo de Moisés (palabras, apodos, muletillas, formalidad, largo), costumbres y rutinas, hilos con fecha para seguimiento y bromas/referencias internas. Solo analiza lo que Moisés dijo expresamente (sin conjeturas sobre salud ni emociones). Inyecta un resumen compacto (máx. ~600 caracteres) en el prompt del cerebro junto a las correcciones. Si un hilo venció su fecha, le pregunta cómo le fue una sola vez en horario diurno y lo cierra cuando conteste. Acciones: `que_has_aprendido`, `olvidar_aprendizaje`, `borrar_perfil` y `reflexionar_aprendizaje`.
 - `estado.py` y `estado.json`: persistencia del estado (última interacción, último saludo generado, iniciativa, palabra clave, hud y verificación de voz).
 - `bajar_modelos.py`: descarga los modelos de visión y el modelo pequeño de Vosk en español a `modelos/`.
 - `App.py` y `silvestra.db`: una demo aparte con Streamlit. No tocar.
@@ -612,6 +613,51 @@ Permite a Silvestra leer páginas web y transcripciones de videos para sintetiza
    - Di o escribe: *"Resume lo que tengo en el portapapeles"* (acción `resumir_portapapeles`).
    - Silvestra detectará el enlace del portapapeles, identificará el tipo de contenido y dirá el resumen en voz alta.
 
+## Módulo de Aprendizaje Continuo y Perfil de Conversación (`aprendizaje.py`, `aprendizaje_datos.py`)
+Permite a Silvestra aprender de la forma de hablar de Moisés, sus rutinas e intereses para ofrecer un trato cada vez más personalizado, respetuoso y natural:
+- **Registro de charlas (`conversaciones_dia.json`)**:
+  - Almacena las interacciones diarias con hora y emoción detectada.
+  - Conserva únicamente los últimos 7 días (rotación FIFO automática).
+  - Filtro estricto contra credenciales: no guarda mensajes que contengan palabras como `clave`, `password`, `token`, `api_key`, `secret`, `gsk_`, etc.
+- **Reflexión nocturna en segundo plano (`perfil_conversacion.json`)**:
+  - Se ejecuta a las 9:00 PM o al cerrar la aplicación (sin bloquear el hilo principal de Qt).
+  - Sintetiza mediante la cadena multillm:
+    (a) Estilo lingüístico: apodos, modismos panameños, muletillas, formalidad y largo típico.
+    (b) Costumbres y rutinas horarias mencionadas.
+    (c) Hilos abiertos: citas, compromisos o eventos con fecha (ej: examen, viaje).
+    (d) Bromas y referencias internas compartidas.
+  - Regla ética absoluta: analiza solo lo dicho explícitamente por Moisés, sin hacer jamás suposiciones ni juicios sobre salud física, mental o emocional.
+  - Si los proveedores de IA no responden, la reflexión se pospone silenciosamente sin generar errores.
+- **Inyección en el cerebro**:
+  - Inserta un resumen ultracompacto (máximo ~600 caracteres) en `instrucciones()` junto a las reglas aprendidas de correcciones, sin duplicar encabezados.
+  - Modula su tono al estilo del usuario sin imitaciones forzadas ni burlas.
+  - Retoma como máximo un hilo abierto y solo si encaja con naturalidad, sin sonar a interrogatorio policial.
+- **Hilos con fecha y seguimiento**:
+  - Si la fecha de un evento o compromiso ya pasó, le pregunta con calidez cómo le fue una sola vez y dentro de horarios prudentes (entre 7:00 AM y 10:00 PM, respetando horas silenciosas).
+  - Al recibir la respuesta de Moisés, el hilo se marca automáticamente como cerrado.
+- **Acciones y control del usuario**:
+  - `que_has_aprendido`: lee un resumen por voz y muestra en la burbuja el perfil completo.
+  - `olvidar_aprendizaje | tema`: borra del perfil un dato concreto (palabra, costumbre o hilo).
+  - `borrar_perfil`: borra el perfil y el historial tras pedir confirmación expresa (`borrar_perfil | confirmar`).
+  - `reflexionar_aprendizaje`: fuerza la reflexión nocturna de inmediato para pruebas.
+
+### Cómo probar el aprendizaje continuo:
+1. **Conversar normalmente**:
+   - Habla o escribe con Silvestra en el chat (ej: *"Silvestra compa, mañana tengo examen de programación"*).
+   - Verás en `silvestra.log`: `[aprendizaje]` registrando la interacción en `conversaciones_dia.json`.
+2. **Forzar la reflexión nocturna para aprender de inmediato**:
+   - Di o escribe: *"Silvestra, reflexiona sobre lo que hemos hablado"* (o ejecuta la acción `reflexionar_aprendizaje`).
+   - Silvestra analizará en segundo plano con el LLM y actualizará `perfil_conversacion.json`.
+3. **Consultar lo aprendido**:
+   - Di o escribe: *"¿Qué has aprendido de mí?"* (o la acción `que_has_aprendido`).
+   - Silvestra te dirá por voz un resumen de tu estilo y mostrará en la burbuja la tarjeta con tu perfil, palabras, costumbres e hilos.
+4. **Verificar el seguimiento de hilos**:
+   - Cuando llegue la fecha del examen, al saludar o hablarle, Silvestra te preguntará con amabilidad cómo te fue con el examen.
+   - Al responderle (ej: *"Me fue muy bien"*), el hilo se marcará como cerrado y no volverá a insistir.
+5. **Olvidar un dato o borrar el perfil**:
+   - Para olvidar un dato: *"olvida lo que aprendiste sobre [dato]"* (acción `olvidar_aprendizaje | examen`).
+   - Para borrar todo: acción `borrar_perfil` (te pedirá confirmación) y luego `borrar_perfil | confirmar`.
+
 ## Límites conocidos
 - El temporizador de estudio Pomodoro se pierde si se cierra la app (los recordatorios ya sobreviven al cierre de forma persistente en `recordatorios.json`).
 - Los gestos asumen mano derecha con los dedos hacia arriba.
@@ -630,7 +676,7 @@ Permite a Silvestra leer páginas web y transcripciones de videos para sintetiza
 El proyecto cuenta con un repositorio local Git para respaldar el código de forma segura sin subir datos sensibles a internet:
 - **Archivos protegidos e ignorados (`.gitignore`)**:
   - Claves privadas y tokens: `config.py` (usa [config.example.py](file:///c:/Proyecto_Silvestra/config.example.py) como plantilla sin claves), archivos `.env`.
-  - Datos personales de Moisés: `dueno.npy` (vector biométrico facial), `voz_dueno.npy` (biometría de voz), `memoria.json`, `correcciones.json`, `estado.json`, `diario.md`, `recordatorios.json`, `hilos.json`, `ideas.json`, `notas.json`.
+  - Datos personales de Moisés: `dueno.npy` (vector biométrico facial), `voz_dueno.npy` (biometría de voz), `memoria.json`, `correcciones.json`, `estado.json`, `diario.md`, `recordatorios.json`, `hilos.json`, `ideas.json`, `notas.json`, `conversaciones_dia.json`, `perfil_conversacion.json`.
   - Archivos pesados y generados: carpeta `modelos/`, `propuestas/`, `propuestas.json`, registros `silvestra.log`, base de datos `silvestra.db` y caché `__pycache__/`, `.venv/`.
 - **Regla de oro de control de versiones:**
   - **Haz siempre un commit antes de pedir un cambio grande a Gemini / Antigravity**. De este modo, si alguna modificación rompe la estabilidad o no te gusta el resultado, podrás volver al estado anterior inmediatamente con un solo comando.

@@ -44,6 +44,7 @@ threading.excepthook = _excepthook_thread
 from groq import Groq
 
 import acciones
+import aprendizaje
 import camara
 import casa
 import config
@@ -125,6 +126,7 @@ class Silvestra:
         control_pc.instalar(self)
         correcciones.instalar(self)
         self.resumen = resumen.instalar(self)
+        self.aprendizaje = aprendizaje.instalar(self)
 
         self.cara.root.after(100, self.revisar_cola)
 

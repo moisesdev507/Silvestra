@@ -1,0 +1,287 @@
+"""Persistencia y datos para el perfil de conversación y registro de charlas."""
+import datetime
+import json
+import os
+import re
+import threading
+
+BASE = os.path.dirname(os.path.abspath(__file__))
+ARCHIVO_CONVERSACIONES = os.path.join(BASE, "conversaciones_dia.json")
+ARCHIVO_PERFIL = os.path.join(BASE, "perfil_conversacion.json")
+
+_lock = threading.RLock()
+
+PALABRAS_PRIVADAS = (
+    "clave",
+    "password",
+    "contraseñ",
+    "contrasena",
+    "token",
+    "api_key",
+    "apikey",
+    "secret",
+    "gsk_",
+    "sk-",
+    "pin de acceso",
+    "credencial",
+    "tarjeta",
+    "cvv",
+)
+
+PERFIL_POR_DEFECTO = {
+    "estilo": {
+        "palabras_y_apodos": [],
+        "muletillas": [],
+        "formalidad": "informal y cercana",
+        "largo_tipico": "frases cortas y directas",
+    },
+    "costumbres_y_horarios": [],
+    "hilos_abiertos": [],
+    "bromas_y_referencias": [],
+    "ultima_reflexion": None,
+}
+
+
+def log(mensaje):
+    """Imprime mensajes con el prefijo estandarizado [aprendizaje]."""
+    print(f"[aprendizaje] {mensaje}", flush=True)
+
+
+def contiene_datos_sensibles(texto):
+    """True si el texto contiene términos asociados a claves o credenciales."""
+    if not texto:
+        return False
+    t = str(texto).lower()
+    return any(p in t for p in PALABRAS_PRIVADAS)
+
+
+def es_buen_momento():
+    """True si no estamos en horas silenciosas o madrugada (7:00 a 22:00)."""
+    h = datetime.datetime.now().hour
+    return 7 <= h < 22
+
+
+def cargar_conversaciones():
+    """Carga conversaciones_dia.json podando días que superen los 7 días."""
+    with _lock:
+        if not os.path.exists(ARCHIVO_CONVERSACIONES):
+            return {}
+        try:
+            with open(ARCHIVO_CONVERSACIONES, "r", encoding="utf-8") as f:
+                datos = json.load(f)
+                if not isinstance(datos, dict):
+                    return {}
+            limite = (datetime.date.today() - datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+            return {k: v for k, v in datos.items() if k >= limite}
+        except Exception as e:
+            log(f"Error leyendo {ARCHIVO_CONVERSACIONES}: {e}")
+            return {}
+
+
+def guardar_conversaciones(datos):
+    """Guarda conversaciones_dia.json manteniendo solo los últimos 7 días."""
+    with _lock:
+        try:
+            limite = (datetime.date.today() - datetime.timedelta(days=7)).strftime("%Y-%m-%d")
+            podado = {k: v for k, v in datos.items() if k >= limite}
+            with open(ARCHIVO_CONVERSACIONES, "w", encoding="utf-8") as f:
+                json.dump(podado, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            log(f"Error guardando {ARCHIVO_CONVERSACIONES}: {e}")
+            return False
+
+
+def cargar_perfil():
+    """Carga perfil_conversacion.json asegurando la estructura por defecto."""
+    with _lock:
+        if not os.path.exists(ARCHIVO_PERFIL):
+            return json.loads(json.dumps(PERFIL_POR_DEFECTO))
+        try:
+            with open(ARCHIVO_PERFIL, "r", encoding="utf-8") as f:
+                datos = json.load(f)
+                if isinstance(datos, dict):
+                    res = json.loads(json.dumps(PERFIL_POR_DEFECTO))
+                    res.update(datos)
+                    if not isinstance(res.get("estilo"), dict):
+                        res["estilo"] = dict(PERFIL_POR_DEFECTO["estilo"])
+                    return res
+        except Exception as e:
+            log(f"Error leyendo {ARCHIVO_PERFIL}: {e}")
+        return json.loads(json.dumps(PERFIL_POR_DEFECTO))
+
+
+def guardar_perfil(datos):
+    """Guarda perfil_conversacion.json de forma segura."""
+    with _lock:
+        try:
+            with open(ARCHIVO_PERFIL, "w", encoding="utf-8") as f:
+                json.dump(datos, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            log(f"Error guardando {ARCHIVO_PERFIL}: {e}")
+            return False
+
+
+def registrar_interaccion(usuario, respuesta, emocion="neutral"):
+    """Registra un turno de conversación y cierra hilos pendientes al contestar Moisés."""
+    if not usuario or not respuesta:
+        return
+
+    if contiene_datos_sensibles(usuario) or contiene_datos_sensibles(respuesta):
+        log("Conversación descartada del registro por contener términos sensibles.")
+        return
+
+    with _lock:
+        hoy_str = datetime.date.today().strftime("%Y-%m-%d")
+        hora_str = datetime.datetime.now().strftime("%H:%M:%S")
+
+        perfil = cargar_perfil()
+        hilos = perfil.get("hilos_abiertos", [])
+        cambio_hilos = False
+        for h in hilos:
+            if h.get("esperando_respuesta") and not h.get("cerrado"):
+                h["cerrado"] = True
+                h["esperando_respuesta"] = False
+                cambio_hilos = True
+                log(f"Hilo cerrado tras respuesta del usuario: «{h.get('tema')}»")
+
+        if cambio_hilos:
+            guardar_perfil(perfil)
+
+        datos = cargar_conversaciones()
+        lista_dia = datos.setdefault(hoy_str, [])
+        lista_dia.append({
+            "hora": hora_str,
+            "usuario": str(usuario).strip()[:400],
+            "respuesta": str(respuesta).strip()[:400],
+            "emocion": str(emocion).strip(),
+        })
+        guardar_conversaciones(datos)
+
+
+def extraer_json_robusto(texto):
+    """Parsea el bloque JSON retornado por el modelo LLM."""
+    if not texto:
+        return None
+    limpio = re.sub(r"^```(?:json)?\s*", "", texto.strip(), flags=re.I)
+    limpio = re.sub(r"\s*```$", "", limpio.strip())
+    try:
+        return json.loads(limpio)
+    except Exception:
+        m = re.search(r"\{.*\}", limpio, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group(0))
+            except Exception:
+                pass
+    return None
+
+
+def resumen_para_prompt(texto_actual=None):
+    """Genera un resumen corto del perfil (<= ~600 caracteres) para el prompt del cerebro."""
+    with _lock:
+        perfil = cargar_perfil()
+        estilo = perfil.get("estilo", {})
+        palabras = estilo.get("palabras_y_apodos", [])
+        muletillas = estilo.get("muletillas", [])
+        costumbres = perfil.get("costumbres_y_horarios", [])
+        bromas = perfil.get("bromas_y_referencias", [])
+        hilos = perfil.get("hilos_abiertos", [])
+
+        if not any([palabras, muletillas, costumbres, bromas, hilos]):
+            return ""
+
+        hoy_str = datetime.date.today().strftime("%Y-%m-%d")
+        hilo_preguntar = None
+        if es_buen_momento():
+            for h in hilos:
+                if not h.get("cerrado") and not h.get("preguntado"):
+                    fecha = h.get("fecha")
+                    if fecha and fecha <= hoy_str:
+                        hilo_preguntar = h
+                        h["preguntado"] = True
+                        h["esperando_respuesta"] = True
+                        guardar_perfil(perfil)
+                        break
+
+        detalles = []
+        form = estilo.get("formalidad")
+        largo = estilo.get("largo_tipico")
+        if form or largo:
+            detalles.append(f"Tono {form or 'cercano'}, {largo or 'frases directas'}")
+        if palabras:
+            detalles.append(f"Vocabulario: {', '.join(palabras[:3])}")
+        if muletillas:
+            detalles.append(f"Muletillas: {', '.join(muletillas[:2])}")
+        if costumbres:
+            detalles.append(f"Costumbres: {'; '.join(costumbres[:2])}")
+        if bromas:
+            detalles.append(f"Referencias: {'; '.join(bromas[:2])}")
+
+        hilos_activos = [h for h in hilos if not h.get("cerrado")]
+        if hilo_preguntar:
+            detalles.append(f"Tema cumplido para preguntar hoy cómo le fue: «{hilo_preguntar.get('tema')}»")
+        elif hilos_activos:
+            primero = hilos_activos[0]
+            f_str = f" ({primero.get('fecha')})" if primero.get("fecha") else ""
+            detalles.append(f"Tema abierto: «{primero.get('tema')}»{f_str}")
+
+        linea_datos = "; ".join(detalles)
+        guia = (
+            "Perfil conversacional de Moisés (refleja su estilo con naturalidad sin burlarte):\n"
+            f"- {linea_datos}.\n"
+            "Regla: retoma máximo UN tema si viene al caso con delicadeza, sin interrogar."
+        )
+
+        if len(guia) > 600:
+            guia = guia[:596] + "..."
+        return guia
+
+
+def eliminar_del_perfil(clave):
+    """Borra un elemento coincidente de estilo, costumbres, hilos o bromas."""
+    with _lock:
+        perfil = cargar_perfil()
+        c = clave.strip().lower()
+        borrado = False
+
+        estilo = perfil.get("estilo", {})
+        p_ant = len(estilo.get("palabras_y_apodos", []))
+        estilo["palabras_y_apodos"] = [p for p in estilo.get("palabras_y_apodos", []) if c not in p.lower()]
+        if len(estilo["palabras_y_apodos"]) < p_ant:
+            borrado = True
+
+        m_ant = len(estilo.get("muletillas", []))
+        estilo["muletillas"] = [m for m in estilo.get("muletillas", []) if c not in m.lower()]
+        if len(estilo["muletillas"]) < m_ant:
+            borrado = True
+
+        c_ant = len(perfil.get("costumbres_y_horarios", []))
+        perfil["costumbres_y_horarios"] = [item for item in perfil.get("costumbres_y_horarios", []) if c not in item.lower()]
+        if len(perfil["costumbres_y_horarios"]) < c_ant:
+            borrado = True
+
+        b_ant = len(perfil.get("bromas_y_referencias", []))
+        perfil["bromas_y_referencias"] = [item for item in perfil.get("bromas_y_referencias", []) if c not in item.lower()]
+        if len(perfil["bromas_y_referencias"]) < b_ant:
+            borrado = True
+
+        h_ant = len(perfil.get("hilos_abiertos", []))
+        perfil["hilos_abiertos"] = [
+            h for h in perfil.get("hilos_abiertos", [])
+            if c not in h.get("tema", "").lower() and str(h.get("id")) != c
+        ]
+        if len(perfil["hilos_abiertos"]) < h_ant:
+            borrado = True
+
+        if borrado:
+            guardar_perfil(perfil)
+        return borrado
+
+
+def reiniciar_perfil_y_conversaciones():
+    """Restablece los datos a su estado vacío inicial."""
+    with _lock:
+        guardar_perfil(json.loads(json.dumps(PERFIL_POR_DEFECTO)))
+        guardar_conversaciones({})

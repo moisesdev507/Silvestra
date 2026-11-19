@@ -166,6 +166,15 @@ class Cerebro:
         except Exception:
             pass
 
+        bloque_aprendizaje = ""
+        try:
+            import aprendizaje
+            res_ap = aprendizaje.resumen_para_prompt(texto_actual)
+            if res_ap:
+                bloque_aprendizaje = f"\n{res_ap}\n"
+        except Exception:
+            pass
+
         return (
             f"Te llamas {m.nombre}. Vives en la laptop de {m.creador}, quien te dio vida. "
             f"Tu propósito, según {m.creador}: {m.proposito}.\n"
@@ -205,6 +214,7 @@ class Cerebro:
             "Si la pantalla muestra claves, tokens o contraseñas, jamás las leas en voz alta ni las guardes en RECUERDO.\n\n"
             f"Lo que sabes:\n{hechos}\n\n"
             f"{bloque_correcciones}"
+            f"{bloque_aprendizaje}"
             "EMOCIONES DISPONIBLES para modular tu voz (úsalas con moderación y sutileza, solo cuando la situación lo amerite):\n"
             "- neutral: tono conversacional y tranquilo por defecto.\n"
             "- alegre: para buenas noticias, saludos entusiastas o momentos felices.\n"
@@ -235,6 +245,11 @@ class Cerebro:
             self.memoria.recordar(recuerdo)
         self.historial.append({"role": "assistant", "content": respuesta})
         self._podar_historial()
+        try:
+            import aprendizaje
+            aprendizaje.registrar_interaccion(texto, respuesta, emocion)
+        except Exception as e:
+            print(f"[aprendizaje] Error al registrar interacción: {e}", flush=True)
         return respuesta, accion, emocion
 
     def reflexionar(self, modulo_hilos):

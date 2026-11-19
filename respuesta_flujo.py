@@ -16,4 +16,9 @@ def responder_flujo(cerebro, texto, al_frase):
     cerebro.historial.append({"role": "assistant", "content": respuesta})
     if hasattr(cerebro, "_podar_historial"):
         cerebro._podar_historial()
+    try:
+        import aprendizaje
+        aprendizaje.registrar_interaccion(texto, respuesta, emocion)
+    except Exception as e:
+        print(f"[aprendizaje] Error al registrar interacción: {e}", flush=True)
     return respuesta, accion, emocion
