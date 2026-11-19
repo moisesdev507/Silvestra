@@ -33,6 +33,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - **`recordatorios.py`**: Recordatorios por voz persistentes en disco (`recordatorios.json`).
 - **`control_laptop.py` / `control_seguridad.py`**: Control de la laptop por niveles (libre, con código y prohibido) con lista permitida y auditoría.
 - **`pantalla_remota.py`**: Servidor local para visualizar panel en navegador móvil.
+- **`respaldo.py`**: Copia de seguridad zip fuera de Git (`~/Documents/Respaldos_Silvestra`) con rotación a 10 archivos sin claves.
 - **`presencia.py` / `camara.py`**: Presencia y seguimiento facial con MediaPipe.
 - **`prueba_humo.py`**: Suite de validación rápida de sintaxis, reglas de 15 KB y módulos clave.
 
@@ -60,6 +61,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - Memoria duradera con fechas, categorías y filtro de privacidad.
 - Acciones por voz: recuerdos, recordatorios persistentes, proveedores y control de escucha.
 - Control de laptop por niveles: libre (apps/sitios, volumen, música inmediata y ducking), peligroso exclusivo por Telegram (apagar, reiniciar con código local y verificación `ID_TELEGRAM_DUENO`) y prohibido con auditoría.
+- Respaldo automático fuera de Git (`respaldo.py`, acción `crear_respaldo`) con rotación a 10 archivos en Documentos sin claves.
 - Modo reposo y panel para tablet vía navegador web.
 - Suite de prueba de humo (`prueba_humo.py`) y arquitectura modular (todos los archivos <= 15 KB).
 
@@ -69,7 +71,6 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - [ ] **Respaldo local:** Modelo SLM/LLM cuantizado local (Ollama / llama.cpp) para operar 100% offline.
 - [ ] **Iniciativa propia:** Saludos o comentarios espontáneos en momentos adecuados sin esperar turno.
 - [ ] **Núcleo headless y nube:** Separar lógica para correr 24/7 en VPS conectada al bot de Telegram.
-- [ ] **Respaldos fuera de Git:** Script para respaldar `memoria.json`, audios y config en carpeta segura.
 - [ ] **Anillo físico:** Pospuesto hasta contar con el hardware del anillo físico Bluetooth.
 
 ## 6. Guía de prompts para Gemini (Antigravity)

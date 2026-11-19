@@ -369,27 +369,10 @@ def instalar(app):
     """Instala el módulo de pantalla remota y registra sus acciones en Silvestra."""
     gestor = GestorPantallaRemota(app)
     app.pantalla_remota = gestor
-
-    acciones.registrar(
-        "mostrar_en_tablet",
-        lambda: gestor.accion_mostrar_en_tablet(),
-        "muestra la cara de Silvestra en una tablet o pantalla remota de la red local con un código QR y enlace.",
-    )
-    acciones.registrar(
-        "ocultar_en_tablet",
-        lambda: gestor.accion_ocultar_en_tablet(),
-        "apaga el servidor de pantalla remota para tablet.",
-    )
-    acciones.registrar(
-        "tablet_modo_privado",
-        lambda: gestor.accion_modo_privado(),
-        "activa el modo privado en la tablet para ocultar los recordatorios del panel de reloj.",
-    )
-    acciones.registrar(
-        "tablet_modo_normal",
-        lambda: gestor.accion_modo_normal(),
-        "activa el modo normal en la tablet para mostrar los recordatorios en el panel de reloj.",
-    )
-
+    reg = acciones.registrar
+    reg("mostrar_en_tablet", gestor.accion_mostrar_en_tablet, "muestra la cara de Silvestra en tablet con QR y enlace.")
+    reg("ocultar_en_tablet", gestor.accion_ocultar_en_tablet, "apaga el servidor de pantalla remota para tablet.")
+    reg("tablet_modo_privado", gestor.accion_modo_privado, "oculta los recordatorios en la tablet.")
+    reg("tablet_modo_normal", gestor.accion_modo_normal, "muestra los recordatorios en la tablet.")
     log("Módulo de pantalla remota instalado.")
     return gestor

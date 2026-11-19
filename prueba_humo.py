@@ -238,7 +238,7 @@ def verificar_modulos_clave():
         "recordatorios", "cuidado", "propuestas", "voz_dueno",
         "control_pc", "control_laptop", "correcciones", "resumen",
         "aprendizaje", "pantalla_remota", "presencia", "proveedores",
-        "conversacion"
+        "respaldo", "conversacion"
     ]
     for m in modulos_sistema:
         try:

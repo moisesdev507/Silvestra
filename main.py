@@ -72,6 +72,7 @@ import presentacion
 import propuestas
 import proveedores
 import recordatorios
+import respaldo
 import resumen
 import telegram_puente
 import voz_dueno
@@ -140,6 +141,7 @@ class Silvestra:
         self.pantalla_remota = pantalla_remota.instalar(self)
         self.presencia = presencia.instalar(self)
         proveedores.instalar(self)
+        respaldo.instalar(self)
         conversacion.instalar(self)
 
         self.cara.root.after(100, self.revisar_cola)

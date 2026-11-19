@@ -102,4 +102,8 @@ CATEGORIAS_ACCIONES = {
         {"recordatorio", "recordar", "acuerdate", "avisame", "aviso", "alarma"},
         {"poner_recordatorio", "listar_recordatorios", "cancelar_recordatorio", "recordar"}
     ),
+    "respaldo": (
+        {"respaldo", "respaldar", "copia de seguridad", "backup", "guardar copia", "hacer backup", "hacer respaldo"},
+        {"crear_respaldo"}
+    ),
 }
