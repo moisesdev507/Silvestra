@@ -96,7 +96,7 @@ def clasificar_dificultad(texto):
     return "charla"
 
 
-def marcar_enfriamiento(enfriamientos, nombre, modelo=None, headers=None):
+def marcar_enfriamiento(enfriamientos, nombre, modelo=None, headers=None, motivo=None):
     """Pone a un modelo o proveedor en pausa durante 60 s o según Retry-After (máx 60 s)."""
     duracion = 60.0
     if headers:
@@ -107,13 +107,14 @@ def marcar_enfriamiento(enfriamientos, nombre, modelo=None, headers=None):
             except ValueError:
                 duracion = 60.0
     ahora = time.time()
+    motivo_str = f" motivo='{motivo}'" if motivo else ""
     if modelo:
         clave = f"{nombre}::{modelo}"
         enfriamientos[clave] = ahora + duracion
-        print(f"[tiempo] enfriamiento modelo={clave} duracion={duracion:.0f}s", flush=True)
+        print(f"[tiempo] enfriamiento modelo={clave}{motivo_str} duracion={duracion:.0f}s", flush=True)
     else:
         enfriamientos[nombre] = ahora + duracion
-        print(f"[tiempo] enfriamiento proveedor={nombre} duracion={duracion:.0f}s", flush=True)
+        print(f"[tiempo] enfriamiento proveedor={nombre}{motivo_str} duracion={duracion:.0f}s", flush=True)
 
 
 def proveedores_disponibles(tarea, enfriamientos, claves_anteriores):
@@ -224,8 +225,12 @@ def obtener_candidatos_tarea(tarea, enfriamientos):
             # Si el proveedor no tiene modelos para esta tarea (ej. visión en Cerebras/Cohere)
             continue
 
-        # Filtrar modelos que tengan su propio enfriamiento 429 activo
-        modelos_disponibles = [m for m in modelos if ahora >= enfriamientos.get(f"{nombre}::{m}", 0)]
+        # Filtrar modelos que tengan su propio enfriamiento 429 activo o estén desactivados
+        import proveedores_validador as pv
+        modelos_disponibles = [
+            m for m in modelos
+            if ahora >= enfriamientos.get(f"{nombre}::{m}", 0) and not pv.esta_desactivado(nombre, m)
+        ]
         if not modelos_disponibles:
             # Todos los modelos de este proveedor están agotados por cuota
             continue
@@ -246,7 +251,10 @@ def obtener_candidatos_tarea(tarea, enfriamientos):
             continue
         if ahora < enfriamientos.get(n, 0):
             continue
-        mods_act = [m for m in mods if ahora >= enfriamientos.get(f"{n}::{m}", 0)]
+        mods_act = [
+            m for m in mods
+            if ahora >= enfriamientos.get(f"{n}::{m}", 0) and not pv.esta_desactivado(n, m)
+        ]
         if not mods_act:
             continue
         extras_cands.append({

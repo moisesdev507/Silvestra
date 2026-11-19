@@ -881,6 +881,40 @@ Permite a Silvestra detectar la presencia física de su dueño frente a la lapto
    - Di o escribe: *"desactiva la presencia"* (acción `desactivar_presencia`).
    - Silvestra confirmará: *"Detección de presencia desactivada."*
 
+## Validación dinámica de modelos, Enfriamiento detallado y Poda de Prompt
+
+### 1. Depuración de modelos de Groq y validación dinámica al arrancar
+- **Modelos Groq corregidos**: Se removieron de la configuración los modelos inexistentes o dados de baja (`llama-3.1-8b-instant`, `llama-3.3-70b-versatile`, `llama3-8b-8192`, `llama-3.1-70b-versatile`). Quedan activos los vigentes: `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3.8-27b`, `allam-2-7b` y `whisper-large-v3-turbo`.
+- **Validación automática al arrancar (`proveedores_validador.py`)**:
+  - Al iniciar Silvestra, un hilo secundario en segundo plano (`ValidadorModelos`) consulta `GET /models` en cada proveedor configurado con clave válida.
+  - Compara los modelos devueltos con los configurados en `config.py` y `PROVEEDORES_EXTRA`.
+  - Cualquier modelo que no figure en la lista oficial del proveedor se desactiva automáticamente, registrando:
+    `[proveedores] modelo inexistente={modelo} desactivado`
+  - Si un proveedor no soporta `/models` o falla la red, no se desactiva nada por error.
+
+### 2. Logs de enfriamiento enriquecidos y control de tokens por minuto (TPM)
+- **Motivo real de enfriamiento**:
+  - Cuando un modelo o proveedor entra en enfriamiento por HTTP 429, HTTP 404 o timeout, el log registra el motivo exacto y fragmento de la respuesta:
+    `[tiempo] enfriamiento modelo={proveedor}::{modelo} motivo='HTTP 429: Rate limit reached...' duracion=60s`
+    `[tiempo] enfriamiento modelo={proveedor}::{modelo} motivo='HTTP 404: The model does not exist' duracion=60s`
+    `[tiempo] enfriamiento modelo={proveedor}::{modelo} motivo='timeout: ...' duracion=60s`
+- **Diagnóstico y solución de `qwen/qwen3.8-27b` y `openai/gpt-oss-20b`**:
+  - En Groq, estos modelos imponen un límite estricto de 7,000 u 8,000 tokens de entrada por minuto (ITPM) y 200,000 tokens por día (TPD).
+  - Anteriormente, el prompt enviaba 4,534 tokens sin limitar `max_tokens`, por lo que 2 peticiones en un minuto superaban el cupo ITPM y disparaban 429.
+  - Se fijó `max_tokens: 500` en las peticiones y se podó el prompt a ~1,150 tokens, permitiendo varias consultas por minuto dentro del cupo gratuito de Groq.
+
+### 3. Poda de prompt a menos de 2000 tokens y desglose en log
+- **Desglose de tokens en log**:
+  - En cada interacción se desglosa el aporte de tokens de cada componente:
+    `[tiempo] prompt_desglose alma={tok_alma} memoria={tok_memoria} perfil={tok_perfil} correcciones={tok_corr} historial={tok_hist} instrucciones={tok_inst} total={tok_total}`
+    `[tiempo] prompt_tokens={tok_total} anterior={tokens_base} ahorro={ahorro}%`
+- **Estrategia de poda (< 1,200 tokens totales, ahorro ~59%)**:
+  - **Recuerdos relevantes**: Filtra `memoria.hechos` buscando coincidencia de palabras con el mensaje actual del usuario; selecciona máximo 3 hechos relevantes (o los 3 más recientes si no hay coincidencia).
+  - **Acciones compactas**: Se depuran y acortan las descripciones de las más de 60 acciones del sistema a frases breves de hasta 50 caracteres, ahorrando más de 1,000 tokens.
+  - **Historial reducido**: Se envían únicamente los últimos 4 turnos (`[-4:]`), recortando respuestas largas de Silvestra a 150 caracteres.
+  - **Perfil y correcciones limitados**: Fragmentos concisos de máximo 250 caracteres cada uno.
+  - **Fidelidad**: Se mantiene intacta la personalidad de Silvestra, español panameño, tono cálido y la **regla anti-invención estricta**.
+
 ## Límites conocidos
 - El temporizador de estudio Pomodoro se pierde si se cierra la app (los recordatorios ya sobreviven al cierre de forma persistente en `recordatorios.json`).
 - Los gestos asumen mano derecha con los dedos hacia arriba.

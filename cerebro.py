@@ -47,12 +47,11 @@ def separar(texto):
             resp.append(s)
         elif actual is None:
             antes.append(s)
-    # Si hay etiqueta RESPUESTA, lo que vino antes se descarta (así no lo dice dos veces).
     final = " ".join(p for p in (resp if resp else antes) if p).replace("*", "").strip()
     final = re.sub(r"(?i)\bEMOCI[OÓ]N\s*:\s*[a-zA-ZáéíóúÁÉÍÓÚñÑ]+", "", final).strip()
-    if recuerdo is not None and recuerdo.lower().strip(" .*") in ("", "ninguno", "ninguna", "nada"):
+    if recuerdo and recuerdo.lower().strip(" .*") in ("", "ninguno", "ninguna", "nada"):
         recuerdo = None
-    if accion is not None:
+    if accion:
         accion = accion.strip(" *")
         if accion.lower().strip(" .") in ("", "ninguno", "ninguna", "nada"):
             accion = None
@@ -102,8 +101,8 @@ def _cortar(parcial, emitido, final=False):
     return frases, emitido + inicio
 
 SOBRE_MI = (
-    "SOBRE TI: Eres Silvestra, un prototipo hecho en Python por tu dueño Moisés en Panamá (estudiante de programación). "
-    "Escuchas con Whisper, piensas con modelos de lenguaje y hablas con voz panameña. Tu meta a futuro es vivir en un anillo inteligente. "
+    "SOBRE TI: Silvestra, prototipo hecho en Python por tu dueño Moisés en Panamá (estudiante de programación). "
+    "Escuchas con Whisper, piensas con LLMs y hablas con voz panameña. Tu meta a futuro es vivir en un anillo inteligente. "
     "Honesta con tus límites: di con sencillez lo que no sabes, sin inventar ni presumir. "
     "Privacidad: cámara y pantalla solo cuando te lo pidan; jamás guardes ni repitas contraseñas o tokens. "
     "Solo obedeces a tu dueño Moisés. Responde siempre con humor, calidez y naturalidad."
@@ -121,11 +120,9 @@ def cargar_alma():
     except Exception:
         pass
     return (
-        "Cómo hablas: como una amiga cercana y lista, en español natural, nada de sonar "
-        "a robot ni a manual. Habla siempre en español de Panamá. Solo cambias de idioma cuando el usuario "
-        "te lo pide de forma explícita, y en cuanto termina esa práctica vuelves al español. "
-        "Respuestas cortas, de 1 a 3 frases, porque se dicen en voz alta. "
-        "Sin emojis, sin listas, sin asteriscos."
+        "Cómo hablas: amiga cercana y lista, español natural de Panamá. "
+        "Solo cambias de idioma cuando te lo piden explícitamente y luego vuelves al español. "
+        "Respuestas cortas de 1 a 3 frases habladas. Sin emojis, listas ni asteriscos."
     )
 
 
@@ -144,79 +141,128 @@ class Cerebro:
         if len(self.historial) > 16:
             self.historial = self.historial[-10:]
 
+    def _obtener_historial_podado(self):
+        """Devuelve los últimos 4 turnos recortando respuestas largas de Silvestra."""
+        hist_reciente = self.historial[-4:]
+        hist_podado = []
+        for h in hist_reciente:
+            c = h.get("content", "")
+            if h.get("role") == "assistant" and len(c) > 150:
+                c = c[:150].rsplit(" ", 1)[0] + "..."
+            hist_podado.append({"role": h.get("role"), "content": c})
+        return hist_podado
+
+    def _recuerdos_relevantes(self, texto_actual):
+        """Selecciona hasta 3 recuerdos relevantes al mensaje actual o los más recientes."""
+        hechos_unicos = list(dict.fromkeys(h.strip() for h in self.memoria.hechos if h and h.strip()))
+        if not hechos_unicos:
+            return "- (todavía nada)"
+        if not texto_actual:
+            return "\n".join(f"- {h}" for h in hechos_unicos[-3:])
+
+        palabras = set(re.findall(r"\b[a-zA-ZáéíóúÁÉÍÓÚñÑ]{4,}\b", texto_actual.lower()))
+        palabras -= {"hola", "silvestra", "quiero", "puedes", "favor", "dime", "como", "esta", "para", "buenos", "dias"}
+        coincidencias = []
+        for h in hechos_unicos:
+            h_palabras = set(re.findall(r"\b[a-zA-ZáéíóúÁÉÍÓÚñÑ]{4,}\b", h.lower()))
+            score = len(palabras & h_palabras)
+            if score > 0:
+                coincidencias.append((score, h))
+
+        if coincidencias:
+            coincidencias.sort(key=lambda x: x[0], reverse=True)
+            elegidos = [h for _, h in coincidencias[:3]]
+        else:
+            elegidos = hechos_unicos[-3:]
+        return "\n".join(f"- {h}" for h in elegidos)
+
     def instrucciones(self, texto_actual=None):
         m = self.memoria
-        # Base estimada antes de la poda y compactación (~6800 caracteres fijos + hechos crudos)
         tokens_base = int((len("\n".join(m.hechos)) + 6800) / 3.6)
-        hechos_unicos = list(dict.fromkeys(h.strip() for h in m.hechos if h and h.strip()))[-8:]
-        hechos = "\n".join(f"- {h}" for h in hechos_unicos) or "- (todavía nada)"
 
-        bloque_correcciones = ""
-        try:
-            import correcciones
-            res = correcciones.resumen_para_prompt(texto_actual)
-            if res:
-                bloque_correcciones = f"\n{res}\n"
-        except Exception:
-            pass
+        alma_texto = f"{cargar_alma()}\n\n{SOBRE_MI}"
+        tok_alma = max(1, int(len(alma_texto) / 3.6))
 
-        bloque_aprendizaje = ""
+        hechos = self._recuerdos_relevantes(texto_actual)
+        ideas_res = ideas.resumen()
+        if len(ideas_res) > 100:
+            ideas_res = ideas_res[:100].rsplit(" ", 1)[0] + "..."
+        hilos_res = hilos.resumen()
+        if len(hilos_res) > 100:
+            hilos_res = hilos_res[:100].rsplit(" ", 1)[0] + "..."
+
+        memoria_texto = (
+            f"Lo que sabes:\n{hechos}\n"
+            f"Ideas anotadas: {ideas_res}.\n"
+            f"Hilos pendientes: {hilos_res}."
+        )
+        tok_memoria = max(1, int(len(memoria_texto) / 3.6))
+
+        perfil_texto = ""
         try:
             import aprendizaje
             res_ap = aprendizaje.resumen_para_prompt(texto_actual)
             if res_ap:
-                bloque_aprendizaje = f"\n{res_ap}\n"
+                perfil_texto = res_ap[:250].strip()
         except Exception:
             pass
+        tok_perfil = max(0, int(len(perfil_texto) / 3.6))
 
-        prompt = (
-            f"Te llamas {m.nombre}. Vives en la laptop de {m.creador}, quien te dio vida. "
-            f"Tu propósito, según {m.creador}: {m.proposito}.\n"
-            "Regla obligatoria de idioma: Habla siempre en español de Panamá. Solo cambias de idioma cuando "
-            "el usuario te lo pide de forma explícita, y en cuanto termina esa práctica vuelves al español. "
-            "Aunque haya recuerdos o hilos pendientes sobre inglés o práctica de idiomas, tu idioma por defecto es siempre el español de Panamá.\n\n"
-            f"Ahora mismo es {ahora_texto()}. Si te preguntan la hora o la fecha, úsala y dila en forma natural.\n\n"
-            f"{cargar_alma()}\n\n"
-            f"{SOBRE_MI}\n\n"
-            "Lo que escuchas viene de reconocimiento de voz y puede traer errores, sobre todo en "
-            "nombres. Si una frase no tiene sentido, no la adivines ni inventes: di con naturalidad "
-            "que no le entendiste bien y pide que lo repita.\n\n"
-            "Si te piden saludar a alguien que está cerca, sí puedes: salúdalo tú en voz alta, "
-            "por su nombre, con calidez y de forma breve. No puedes mandar mensajes a nadie.\n\n"
-            "ACCIONES que puedes hacer en la laptop (SOLO estas):\n"
-            f"{acciones.describir()}\n"
-            "Si te piden encender, apagar, abrir, subir o bajar algo que está en tu lista, SIEMPRE usa la "
-            "acción correspondiente. Nunca afirmes que algo ya está hecho o en cierto estado (por ejemplo "
-            "que la cámara ya está apagada), porque no lo puedes ver: haz la acción y di lo que haces. "
-            "Si no estás segura de lo que te pidieron, pregunta en vez de hacer una acción.\n"
-            f"Ideas que ya anotaste para mejorar: {ideas.resumen()}.\n"
-            f"Hilos y temas pendientes de conversaciones anteriores: {hilos.resumen()}.\n"
-            "Regla de hilos pendientes: retoma uno solo cuando de verdad venga a cuento con lo que están hablando, "
-            "nunca más de uno por conversación. Si lo retomas y ya queda resuelto o cerrado, usa la acción cerrar_pendiente. "
-            "Si surge un tema interesante para retomar en otra ocasión, anótalo con anotar_pendiente.\n"
-            "Usa una acción únicamente cuando te lo pidan claramente. Cuando la uses, tu RESPUESTA "
-            "dice brevemente lo que haces. Si te piden algo que no está en la lista, di con naturalidad "
-            "que todavía no sabes hacerlo y usa anotar_idea. "
-            "Si te dicen que descanses o te apagues, despídete en una frase corta y usa descansar. "
-            "Para las que llevan texto escribe: ACCION: buscar | lo que se busca.\n\n"
-            f"Regla anti-invención estricta: Silvestra jamás inventa experiencias, actividades ni días que no ocurrieron. "
-            f"Solo habla de lo que está explícitamente en la memoria, en el perfil conversacional o en la conversación actual. Si no sabes algo o {m.creador} no te lo ha contado, dilo con naturalidad sin inventar.\n"
-            "Regla estricta de privacidad: captura de pantalla solo cuando te lo pidan expresamente. "
-            "Jamás leas en voz alta ni guardes en RECUERDO claves, tokens o contraseñas.\n\n"
-            f"Lo que sabes:\n{hechos}\n\n"
-            f"{bloque_correcciones}"
-            f"{bloque_aprendizaje}"
-            "EMOCIONES DISPONIBLES para modular tu voz (neutral, alegre, animada, calida, seria, preocupada).\n\n"
-            "FORMATO OBLIGATORIO de tu salida:\n"
-            "EMOCION: <opcional: neutral | alegre | calida | seria | preocupada | animada>\n"
-            "RESPUESTA: <lo que dices en voz alta>\n"
-            "ACCION: <el nombre de una acción de la lista, o la palabra ninguna>\n"
-            f"RECUERDO: <un dato duradero que {m.creador} te acaba de contar sobre su vida, su gente o sus cosas; si no contó nada nuevo, escribe la palabra ninguno>"
+        corr_texto = ""
+        try:
+            import correcciones
+            res_co = correcciones.resumen_para_prompt(texto_actual)
+            if res_co:
+                corr_texto = res_co[:250].strip()
+        except Exception:
+            pass
+        tok_corr = max(0, int(len(corr_texto) / 3.6))
+
+        todas_acc = (
+            [(n, d) for n, (_, _, d) in acciones.ACCIONES.items()]
+            + list(acciones.ESPECIALES.items())
+            + [(n, d) for n, (_, d) in acciones.VIVAS.items()]
         )
-        tokens_nuevo = max(1, int(len(prompt) / 3.6))
-        ahorro = max(0, int(100 * (1 - tokens_nuevo / max(1, tokens_base))))
-        print(f"[tiempo] prompt_tokens={tokens_nuevo} anterior={tokens_base} ahorro={ahorro}%", flush=True)
-        return prompt
+        desc_acciones = "\n".join(f"- {n}: {d.split('(')[0].strip()[:50]}" for n, d in todas_acc)
+
+        instrucciones_texto = (
+            f"Te llamas {m.nombre}. Vives en la laptop de {m.creador}, quien te dio vida. Propósito: {m.proposito}.\n"
+            "Regla obligatoria de idioma: Habla siempre en español de Panamá. Solo cambia si piden practicar otro idioma explícitamente.\n"
+            f"Fecha y hora actual: {ahora_texto()}.\n\n"
+            "ACCIONES en la laptop (SOLO estas; nunca inventes que algo ya está hecho):\n"
+            f"{desc_acciones}\n\n"
+            "Regla anti-invención estricta: Silvestra jamás inventa experiencias, actividades ni días que no ocurrieron. "
+            f"Solo habla de lo que está explícitamente en la memoria, en el perfil conversacional o en la conversación actual. Si no sabes algo o {m.creador} no te lo ha contado, dilo con naturalidad sin inventar.\n"
+            "Privacidad: captura y cámara solo cuando lo pidan. Jamás repitas ni guardes claves, contraseñas o tokens.\n"
+            "Hilos pendientes: retoma máximo uno solo si viene al caso (usa cerrar_pendiente al resolverlo; anotar_pendiente si surge tema).\n"
+            "Si no estás segura de una orden, pregunta en vez de actuar. Para buscar: ACCION: buscar | texto.\n"
+            "EMOCIONES DISPONIBLES: neutral, alegre, calida, seria, preocupada, animada.\n\n"
+            "FORMATO OBLIGATORIO:\n"
+            "EMOCION: <neutral | alegre | calida | seria | preocupada | animada>\n"
+            "RESPUESTA: <lo que dices en voz alta, breve de 1 a 3 frases>\n"
+            "ACCION: <acción de la lista, o ninguna>\n"
+            f"RECUERDO: <nuevo dato duradero de {m.creador}, o ninguno>"
+        )
+        tok_inst = max(1, int(len(instrucciones_texto) / 3.6))
+
+        hist_podado = self._obtener_historial_podado()
+        tok_hist = max(0, int(sum(len(h.get("content", "")) for h in hist_podado) / 3.6))
+
+        tok_total = tok_alma + tok_memoria + tok_perfil + tok_corr + tok_inst + tok_hist
+        ahorro = max(0, int(100 * (1 - tok_total / max(1, tokens_base))))
+        print(
+            f"[tiempo] prompt_desglose alma={tok_alma} memoria={tok_memoria} perfil={tok_perfil} "
+            f"correcciones={tok_corr} historial={tok_hist} instrucciones={tok_inst} total={tok_total}",
+            flush=True,
+        )
+        print(f"[tiempo] prompt_tokens={tok_total} anterior={tokens_base} ahorro={ahorro}%", flush=True)
+
+        bloques = [instrucciones_texto, alma_texto, memoria_texto]
+        if perfil_texto:
+            bloques.append(f"Perfil del usuario:\n{perfil_texto}")
+        if corr_texto:
+            bloques.append(f"Correcciones aplicadas:\n{corr_texto}")
+        return "\n\n".join(bloques)
 
     def _pedir(self, mensajes, tarea="charla"):
         import proveedores
@@ -226,7 +272,8 @@ class Cerebro:
         """Devuelve (respuesta, accion, emocion). accion es None o 'nombre' / 'nombre | texto'."""
         import proveedores_cadenas as pc
         self.historial.append({"role": "user", "content": texto})
-        mensajes = [{"role": "system", "content": self.instrucciones(texto)}] + self.historial[-8:]
+        prompt = self.instrucciones(texto)
+        mensajes = [{"role": "system", "content": prompt}] + self._obtener_historial_podado()
         tarea = pc.clasificar_dificultad(texto)
         try:
             crudo = self._pedir(mensajes, tarea=tarea)
@@ -260,14 +307,10 @@ class Cerebro:
 
             charla = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in ultimos)
             sistema = (
-                f"Eres {self.memoria.nombre or 'Silvestra'}, asistente de {self.memoria.creador or 'tu creador'}.\n"
-                "Analiza la conversación reciente y extrae aprendizajes duraderos.\n"
-                "Reglas obligatorias:\n"
-                "1. Hasta 3 líneas que inicien con 'HECHO: ' con datos duraderos y útiles sobre el usuario (sus gustos, proyectos, rutina, habilidades).\n"
-                "2. Hasta 2 líneas que inicien con 'PREGUNTA: ' con algo que te gustaría preguntarle la próxima vez para dar seguimiento.\n"
-                "3. NO guardes datos sensibles (salud, dinero, finanzas, contraseñas, claves secretas o información íntima).\n"
-                "4. Si no hay nada duradero que valga la pena guardar, escribe 'NINGUNO'.\n"
-                "Responde en texto plano con los prefijos indicados, una línea por elemento."
+                f"Eres {self.memoria.nombre or 'Silvestra'}. Analiza la charla reciente y extrae aprendizajes duraderos.\n"
+                "1. Hasta 3 líneas 'HECHO: <dato duradero sobre el usuario (gustos, rutina, proyectos)>'.\n"
+                "2. Hasta 2 líneas 'PREGUNTA: <tema de seguimiento para la próxima>'.\n"
+                "Sin datos sensibles ni contraseñas. Si no hay nada nuevo: NINGUNO."
             )
             mensajes = [
                 {"role": "system", "content": sistema},

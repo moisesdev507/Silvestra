@@ -1,9 +1,4 @@
-"""Gestión, conmutación y ejecución especulativa de proveedores LLM.
-
-Cadenas por tarea (charla, razonamiento, visión), enfriamiento 429 por proveedor,
-forzado UTF-8 contra caracteres rotos, y ejecución en paralelo si el primer
-proveedor tarda más de 4 segundos en dar el primer token.
-"""
+"""Gestión, conmutación y ejecución de proveedores LLM por tarea."""
 import json
 import queue
 import threading
@@ -14,6 +9,7 @@ import acciones
 import config
 from cerebro import _cortar, _respuesta_parcial, separar
 import proveedores_cadenas as pc
+from proveedores_validador import extraer_motivo, iniciar_validacion_segundo_plano
 
 _enfriamientos = {}
 enfriamientos = _enfriamientos
@@ -26,10 +22,10 @@ def forzar_utf8(texto):
     """Garantiza que el texto esté en UTF-8 correcto y corrige secuencias Latin-1."""
     if not texto or not isinstance(texto, str):
         return texto or ""
-    if "Ã" in texto or "Â" in texto or "â" in texto:
+    if any(c in texto for c in ("Ã", "Â", "â")):
         try:
             return texto.encode("latin-1").decode("utf-8")
-        except (UnicodeEncodeError, UnicodeDecodeError):
+        except Exception:
             pass
     return texto
 
@@ -38,9 +34,9 @@ def _registrar(mensaje):
     print(f"[tiempo] {mensaje}", flush=True)
 
 
-def marcar_enfriamiento(nombre, modelo=None, headers=None):
+def marcar_enfriamiento(nombre, modelo=None, headers=None, motivo=None):
     """Pone a un modelo o proveedor en pausa durante 60 s o según Retry-After (máx 60 s)."""
-    pc.marcar_enfriamiento(_enfriamientos, nombre, modelo, headers)
+    pc.marcar_enfriamiento(_enfriamientos, nombre, modelo, headers, motivo=motivo)
 
 
 def proveedores_disponibles(tarea="charla"):
@@ -53,11 +49,10 @@ def _lanzar_reintento(tarea):
 
 
 def completar(mensajes, tarea="charla", timeout=20):
-    """Llamada síncrona sin streaming seleccionando la cadena según la tarea."""
     global _aviso_respaldo_pendiente, _ultimo_proveedor
     candidatos = proveedores_disponibles(tarea)
     if not candidatos:
-        _registrar("cerebro sin proveedores disponibles: activando modo de emergencia local")
+        _registrar("cerebro sin proveedores disponibles: modo emergencia local")
         _lanzar_reintento(tarea)
         return pc.respuesta_emergencia_local()
 
@@ -70,11 +65,17 @@ def completar(mensajes, tarea="charla", timeout=20):
 
         for modelo in list(modelos):
             try:
-                r = requests.post(url, headers=headers, json={"model": modelo, "messages": mensajes}, timeout=timeout)
+                r = requests.post(url, headers=headers, json={"model": modelo, "messages": mensajes, "max_tokens": 500}, timeout=timeout)
                 r.encoding = "utf-8"
                 if r.status_code == 429:
-                    marcar_enfriamiento(nombre, modelo, r.headers)
+                    mot = extraer_motivo(r, 429)
+                    marcar_enfriamiento(nombre, modelo, r.headers, motivo=mot)
                     _registrar(f"cerebro 429 en {nombre} ({modelo}), pasando al siguiente modelo de la misma cuenta...")
+                    continue
+                if r.status_code == 404:
+                    mot = extraer_motivo(r, 404)
+                    marcar_enfriamiento(nombre, modelo, r.headers, motivo=mot)
+                    _registrar(f"cerebro HTTP 404 en {nombre} ({modelo}): {mot}")
                     continue
                 if r.status_code != 200:
                     _registrar(f"cerebro HTTP {r.status_code} en {nombre} ({modelo}): {r.text[:80]}")
@@ -88,6 +89,10 @@ def completar(mensajes, tarea="charla", timeout=20):
                 _registrar(f"cerebro proveedor={nombre} modelo={modelo} tarea={tarea}")
                 _ultimo_proveedor = nombre
                 return contenido
+            except requests.exceptions.Timeout as ex:
+                mot = f"timeout ({str(ex)[:60].strip()})"
+                marcar_enfriamiento(nombre, modelo, motivo=mot)
+                _registrar(f"cerebro timeout en {nombre} ({modelo}): {mot}")
             except Exception as e:
                 ultimo_error = e
                 _registrar(f"cerebro error en {nombre} ({modelo}): {e}")
@@ -103,7 +108,6 @@ def completar(mensajes, tarea="charla", timeout=20):
 
 
 def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_cancelar, cola_salida):
-    """Ejecuta el streaming de un proveedor probando sus modelos disponibles si hay 429."""
     nombre = prov["nombre"]
     url = f"{prov['base_url'].rstrip('/')}/chat/completions"
     headers = {"Authorization": f"Bearer {prov['clave']}", "Content-Type": "application/json"}
@@ -117,14 +121,20 @@ def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_ca
             r = requests.post(
                 url,
                 headers=headers,
-                json={"model": modelo, "messages": mensajes, "stream": True},
+                json={"model": modelo, "messages": mensajes, "stream": True, "max_tokens": 500},
                 stream=True,
                 timeout=(timeout_token, 6.0),
             )
             r.encoding = "utf-8"
             if r.status_code == 429:
-                marcar_enfriamiento(nombre, modelo, r.headers)
+                mot = extraer_motivo(r, 429)
+                marcar_enfriamiento(nombre, modelo, r.headers, motivo=mot)
                 _registrar(f"cerebro 429 en {nombre} ({modelo}), pasando al siguiente modelo de la misma cuenta...")
+                continue
+            if r.status_code == 404:
+                mot = extraer_motivo(r, 404)
+                marcar_enfriamiento(nombre, modelo, r.headers, motivo=mot)
+                _registrar(f"cerebro HTTP 404 en {nombre} ({modelo}): {mot}")
                 continue
             if r.status_code != 200:
                 _registrar(f"cerebro HTTP {r.status_code} en {nombre} ({modelo})")
@@ -175,6 +185,11 @@ def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_ca
 
             cola_salida.put(("fin", nombre, None))
             return
+        except requests.exceptions.Timeout as ex:
+            mot = f"timeout ({str(ex)[:60].strip()})"
+            marcar_enfriamiento(nombre, modelo, motivo=mot)
+            _registrar(f"cerebro timeout en {nombre} ({modelo}): {mot}")
+            continue
         except Exception as ex:
             _registrar(f"cerebro fallo en {nombre} ({modelo}): {ex}")
             continue
@@ -183,13 +198,10 @@ def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_ca
 
 
 def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=4.0):
-    """Streaming con lanzamiento especulativo en paralelo si el 1° proveedor tarda >4 s."""
     global _aviso_respaldo_pendiente, _ultimo_proveedor
-    import queue
-
     candidatos = proveedores_disponibles(tarea)
     if not candidatos:
-        _registrar("cerebro sin proveedores para streaming: activando modo de emergencia local con voz")
+        _registrar("cerebro sin proveedores para streaming: modo emergencia con voz")
         if callable(al_frase):
             al_frase(pc.FRASE_EMERGENCIA_LOCAL)
         _lanzar_reintento(tarea)
@@ -340,17 +352,21 @@ def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=4.0):
 
 
 def accion_estado_proveedores(app):
-    """Muestra en la burbuja y pronuncia en voz alta el estado de los proveedores."""
     def _tarea():
         texto_voz, texto_burbuja = pc.reporte_estado_proveedores(_enfriamientos)
         app.cola.put(("hablar_registro", (texto_voz, texto_burbuja)))
-        print(f"[tiempo] Consulta de estado_proveedores completada.", flush=True)
+        print("[tiempo] Consulta de estado_proveedores completada.", flush=True)
 
     threading.Thread(target=_tarea, daemon=True).start()
 
 
 def instalar(app):
-    """Registra la acción estado_proveedores en Silvestra."""
+    """Registra la acción estado_proveedores e inicia la validación de modelos remotos."""
+    try:
+        iniciar_validacion_segundo_plano()
+    except Exception as e:
+        _registrar(f"no se pudo iniciar validador de modelos: {e}")
+
     acciones.registrar(
         "estado_proveedores",
         lambda: accion_estado_proveedores(app),

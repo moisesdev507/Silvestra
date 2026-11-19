@@ -49,18 +49,15 @@ TOKEN_TELEGRAM = ""
 
 # Modelos en Groq (se prueban en orden; si uno falla o supera cuota, pasa al siguiente)
 MODELOS = [
-    "llama-3.1-8b-instant",
-    "llama-3.3-70b-versatile",
     "openai/gpt-oss-120b",
     "openai/gpt-oss-20b",
+    "qwen/qwen3.8-27b",
+    "allam-2-7b",
 ]
 MODELO_VOZ = "whisper-large-v3-turbo"
 MODELO_VISION = "qwen/qwen3.8-27b"
 MODELOS_VISION = [
     "qwen/qwen3.8-27b",
-    "meta-models/muse-spark-open",
-    "llama-3.2-11b-vision-preview",
-    "llama-3.2-90b-vision-preview",
 ]
 
 ARCHIVO_MEMORIA = "memoria.json"
@@ -72,27 +69,23 @@ PROVEEDORES = [
         "base_url": "https://api.groq.com/openai/v1",
         "clave": CLAVE,
         "modelos": [
-            "llama-3.1-8b-instant",
-            "llama-3.3-70b-versatile",
             "openai/gpt-oss-120b",
             "openai/gpt-oss-20b",
             "qwen/qwen3.8-27b",
+            "allam-2-7b",
         ],
         "modelos_charla": [
-            "llama-3.1-8b-instant",
             "openai/gpt-oss-20b",
-            "llama-3.3-70b-versatile",
-            "openai/gpt-oss-120b",
             "qwen/qwen3.8-27b",
+            "openai/gpt-oss-120b",
+            "allam-2-7b",
         ],
         "modelos_razonamiento": [
-            "llama-3.3-70b-versatile",
             "openai/gpt-oss-120b",
-            "llama-3.1-8b-instant",
-            "openai/gpt-oss-20b",
             "qwen/qwen3.8-27b",
+            "openai/gpt-oss-20b",
         ],
-        "modelos_vision": MODELOS_VISION,
+        "modelos_vision": ["qwen/qwen3.8-27b"],
     },
     {
         "nombre": "Cloudflare",
@@ -100,15 +93,15 @@ PROVEEDORES = [
         "clave": CLAVE_CLOUDFLARE,
         "modelos": [
             "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-            "@cf/meta/llama-3.1-8b-instruct",
+            "@cf/meta/llama-3.1-8b-instruct-fp8",
         ],
         "modelos_charla": [
-            "@cf/meta/llama-3.1-8b-instruct",
+            "@cf/meta/llama-3.1-8b-instruct-fp8",
             "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
         ],
         "modelos_razonamiento": [
             "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-            "@cf/meta/llama-3.1-8b-instruct",
+            "@cf/meta/llama-3.1-8b-instruct-fp8",
         ],
         "modelos_vision": [
             "@cf/meta/llama-3.2-11b-vision-instruct",
