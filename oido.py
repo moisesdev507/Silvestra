@@ -245,7 +245,7 @@ class Oido:
         vocab_nombres = self.vocabulario() if callable(self.vocabulario) else ""
         prompt_whisper = (
             f"Conversación en español de Panamá con Silvestra y Moisés. {vocab_nombres}. "
-            "Comandos y acciones: silencio, para, cancelar, recordar, recordatorio, "
+            "Comandos y acciones: HUD, silencio, para, cancelar, recordar, recordatorio, "
             "resumen, pantalla, cámara, hora, fecha, Telegram, YouTube, PC, laptop, código, Python, tareas."
         )
 

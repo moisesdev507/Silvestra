@@ -92,12 +92,13 @@ def describir_acciones_compactas(texto_actual=None):
     for _, (kw, act_names) in CATEGORIAS_ACCIONES.items():
         coincide = False
         for k in kw:
-            if " " in k:
-                if k in texto_norm:
+            k_norm = "".join(c for c in unicodedata.normalize("NFD", k.lower()) if unicodedata.category(c) != "Mn")
+            if not k_norm.isalnum():
+                if k_norm in texto_norm:
                     coincide = True
                     break
             else:
-                if k in palabras:
+                if k_norm in palabras:
                     coincide = True
                     break
         if coincide:

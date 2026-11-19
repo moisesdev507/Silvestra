@@ -49,7 +49,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - Síntesis en streaming por oraciones completas (`cerebro_parser.py`, `calidad_respuesta.py`) sin cortes en conectores ni `..` espurios.
 - Filtro estricto de alucinaciones de Whisper ("haha", "okay, okay") y descarte con log explícito (`oido.py`).
 - Saludo inicial contextual en el arranque (hora y tiempo transcurrido) seguro para el hilo Qt (`nacimiento.py`, `eventos.py`).
-- Prompt compacto (<1350 tokens) con inyección selectiva precisa (`cerebro_categorias.py`, `cerebro_prompt.py`) que cubre 100% de las 132 acciones reales del sistema (HUD, casa inteligente, diario, etc.) con cero huérfanas y validación automática en `prueba_humo.py`.
+- Prompt compacto (<1350 tokens) e inyección selectiva robusta (`cerebro_categorias.py` con variantes "jud", "h u d", etc. para HUD), ejecución inmediata de acciones sin esperar fin de TTS (`main.py`) y suite en `prueba_humo.py`.
 - Voz panameña natural modulada emocionalmente con respaldo SAPI local.
 - Reconocimiento con Whisper (VAD adaptativo 0.45s con caída de energía, prompt contextual) y respaldo Vosk.
 - Latencia: caché de perfil en RAM (<1ms), Groq ultra-rápido (qwen3 1ra frase ~30-200ms) y muletillas inactivas por defecto.

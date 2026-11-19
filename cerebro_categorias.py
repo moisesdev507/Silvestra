@@ -11,7 +11,11 @@ ACCIONES_BASE = {
 # Si la palabra clave tiene espacios, se busca como frase en el texto; si es una palabra, coincide palabra exacta.
 CATEGORIAS_ACCIONES = {
     "hud": (
-        {"hud", "jarvis", "reloj", "clima", "cpu", "ram", "orbe", "panel"},
+        {
+            "hud", "jarvis", "reloj", "clima", "cpu", "ram", "orbe", "panel",
+            "h u d", "h-u-d", "h.u.d", "jud", "hood", "jut",
+            "panel de control", "tablero", "panel de estado"
+        },
         {"mostrar_hud", "ocultar_hud", "clima"}
     ),
     "casa": (
