@@ -191,6 +191,15 @@ def atender_evento(app, tipo, texto):
             app.hud.actualizar_clima(texto)
         app.ultimo_clima = texto
 
+    elif tipo == "casa_evento":
+        if hasattr(app, "casa") and app.casa and isinstance(texto, dict):
+            luces = texto.get("luces", {})
+            sala_luz = bool(luces.get("Sala", False))
+            if hasattr(app.casa, "luz"):
+                app.casa.luz = sala_luz
+                if app.casa.isVisible():
+                    app.casa.update()
+
     elif tipo == "fin_voz":
         app.flujo = None
         if getattr(app, "musica_activa", False) and not app.escuchando:
