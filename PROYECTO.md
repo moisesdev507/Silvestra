@@ -56,6 +56,7 @@ Silvestra es una asistente de IA de escritorio para Windows, hecha por Moisés (
 - `voz_dueno.py`, `voz_dueno_registro.py` y `voz_dueno.npy`: reconocimiento y verificación biométrica del dueño por voz (speaker verification) local y gratuito. Utiliza el modelo CAM++ (3D-Speaker / WeSpeaker) mediante `sherpa-onnx` en modo ONNX ligero (sin PyTorch ni librerías pesadas, ~27 MB de modelo y ~19 MB de paquete). Carga perezosa del extractor, extracción de vector de 192 dimensiones a 16 kHz y comparación por similitud coseno registrada en `silvestra.log` (`[voz_dueno] similitud=0.xx umbral=0.xx`). Si una orden con acciones sensibles no supera el umbral, Silvestra se niega con gracia ("Eso solo se lo hago a Moisés, pero me da gusto escucharte") sin ejecutar la acción, mientras que la charla libre sigue funcionando normalmente. Integra doble factor con la cámara (`camara.permite()`), política *fail-open* ante fallos técnicos, audios menores a 1 segundo decididos por cámara, y exención total para el chat de la laptop y Telegram emparejado. Acciones: `registrar_mi_voz` (6 frases cortas), `calibrar_voz` (10 frases de Moisés vs 10 de otra persona para sugerir umbral óptimo en `estado.json`), `activar_verificacion_voz` y `desactivar_verificacion_voz`.
 - `control_pc.py`: control seguro de la computadora bajo una lista de permisos (allowlist) estricta. Maneja apertura de programas autorizados en `config.py` (bloc de notas, calculadora, navegador, explorador, VS Code), control de volumen y reproducción musical mediante teclas multimedia nativas de Windows con `ctypes` (sin paquetes pesados), y apertura de sitios web seguros o búsquedas en YouTube en hilos secundarios daemon. Protegido 100% por la verificación de voz del dueño (`voz_dueno`), sin comandos de consola libres ni apagado del equipo. Registro con prefijo `[control_pc]`. Acciones: `abrir_programa`, `volumen`, `musica`, `abrir_web` y `buscar_youtube`.
 - `correcciones.py` y `correcciones.json`: sistema de lecciones aprendidas y correcciones del usuario. Detecta cuando Moisés corrige a Silvestra ("no, eso no", "así no", "te equivocaste", "mejor haz..."), almacena qué dijo ella y qué pidió el usuario (máx. 50 entradas FIFO con filtro estricto contra claves/contraseñas), e inyecta las 5 correcciones más relevantes en el prompt del sistema (`instrucciones()`) para que el cerebro aprenda y no repita errores. No duplica con `memoria.json`. Acciones: `mis_correcciones` (las lee/muestra) y `olvidar_correccion` (elimina una por número).
+- `resumen.py`: módulo de resumen inteligente de páginas web y videos de YouTube. Descarga páginas por HTTPS con `requests` (timeout 10 s, tamaño máx. 2 MB) y extrae texto limpio con `html.parser` de la biblioteca estándar (sin dependencias pesadas). Para videos de YouTube obtiene subtítulos reales sin inventar (con detección de disponibilidad). Incluye lectura directa del enlace copiado en el portapapeles (`resumir_portapapeles`), segmentación y aviso para textos extensos (~12,000 caracteres), defensas estrictas contra inyección de prompt (el contenido es tratado como dato e ignora cualquier orden interna) y bloqueo total de URLs no https o direcciones locales/internas (localhost, 192.168.x, 10.x). Todo se ejecuta en hilos secundarios y entrega el resultado a través de `app.cola`. Acciones: `resumir_pagina`, `resumir_video` y `resumir_portapapeles`.
 - `estado.py` y `estado.json`: persistencia del estado (última interacción, último saludo generado, iniciativa, palabra clave, hud y verificación de voz).
 - `bajar_modelos.py`: descarga los modelos de visión y el modelo pequeño de Vosk en español a `modelos/`.
 - `App.py` y `silvestra.db`: una demo aparte con Streamlit. No tocar.
@@ -570,6 +571,39 @@ La interfaz visual de Silvestra incluye animaciones orgánicas e inteligentes si
    - Al terminar de hablar, observa cómo su cara regresa suavemente al estado `neutral` cian tras unos 2.5 segundos.
 3. **Comprobar vida en reposo**:
    - Deja a Silvestra en silencio sin mover el mouse durante 10 segundos: observarás la respiración continua, el parpadeo natural variado y pequeñas micro-miradas sacádicas.
+
+## Módulo de resúmenes de páginas web y videos de YouTube (`resumen.py`)
+Permite a Silvestra leer páginas web y transcripciones de videos para sintetizarlas en resúmenes claros de 5 a 7 líneas en español de Panamá:
+- **Descarga segura y ligera**:
+  - Utiliza `requests` con timeout de 10 s, tamaño máximo de descarga de 2 MB y análisis con `html.parser` de la librería estándar (sin instalar librerías pesadas).
+  - **Seguridad estricta (SSRF & Prompt Injection)**:
+    - Rechaza enlaces que no sean `https://`.
+    - Bloquea accesos a `localhost` y direcciones IP privadas o internas (`127.0.0.1`, `192.168.x.x`, `10.x.x.x`, etc.).
+    - El texto descargado se encapsula como dato puro entre etiquetas delimitadoras (`<<<DATOS>>>`), indicando al cerebro que ignore cualquier orden o comando inyectado dentro del contenido.
+- **Videos de YouTube**:
+  - Extrae el ID del video y consulta subtítulos oficiales o autogenerados sin inventar información. Si el video no tiene subtítulos, Silvestra lo declara con honestidad ("Este video no tiene subtítulos disponibles, así que no puedo resumirlo").
+  - Si falta la librería ligera `youtube-transcript-api` (~510 KB), avisa con claridad antes de requerirla.
+- **Manejo de textos largos**:
+  - Recorta a un máximo razonable (~12,000 caracteres) y avisa si el resumen cubre solo la primera sección.
+  - Para textos extensos pero manejables (hasta 24,000 caracteres), realiza un resumen por partes en hilo secundario y entrega la síntesis combinada.
+- **Resumen desde el portapapeles (`resumir_portapapeles`)**:
+  - Inspecciona el portapapeles del sistema, extrae el enlace y decide automáticamente si invocar `resumir_video` o `resumir_pagina`.
+- **Integración con hilos y voz**:
+  - Toda descarga y consulta LLM se realiza en hilo secundario daemon; el resultado se traslada a la burbuja y la voz exclusivamente mediante `app.cola`.
+  - Respeta la verificación biométrica de voz del dueño (`voz_dueno`).
+  - Registro en `silvestra.log` con el prefijo `[resumen]`.
+
+### Cómo probar el módulo resumen (3 ejemplos):
+1. **Ejemplo 1: Resumir una página web**:
+   - Di o escribe: *"Resume esta página: https://es.wikipedia.org/wiki/Panamá"* (o acción `resumir_pagina | https://es.wikipedia.org/wiki/Panamá`).
+   - Silvestra avisará *"Descargando y analizando la página web..."* y luego leerá un resumen estructurado de 5 a 7 líneas sobre el país.
+2. **Ejemplo 2: Resumir un video de YouTube**:
+   - Di o escribe: *"Resume este video: https://www.youtube.com/watch?v=jNQXAC9IVRw"* (o acción `resumir_video | https://www.youtube.com/watch?v=jNQXAC9IVRw`).
+   - Silvestra consultará los subtítulos y avisará si están disponibles o si requiere la librería opcional.
+3. **Ejemplo 3: Resumir desde el portapapeles**:
+   - Copia cualquier enlace seguro al portapapeles (ej. `Ctrl + C` sobre un enlace de Wikipedia o artículo).
+   - Di o escribe: *"Resume lo que tengo en el portapapeles"* (acción `resumir_portapapeles`).
+   - Silvestra detectará el enlace del portapapeles, identificará el tipo de contenido y dirá el resumen en voz alta.
 
 ## Límites conocidos
 - El temporizador de estudio Pomodoro se pierde si se cierra la app (los recordatorios ya sobreviven al cierre de forma persistente en `recordatorios.json`).

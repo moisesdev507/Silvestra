@@ -66,6 +66,7 @@ import pantalla
 import presentacion
 import propuestas
 import recordatorios
+import resumen
 import telegram_puente
 import voz_dueno
 from cara_qt import Cara
@@ -123,6 +124,7 @@ class Silvestra:
         voz_dueno.instalar(self)
         control_pc.instalar(self)
         correcciones.instalar(self)
+        self.resumen = resumen.instalar(self)
 
         self.cara.root.after(100, self.revisar_cola)
 
