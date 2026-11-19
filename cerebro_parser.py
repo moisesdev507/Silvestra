@@ -55,25 +55,61 @@ def separar(texto):
     return final or (texto.strip() if texto else ""), accion, recuerdo, emocion_final
 
 
-def _respuesta_parcial(crudo):
-    """Lo que lleva dicho después de RESPUESTA: (o None si todavía no llega la etiqueta)."""
-    m = _ETIQ_RESP.search(crudo)
-    if not m:
+def extraer_emocion_parcial(crudo):
+    """Extrae tempranamente la emoción si el modelo la emite al principio del streaming."""
+    if not crudo:
         return None
-    resto = crudo[m.end():]
+    m = re.search(r"\bEMOCI[OÓ]N\s*:\s*([a-zA-Záéíóúñ]+)", crudo, re.I)
+    if m:
+        try:
+            from voz import normalizar_emocion
+            return normalizar_emocion(m.group(1))
+        except Exception:
+            return None
+    return None
+
+
+def _respuesta_parcial(crudo):
+    """Extrae el texto de la respuesta en streaming sin esperar la etiqueta o etiquetas finales."""
+    if not crudo:
+        return None
+    # Si todavía está en razonamiento interno incompleto, esperar
+    if "<think>" in crudo and "</think>" not in crudo:
+        return None
+    limpio = re.sub(r"(?is)<think>.*?</think>", "", crudo).strip()
+    if not limpio:
+        return None
+
+    m = _ETIQ_RESP.search(limpio)
+    if m:
+        resto = limpio[m.end():]
+        f = _ETIQ_FIN.search(resto)
+        if f:
+            resto = resto[:f.start()]
+        return resto
+
+    # Si no usa la etiqueta RESPUESTA:, pero emitió EMOCION: al inicio, saltarla
+    lineas = [l for l in limpio.splitlines() if l.strip()]
+    if lineas and re.match(r"^[\W_]*EMOCI[OÓ]N\s*:", lineas[0], re.I):
+        lineas = lineas[1:]
+    resto = "\n".join(lineas).strip()
+    if not resto:
+        return None
     f = _ETIQ_FIN.search(resto)
     if f:
         resto = resto[:f.start()]
-    return resto
+    return resto.strip()
 
 
 def _cortar(parcial, emitido, final=False):
-    """Saca las frases completas nuevas. Devuelve (frases, nuevo_emitido)."""
+    """Saca las frases completas nuevas de forma ágil para sintetizar la primera palabra de inmediato."""
     pendiente = parcial[emitido:]
     frases, inicio = [], 0
-    for m in re.finditer(r"[.!?…]+\s+", pendiente):
+    # Cortar por signos de puntuación seguidos de espacio o salto de línea
+    for m in re.finditer(r"[.!?…]+(?:\s+|\n+)", pendiente):
         frag = pendiente[inicio:m.end()].strip()
-        if len(frag) >= 25:
+        # Umbral bajo (6 caracteres) para emitir la primera frase ("¡Hola!", "De acuerdo.") sin demora
+        if len(frag) >= 6:
             frases.append(frag.replace("*", ""))
             inicio = m.end()
     if final:

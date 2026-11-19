@@ -163,6 +163,8 @@ class Oido:
         except Exception as e:
             raise RuntimeError("No pude usar el micrófono: " + str(e)[:120])
 
+        self.t_fin_escucha = time.time()
+
         if not hablo or len(trozos) < 5:
             self.ultimo_audio = None
             self.duracion_ultimo_audio = 0.0

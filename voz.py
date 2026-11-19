@@ -123,6 +123,7 @@ class Voz:
         self.proceso = None
         self.pg = None
         self.nivel_volumen = 0.0
+        self.ult_primera_palabra = None
         try:
             import pygame
 
@@ -159,13 +160,13 @@ class Voz:
             flujo.agregar(frase, emocion=frase_emo)
         flujo.cerrar()
 
-    def flujo(self, al_terminar=None, emocion="neutral"):
+    def flujo(self, al_terminar=None, emocion="neutral", t_fin_habla=None):
         """Empieza a hablar frase por frase conforme van llegando. Usa .agregar(frase) y al final .cerrar()."""
         self.version += 1
         self._activos += 1
         emo = normalizar_emocion(emocion)
         flujo = Flujo(emocion=emo)
-        threading.Thread(target=self._hablar, args=(flujo, al_terminar, self.version, emo), daemon=True).start()
+        threading.Thread(target=self._hablar, args=(flujo, al_terminar, self.version, emo, t_fin_habla), daemon=True).start()
         return flujo
 
     def _parar(self):
@@ -216,10 +217,24 @@ class Voz:
         while proc.poll() is None and version == self.version:
             time.sleep(0.05)
 
-    def _hablar(self, flujo, al_terminar, version, emocion_defecto="neutral"):
+    def _hablar(self, flujo, al_terminar, version, emocion_defecto="neutral", t_fin_habla=None):
         try:
             self._parar()
             buzon = queue.Queue()
+            primera_reportada = False
+
+            def _reportar_primera_palabra():
+                nonlocal primera_reportada
+                if not primera_reportada and t_fin_habla is not None:
+                    primera_reportada = True
+                    dt = time.time() - t_fin_habla
+                    ant = getattr(self, "ult_primera_palabra", None)
+                    if ant is not None:
+                        diff = dt - ant
+                        print(f"[tiempo] primera_palabra={dt:.2f}s desde que terminé de hablar (anterior={ant:.2f}s, diff={diff:+.2f}s)", flush=True)
+                    else:
+                        print(f"[tiempo] primera_palabra={dt:.2f}s desde que terminé de hablar", flush=True)
+                    self.ult_primera_palabra = dt
 
             def productor():
                 while True:
@@ -252,6 +267,7 @@ class Voz:
                         rms_norm, snd = calcular_envolvente_rms(audio)
                         if snd is not None:
                             canal = snd.play()
+                            _reportar_primera_palabra()
                             t_inicio = time.time()
                             while canal.get_busy() and version == self.version:
                                 if rms_norm:
@@ -266,6 +282,7 @@ class Voz:
                         else:
                             self.pg.mixer.music.load(io.BytesIO(audio))
                             self.pg.mixer.music.play()
+                            _reportar_primera_palabra()
                             self.nivel_volumen = -1.0
                             while self.pg.mixer.music.get_busy() and version == self.version:
                                 time.sleep(0.04)
@@ -274,6 +291,7 @@ class Voz:
                     except Exception:
                         pass
                 self.nivel_volumen = -1.0
+                _reportar_primera_palabra()
                 self._voz_windows(frase, version, emocion=emo)
                 self.nivel_volumen = 0.0
 

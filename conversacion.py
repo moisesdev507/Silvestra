@@ -79,6 +79,7 @@ def abrir_chat(app):
 
 def enviar(app, texto):
     """Procesa un texto enviado por el usuario (por voz o por teclado)."""
+    app.t_fin_habla = getattr(getattr(app, "oido", None), "t_fin_escucha", time.time())
     if hasattr(app, "iniciativa"):
         app.iniciativa.interaccion()
     if hasattr(app, "cuidado") and app.cuidado:
