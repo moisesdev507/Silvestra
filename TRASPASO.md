@@ -31,6 +31,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - **`memoria.py` / `memoria_busqueda.py`**: Memoria permanente con fechas, categorías y anti-invención.
 - **`acciones.py`**: Registro central de acciones (`acciones.registrar`).
 - **`recordatorios.py`**: Recordatorios por voz persistentes en disco (`recordatorios.json`).
+- **`control_laptop.py` / `control_seguridad.py`**: Control de la laptop por niveles (libre, con código y prohibido) con lista permitida y auditoría.
 - **`pantalla_remota.py`**: Servidor local para visualizar panel en navegador móvil.
 - **`presencia.py` / `camara.py`**: Presencia y seguimiento facial con MediaPipe.
 - **`prueba_humo.py`**: Suite de validación rápida de sintaxis, reglas de 15 KB y módulos clave.
@@ -54,6 +55,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - Enrutamiento inteligente a múltiples LLM con fallback, pool Keep-Alive y enfriamiento 429 exacto.
 - Memoria duradera con fechas, categorías y filtro de privacidad.
 - Acciones por voz: recuerdos, recordatorios persistentes, estado de proveedores, silencio y control de escucha.
+- Control de laptop por niveles: libre (apps/sitios permitidos, volumen, multimedia, carpetas), con código (apagar, reiniciar, suspender con desafío local de 3 intentos/30s) y prohibido (comandos libres, borrar archivos) con log de auditoría.
 - Modo reposo y panel para tablet vía navegador web.
 - Suite de prueba de humo (`prueba_humo.py`) y arquitectura modular (todos los archivos <= 15 KB).
 

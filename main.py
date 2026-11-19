@@ -49,6 +49,7 @@ import aprendizaje
 import camara
 import casa
 import config
+import control_laptop
 import control_pc
 import conversacion
 import correcciones
@@ -132,6 +133,7 @@ class Silvestra:
         self.origen_entrada_actual = "chat"
         voz_dueno.instalar(self)
         control_pc.instalar(self)
+        control_laptop.instalar(self)
         correcciones.instalar(self)
         self.resumen = resumen.instalar(self)
         self.aprendizaje = aprendizaje.instalar(self)

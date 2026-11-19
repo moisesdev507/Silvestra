@@ -1045,6 +1045,26 @@ Para mantener todos los archivos bajo el límite de 15 KB, `cerebro.py` se divid
 - **Regulación de FPS y bajo consumo de CPU**: En reposo reduce la tasa de refresco a 50 ms (~20 FPS) para ahorrar CPU. Registro cada 5 segundos:
   `[cara] fps=..., cpu_estimada=...%`.
 
+### 4. Control de la Laptop por Niveles (Windows)
+- **Módulos**: `control_seguridad.py` (~8.8 KB) y `control_laptop.py` (~14.4 KB).
+- **Nivel LIBRE (sin código)**:
+  - `apps_permitidas.json`: lista blanca editable de ejecutables (`chrome`, `edge`, `spotify`, `notepad`, `calculadora`, `word`, etc.).
+  - `abrir_app` / `cerrar_app`: apertura y cierre controlado vía `subprocess` con lista de argumentos (sin `shell=True`). `cerrar_app` ejecuta `taskkill` sin `/F` primero y tiene prohibición estricta de cerrar procesos críticos (`python`, `code`, `antigravity`, `silvestra`, `main`).
+  - `ir_a`: navegación a carpetas del sistema (Escritorio, Documentos, Descargas, Proyecto) y sitios web permitidos (YouTube, Google, Gmail, GitHub, Wikipedia), además de retorno a la ventana anterior con Alt+Tab (`ctypes`).
+  - `musica_youtube`: búsqueda del primer `videoId` con `requests` sin librerías externas y reproducción directa con autoplay (`watch?v=ID&autoplay=1`).
+  - `multimedia`: subir/bajar volumen, silenciar, pausar/reanudar, siguiente/anterior canción con `keybd_event` de Windows, minimizar todo (Win+D), captura de pantalla con `PIL.ImageGrab` guardada en Escritorio y bloqueo de estación de trabajo con `LockWorkStation()`. Todo en hilos secundarios entregando resultados a `app.cola`.
+- **Nivel CON CÓDIGO (seguridad estricta)**:
+  - Acciones peligrosas: `apagar_laptop`, `reiniciar_laptop`, `suspender_laptop`, `cerrar_sesion_laptop`.
+  - Validación del dueño: solo se aceptan si la voz fue verificada como el dueño (CAM++) o provienen de Telegram / chat local del dueño.
+  - Desafío interactivo: Silvestra responde *"Dime el código."* y la siguiente frase se procesa localmente contra `CODIGO_SEGURIDAD` en `config.py`.
+  - Entiende números hablados ("dos cero cero seis") y dígitos ("2006").
+  - Máximo 3 intentos y caducidad de 30 segundos. Al fallar 3 veces se bloquea temporalmente por 60 segundos.
+  - Privacidad total: el código de seguridad NUNCA se envía al LLM, ni a logs, ni a la memoria permanente.
+- **Nivel PROHIBIDO (nunca)**:
+  - Borrado de archivos, ejecución libre de comandos (cmd/powershell), instalación de paquetes o modificación de `config.py`, memoria o claves privadas. Se intercepta inmediatamente con rechazo explícito.
+- **Registro de auditoría**:
+  - `acciones_log.txt`: registra cada acción solicitada, nivel, origen, estado y detalle (sin registrar jamás el código).
+
 ## Límites conocidos
 - El temporizador de estudio Pomodoro se pierde si se cierra la app (los recordatorios ya sobreviven al cierre de forma persistente en `recordatorios.json`).
 - Los gestos asumen mano derecha con los dedos hacia arriba.

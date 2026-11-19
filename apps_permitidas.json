@@ -1,0 +1,19 @@
+{
+  "chrome": "chrome.exe",
+  "google chrome": "chrome.exe",
+  "edge": "msedge.exe",
+  "microsoft edge": "msedge.exe",
+  "spotify": "spotify.exe",
+  "notepad": "notepad.exe",
+  "bloc de notas": "notepad.exe",
+  "notas": "notepad.exe",
+  "calculadora": "calc.exe",
+  "calc": "calc.exe",
+  "explorador": "explorer.exe",
+  "archivos": "explorer.exe",
+  "word": "winword.exe",
+  "excel": "excel.exe",
+  "powerpoint": "powerpnt.exe",
+  "code": "code.cmd",
+  "visual studio code": "code.cmd"
+}

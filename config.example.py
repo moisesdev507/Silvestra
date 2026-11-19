@@ -349,3 +349,7 @@ EMOCIONES_VOZ = {
     "preocupada": {"rate": "-8%", "pitch": "-4Hz", "volume": "-5%"},
 }
 
+# Código de seguridad para acciones peligrosas de la laptop (apagar, reiniciar, suspender, cerrar sesión)
+CODIGO_SEGURIDAD = "0000"
+
+

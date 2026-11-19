@@ -94,6 +94,24 @@ def enviar(app, texto):
     app.cara.decir(f"«{texto}»", 60000)
 
     t_norm = normalizar(texto).strip()
+
+    if hasattr(app, "control_seguridad") and app.control_seguridad.tiene_pendiente():
+        if "cancelar" in t_norm:
+            app.control_seguridad.limpiar_pendiente()
+            app.decir("Acción cancelada.", 2500)
+            return
+        if app.control_seguridad.verificar_codigo(texto):
+            return
+
+    try:
+        import control_seguridad
+        if control_seguridad.es_accion_prohibida(texto):
+            control_seguridad.registrar_log("PROHIBIDO", "texto_prohibido", getattr(app, "origen_entrada_actual", "desconocido"), "RECHAZADO")
+            app.decir("Esa acción está prohibida por seguridad.", 3000)
+            return
+    except Exception:
+        pass
+
     if t_norm in ("para", "silencio", "callate", "alto", "stop", "ya"):
         if hasattr(app, "voz") and hasattr(app.voz, "detener"):
             app.voz.detener()

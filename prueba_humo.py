@@ -85,6 +85,77 @@ def verificar_modulos_clave():
     assert ok, f"Fallo al ejecutar acción registrada: {msg}"
     print("OK: Registro y ejecución de acciones verificado.")
 
+    # Verificar control_seguridad y control_laptop
+    import queue
+    import control_seguridad
+    import control_laptop
+
+    # 1. Extracción de dígitos de voz y texto
+    assert control_seguridad.extraer_codigo("dos cero cero seis") == "2006"
+    assert control_seguridad.extraer_codigo("2006") == "2006"
+    assert control_seguridad.extraer_codigo("cero cero cero cero") == "0000"
+    print("OK: Extracción de código por voz/dígitos verificada.")
+
+    # 2. Detección de acciones prohibidas
+    assert control_seguridad.es_accion_prohibida("borrar archivos del sistema")
+    assert control_seguridad.es_accion_prohibida("modificar config.py")
+    assert control_seguridad.es_accion_prohibida("pip install malware")
+    assert not control_seguridad.es_accion_prohibida("abrir calculadora")
+    print("OK: Filtro de acciones prohibidas verificado.")
+
+    # 3. Flujo interactivo con simulación de app
+    class DummyApp:
+        def __init__(self):
+            self.cola = queue.Queue()
+            self.origen_entrada_actual = "chat"
+            self.frases = []
+        def decir(self, txt, ms=2000):
+            self.frases.append(txt)
+
+    app_dummy = DummyApp()
+    control_laptop.instalar(app_dummy)
+    cs = app_dummy.control_seguridad
+    cs.modo_simulacion = True
+    cs.limpiar_pendiente()
+    cs.bloqueado_hasta = 0.0
+
+    # Solicitar apagar laptop (sin código no se apaga, pide el código)
+    ok, msg = acciones.ejecutar("apagar_laptop")
+    assert ok, f"Fallo al invocar apagar_laptop: {msg}"
+    assert cs.tiene_pendiente(), "Debe quedar en espera de código"
+    assert any("Dime el código" in f for f in app_dummy.frases), "Debe pedir 'Dime el código'"
+
+    # 3 intentos fallidos consecutivos deben bloquear
+    cs.verificar_codigo("codigo 1111")
+    assert cs.tiene_pendiente(), "Intento 1 fallido debe mantener espera"
+    assert cs.intentos_fallidos == 1
+
+    cs.verificar_codigo("codigo 2222")
+    assert cs.tiene_pendiente(), "Intento 2 fallido debe mantener espera"
+    assert cs.intentos_fallidos == 2
+
+    cs.verificar_codigo("codigo 3333")
+    assert not cs.tiene_pendiente(), "Intento 3 fallido debe limpiar pendiente"
+    assert cs.bloqueado_hasta > 0, "Debe quedar bloqueado temporalmente tras 3 intentos"
+    print("OK: Desafío de seguridad sin código y bloqueo a 3 intentos fallidos verificado.")
+
+    # 4. Verificación de éxito en simulación (con código correcto)
+    cs.bloqueado_hasta = 0.0
+    acciones.ejecutar("apagar_laptop")
+    assert cs.tiene_pendiente()
+    codigo_esperado = str(getattr(config, "CODIGO_SEGURIDAD", "0000")).strip()
+    resuelto = cs.verificar_codigo(codigo_esperado)
+    assert resuelto, "Debe aceptar el código correcto"
+    assert not cs.tiene_pendiente(), "Pendiente debe quedar resuelto tras éxito"
+
+    # Verificar que el código NUNCA fue escrito a acciones_log.txt
+    if os.path.exists(control_seguridad.LOG_FILE):
+        with open(control_seguridad.LOG_FILE, "r", encoding="utf-8") as f:
+            contenido_log = f.read()
+        if len(codigo_esperado) >= 3 and codigo_esperado != "0000":
+            assert codigo_esperado not in contenido_log, "ALERTA: El código de seguridad apareció en acciones_log.txt"
+    print("OK: Control de seguridad y control_laptop verificados exitosamente.")
+
     return True
 
 def main():
