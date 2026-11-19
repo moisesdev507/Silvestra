@@ -285,3 +285,106 @@ def reiniciar_perfil_y_conversaciones():
     with _lock:
         guardar_perfil(json.loads(json.dumps(PERFIL_POR_DEFECTO)))
         guardar_conversaciones({})
+
+
+def actualizar_perfil_con_analisis(nuevo, hoy_str):
+    """Actualiza perfil_conversacion.json a partir del dict devuelto por el LLM.
+    
+    Devuelve (perfil_actualizado, lista_campos_modificados).
+    """
+    with _lock:
+        perfil = cargar_perfil()
+        campos = []
+
+        # Actualizar estilo
+        n_estilo = nuevo.get("estilo", {})
+        if isinstance(n_estilo, dict):
+            estilo_mod = False
+            pal_nuevas = [str(p).strip() for p in n_estilo.get("palabras_y_apodos", []) if p]
+            pal_prev = list(perfil["estilo"].get("palabras_y_apodos", []))
+            pal_comb = list(dict.fromkeys(pal_prev + pal_nuevas))[-10:]
+            if pal_comb != pal_prev:
+                perfil["estilo"]["palabras_y_apodos"] = pal_comb
+                estilo_mod = True
+
+            mul_nuevas = [str(m).strip() for m in n_estilo.get("muletillas", []) if m]
+            mul_prev = list(perfil["estilo"].get("muletillas", []))
+            mul_comb = list(dict.fromkeys(mul_prev + mul_nuevas))[-6:]
+            if mul_comb != mul_prev:
+                perfil["estilo"]["muletillas"] = mul_comb
+                estilo_mod = True
+
+            if n_estilo.get("formalidad"):
+                f = str(n_estilo["formalidad"]).strip()[:80]
+                if f and f != perfil["estilo"].get("formalidad"):
+                    perfil["estilo"]["formalidad"] = f
+                    estilo_mod = True
+
+            if n_estilo.get("largo_tipico"):
+                l = str(n_estilo["largo_tipico"]).strip()[:80]
+                if l and l != perfil["estilo"].get("largo_tipico"):
+                    perfil["estilo"]["largo_tipico"] = l
+                    estilo_mod = True
+
+            if estilo_mod:
+                campos.append("estilo")
+
+        # Actualizar costumbres
+        n_cost = nuevo.get("costumbres_y_horarios", [])
+        if isinstance(n_cost, list):
+            cost_prev = list(perfil.get("costumbres_y_horarios", []))
+            cost_nuevas = [str(c).strip() for c in n_cost if c]
+            cost_comb = list(dict.fromkeys(cost_prev + cost_nuevas))[-8:]
+            if cost_comb != cost_prev:
+                perfil["costumbres_y_horarios"] = cost_comb
+                campos.append("costumbres")
+
+        # Actualizar bromas y referencias
+        n_brom = nuevo.get("bromas_y_referencias", [])
+        if isinstance(n_brom, list):
+            brom_prev = list(perfil.get("bromas_y_referencias", []))
+            brom_nuevas = [str(b).strip() for b in n_brom if b]
+            brom_comb = list(dict.fromkeys(brom_prev + brom_nuevas))[-8:]
+            if brom_comb != brom_prev:
+                perfil["bromas_y_referencias"] = brom_comb
+                campos.append("bromas")
+
+        # Actualizar hilos abiertos preservando estados anteriores
+        n_hilos = nuevo.get("hilos_abiertos", [])
+        if isinstance(n_hilos, list):
+            hilos_previos = list(perfil.get("hilos_abiertos", []))
+            temas_existentes = {h.get("tema", "").lower(): h for h in hilos_previos}
+            siguiente_id = max([h.get("id", 0) for h in hilos_previos] or [0]) + 1
+            hilos_mod = False
+
+            for nh in n_hilos:
+                if not isinstance(nh, dict):
+                    continue
+                tema = str(nh.get("tema", "")).strip()
+                if not tema:
+                    continue
+                if tema.lower() in temas_existentes:
+                    previo = temas_existentes[tema.lower()]
+                    fec = nh.get("fecha", "")
+                    if fec and fec != previo.get("fecha"):
+                        previo["fecha"] = fec
+                        hilos_mod = True
+                else:
+                    hilos_previos.append({
+                        "id": siguiente_id,
+                        "tema": tema,
+                        "fecha": nh.get("fecha", ""),
+                        "preguntado": False,
+                        "cerrado": False,
+                        "esperando_respuesta": False,
+                    })
+                    siguiente_id += 1
+                    hilos_mod = True
+
+            perfil["hilos_abiertos"] = hilos_previos[-10:]
+            if hilos_mod:
+                campos.append("hilos_abiertos")
+
+        perfil["ultima_reflexion"] = hoy_str
+        guardar_perfil(perfil)
+        return perfil, campos

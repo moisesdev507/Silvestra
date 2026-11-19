@@ -57,7 +57,7 @@ Silvestra es una asistente de IA de escritorio para Windows, hecha por Moisés (
 - `control_pc.py`: control seguro de la computadora bajo una lista de permisos (allowlist) estricta. Maneja apertura de programas autorizados en `config.py` (bloc de notas, calculadora, navegador, explorador, VS Code), control de volumen y reproducción musical mediante teclas multimedia nativas de Windows con `ctypes` (sin paquetes pesados), y apertura de sitios web seguros o búsquedas en YouTube en hilos secundarios daemon. Protegido 100% por la verificación de voz del dueño (`voz_dueno`), sin comandos de consola libres ni apagado del equipo. Registro con prefijo `[control_pc]`. Acciones: `abrir_programa`, `volumen`, `musica`, `abrir_web` y `buscar_youtube`.
 - `correcciones.py` y `correcciones.json`: sistema de lecciones aprendidas y correcciones del usuario. Detecta cuando Moisés corrige a Silvestra ("no, eso no", "así no", "te equivocaste", "mejor haz..."), almacena qué dijo ella y qué pidió el usuario (máx. 50 entradas FIFO con filtro estricto contra claves/contraseñas), e inyecta las 5 correcciones más relevantes en el prompt del sistema (`instrucciones()`) para que el cerebro aprenda y no repita errores. No duplica con `memoria.json`. Acciones: `mis_correcciones` (las lee/muestra) y `olvidar_correccion` (elimina una por número).
 - `resumen.py`: módulo de resumen inteligente de páginas web y videos de YouTube. Descarga páginas por HTTPS con `requests` (timeout 10 s, tamaño máx. 2 MB) y extrae texto limpio con `html.parser` de la biblioteca estándar (sin dependencias pesadas). Para videos de YouTube obtiene subtítulos reales sin inventar (con detección de disponibilidad). Incluye lectura directa del enlace copiado en el portapapeles (`resumir_portapapeles`), segmentación y aviso para textos extensos (~12,000 caracteres), defensas estrictas contra inyección de prompt (el contenido es tratado como dato e ignora cualquier orden interna) y bloqueo total de URLs no https o direcciones locales/internas (localhost, 192.168.x, 10.x). Todo se ejecuta en hilos secundarios y entrega el resultado a través de `app.cola`. Acciones: `resumir_pagina`, `resumir_video` y `resumir_portapapeles`.
-- `aprendizaje.py`, `aprendizaje_datos.py`, `conversaciones_dia.json` y `perfil_conversacion.json`: sistema de aprendizaje continuo y perfil conversacional. Registra las conversaciones del día (hasta 7 días) con hora y emoción, con filtro estricto contra contraseñas o tokens. Realiza una reflexión nocturna (9 PM o al cerrar la app) en hilo secundario enviando las charlas a la cadena multillm para extraer: estilo de Moisés (palabras, apodos, muletillas, formalidad, largo), costumbres y rutinas, hilos con fecha para seguimiento y bromas/referencias internas. Solo analiza lo que Moisés dijo expresamente (sin conjeturas sobre salud ni emociones). Inyecta un resumen compacto (máx. ~600 caracteres) en el prompt del cerebro junto a las correcciones. Si un hilo venció su fecha, le pregunta cómo le fue una sola vez en horario diurno y lo cierra cuando conteste. Acciones: `que_has_aprendido`, `olvidar_aprendizaje`, `borrar_perfil` y `reflexionar_aprendizaje`.
+- `aprendizaje.py`, `aprendizaje_datos.py`, `conversaciones_dia.json` y `perfil_conversacion.json`: sistema de aprendizaje continuo y perfil conversacional. Registra las conversaciones del día (hasta 7 días) con hora y emoción, con filtro estricto contra contraseñas o tokens. Realiza una reflexión nocturna (9 PM o al cerrar la app) en hilo secundario enviando las charlas a la cadena multillm para extraer: estilo de Moisés (palabras, apodos, muletillas, formalidad, largo), costumbres y rutinas, hilos con fecha para seguimiento y bromas/referencias internas. Solo analiza lo que Moisés dijo expresamente (sin conjeturas sobre salud ni emociones). Inyecta un resumen compacto (máx. ~600 caracteres) en el prompt del cerebro junto a las correcciones y la regla anti-invención estricta. Si un hilo venció su fecha, le pregunta cómo le fue una sola vez en horario diurno y lo cierra cuando conteste. Acciones: `reflexionar_ahora`, `que_has_aprendido`, `olvidar_aprendizaje`, `borrar_perfil` y `reflexionar_aprendizaje`.
 - `pantalla_remota.py`, `pantalla_remota_panel.py`, `pantalla_remota_web.py` y `pantalla_remota_web2.py`: servidor HTTP local y Server-Sent Events (SSE) para proyectar la cara animada de Silvestra en otra pantalla de la red local (como una tablet Android con Google Chrome) en modo de solo visualización. En reposo (>20 s de silencio) la cara se desplaza y reduce suavemente para mostrar un reloj de mesa grande en formato 12h con fecha en español, clima actual de Panamá (reutilizado de `hud.py` sin consultas de red extras), próximos 3 recordatorios de `recordatorios.json` y mensaje matutino. Incluye brillo nocturno automático entre las 10 PM y las 6 AM, modo privado para ocultar recordatorios y Screen Wake Lock API. Acciones: `mostrar_en_tablet`, `ocultar_en_tablet`, `tablet_modo_privado` y `tablet_modo_normal`.
 - `estado.py` y `estado.json`: persistencia del estado (última interacción, último saludo generado, iniciativa, palabra clave, hud y verificación de voz).
 - `bajar_modelos.py`: descarga los modelos de visión y el modelo pequeño de Vosk en español a `modelos/`.
@@ -636,25 +636,30 @@ Permite a Silvestra aprender de la forma de hablar de Moisés, sus rutinas e int
 - **Hilos con fecha y seguimiento**:
   - Si la fecha de un evento o compromiso ya pasó, le pregunta con calidez cómo le fue una sola vez y dentro de horarios prudentes (entre 7:00 AM y 10:00 PM, respetando horas silenciosas).
   - Al recibir la respuesta de Moisés, el hilo se marca automáticamente como cerrado.
+- **Regla anti-invención en el cerebro**:
+  - Instrucción estricta en `cerebro.py`: Silvestra jamás inventa experiencias, actividades ni días que no ocurrieron (por ejemplo "estuve pensando en lo que caminaste hoy" o conjeturar qué hizo).
+  - Solo habla de lo que está explícitamente en la memoria, el perfil o la conversación actual. Si no sabe algo o no se lo han contado, lo dice con naturalidad.
 - **Acciones y control del usuario**:
-  - `que_has_aprendido`: lee un resumen por voz y muestra en la burbuja el perfil completo.
-  - `olvidar_aprendizaje | tema`: borra del perfil un dato concreto (palabra, costumbre o hilo).
+  - `reflexionar_ahora`: ejecuta a mano la reflexión sobre las conversaciones guardadas en hilo secundario (activada por frases como *"haz tu reflexión"*, *"reflexión nocturna"*, *"dame tu reflexión"*, *"reflexiona sobre hoy"*), actualiza `perfil_conversacion.json`, registra en el log con prefijo `[aprendizaje]` cuántas conversaciones procesó y qué campos actualizó, y al terminar pronuncia en 1 o 2 frases qué aprendió realmente leyendo el perfil resultante, sin inventar.
+  - `reflexionar_aprendizaje`: alias compatible de `reflexionar_ahora`.
+  - `que_has_aprendido`: lee del perfil y de los hilos abiertos (tanto de `perfil_conversacion.json` como de `hilos.json`) y muestra la tarjeta completa en la burbuja; si todavía no tiene datos aprendidos, lo dice con total honestidad.
+  - `olvidar_aprendizaje | tema`: borra del perfil un dato concreto (palabra, costumbre o hilo) y cierra temas pendientes afines.
   - `borrar_perfil`: borra el perfil y el historial tras pedir confirmación expresa (`borrar_perfil | confirmar`).
-  - `reflexionar_aprendizaje`: fuerza la reflexión nocturna de inmediato para pruebas.
 
 ### Cómo probar el aprendizaje continuo:
 1. **Conversar normalmente**:
    - Habla o escribe con Silvestra en el chat (ej: *"Silvestra compa, mañana tengo examen de programación"*).
    - Verás en `silvestra.log`: `[aprendizaje]` registrando la interacción en `conversaciones_dia.json`.
-2. **Forzar la reflexión nocturna para aprender de inmediato**:
-   - Di o escribe: *"Silvestra, reflexiona sobre lo que hemos hablado"* (o ejecuta la acción `reflexionar_aprendizaje`).
-   - Silvestra analizará en segundo plano con el LLM y actualizará `perfil_conversacion.json`.
-3. **Consultar lo aprendido**:
+2. **Disparar la reflexión a mano (`reflexionar_ahora`)**:
+   - Di o escribe: *"Silvestra, haz tu reflexión"* o *"reflexiona sobre hoy"* (o acción `reflexionar_ahora`).
+   - Silvestra procesará las charlas en hilo secundario, actualizará `perfil_conversacion.json` y al concluir dirá en 1 o 2 frases qué aprendió realmente (o si su perfil ya estaba al día), sin inventar nada.
+   - En `silvestra.log` quedará registrado: `[aprendizaje] Reflexión completada: procesó N conversaciones de M días. Campos actualizados: ...`.
+3. **Consultar lo aprendido con honestidad (`que_has_aprendido`)**:
    - Di o escribe: *"¿Qué has aprendido de mí?"* (o la acción `que_has_aprendido`).
-   - Silvestra te dirá por voz un resumen de tu estilo y mostrará en la burbuja la tarjeta con tu perfil, palabras, costumbres e hilos.
-4. **Verificar el seguimiento de hilos**:
-   - Cuando llegue la fecha del examen, al saludar o hablarle, Silvestra te preguntará con amabilidad cómo te fue con el examen.
-   - Al responderle (ej: *"Me fue muy bien"*), el hilo se marcará como cerrado y no volverá a insistir.
+   - Silvestra te dirá por voz un resumen sincero de tu estilo e hilos abiertos, mostrando en la burbuja la tarjeta con tu perfil. Si aún no tiene datos registrados, responderá con franqueza que todavía no tiene nada aprendido.
+4. **Verificar la regla anti-invención**:
+   - Pregúntale sobre algo que nunca le contaste (ej. *"¿qué hice esta tarde?"* o *"¿dónde fui a almorzar?"*).
+   - Silvestra responderá con naturalidad que no lo sabe porque no se lo has contado, sin inventar actividades ni suposiciones.
 5. **Olvidar un dato o borrar el perfil**:
    - Para olvidar un dato: *"olvida lo que aprendiste sobre [dato]"* (acción `olvidar_aprendizaje | examen`).
    - Para borrar todo: acción `borrar_perfil` (te pedirá confirmación) y luego `borrar_perfil | confirmar`.

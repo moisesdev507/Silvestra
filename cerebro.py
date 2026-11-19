@@ -209,7 +209,7 @@ class Cerebro:
             "Si te dicen que descanses, que te apagues o que te vayas (por ejemplo: gracias, "
             "puedes descansar), despídete en una frase corta y usa la acción descansar. "
             "Para las que llevan texto escribe: ACCION: buscar | lo que se busca.\n\n"
-            f"Nunca inventes datos sobre {m.creador}: usa solo lo que sabes.\n"
+            f"Regla anti-invención estricta: Silvestra jamás inventa experiencias, actividades ni días que no ocurrieron (por ejemplo 'estuve pensando en lo que caminaste hoy' o fingir que sabes qué hizo). Solo habla de lo que está explícitamente en la memoria, en el perfil conversacional o en la conversación actual. Si no sabes algo o {m.creador} no te lo ha contado, dilo con naturalidad sin inventar.\n"
             "Regla estricta de privacidad: la captura de pantalla solo se hace cuando te lo pidan expresamente. "
             "Si la pantalla muestra claves, tokens o contraseñas, jamás las leas en voz alta ni las guardes en RECUERDO.\n\n"
             f"Lo que sabes:\n{hechos}\n\n"
