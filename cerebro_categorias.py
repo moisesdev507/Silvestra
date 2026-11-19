@@ -15,8 +15,8 @@ CATEGORIAS_ACCIONES = {
         {"mostrar_hud", "ocultar_hud", "clima"}
     ),
     "casa": (
-        {"casa", "luz", "luces", "bombillo", "bombillos", "ventilador", "abanico", "puerta", "cuarto", "sala", "domotica", "habitacion", "casa virtual", "plano"},
-        {"mostrar_casa", "ocultar_casa", "mostrar_casa_tablet", "encender_luz", "apagar_luz", "encender_ventilador", "apagar_ventilador", "abrir_puerta", "cerrar_puerta", "apagar_todo"}
+        {"casa", "luz", "luces", "bombillo", "bombillos", "ventilador", "abanico", "puerta", "cuarto", "sala", "domotica", "habitacion"},
+        {"mostrar_casa", "ocultar_casa", "encender_luz", "apagar_luz", "encender_ventilador", "apagar_ventilador", "abrir_puerta", "cerrar_puerta", "apagar_todo"}
     ),
     "diario": (
         {"diario", "escribe", "entrada", "reflexion", "manana", "matutino"},
@@ -87,8 +87,8 @@ CATEGORIAS_ACCIONES = {
         {"resumir_pagina", "resumir_video", "resumir_portapapeles"}
     ),
     "tablet": (
-        {"tablet", "remota", "servidor tablet", "pantalla remota", "segunda pantalla", "casa tablet", "casa virtual"},
-        {"mostrar_en_tablet", "ocultar_en_tablet", "mostrar_casa_tablet", "tablet_modo_normal", "tablet_modo_privado"}
+        {"tablet", "remota", "servidor tablet", "pantalla remota", "segunda pantalla"},
+        {"mostrar_en_tablet", "ocultar_en_tablet", "tablet_modo_normal", "tablet_modo_privado"}
     ),
     "silencio_detener": (
         {"callate", "callar", "para", "parar", "silencio", "detener", "detente", "basta", "shh", "descansa", "duerme"},
