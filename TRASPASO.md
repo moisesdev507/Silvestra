@@ -49,7 +49,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - Síntesis en streaming por oraciones completas (`cerebro_parser.py`, `calidad_respuesta.py`) sin cortes en conectores ni `..` espurios.
 - Filtro estricto de alucinaciones de Whisper ("haha", "okay, okay") y descarte con log explícito (`oido.py`).
 - Saludo inicial contextual en el arranque (hora y tiempo transcurrido) seguro para el hilo Qt (`nacimiento.py`, `eventos.py`).
-- Prompt compacto (<1100 tokens) con inyección selectiva de acciones y personalidad panameña viva.
+- Prompt compacto (<1350 tokens) con inyección selectiva precisa (`cerebro_categorias.py`, `cerebro_prompt.py`) que cubre 100% de las 132 acciones reales del sistema (HUD, casa inteligente, diario, etc.) con cero huérfanas y validación automática en `prueba_humo.py`.
 - Voz panameña natural modulada emocionalmente con respaldo SAPI local.
 - Reconocimiento con Whisper (VAD adaptativo 0.45s con caída de energía, prompt contextual) y respaldo Vosk.
 - Latencia: caché de perfil en RAM (<1ms), Groq ultra-rápido (qwen3 1ra frase ~30-200ms) y muletillas inactivas por defecto.
@@ -64,13 +64,13 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - Suite de prueba de humo (`prueba_humo.py`) y arquitectura modular (todos los archivos <= 15 KB).
 
 ## 5. Tareas pendientes y pospuestas
-- [ ] **Rotar clave de Groq:** La clave actual se expuso accidentalmente en el pasado; cambiarla en `config.py` y consola de Groq.
-- [ ] **Cerebro premium de pago (tope $5/mes):** Integrar proveedor de alta calidad con límite estricto de gasto mensual como alternativa a los gratuitos.
-- [ ] **Respaldo local ligero:** Modelo SLM/LLM local cuantizado (ej. Ollama / llama.cpp) para operar 100% offline.
-- [ ] **Iniciativa propia:** Que salude o comente espontáneamente en momentos adecuados sin esperar a que le hablen.
-- [ ] **Núcleo sin pantalla (headless) y nube:** Separar lógica para correr 24/7 en servidor/VPS conectada a bot de Telegram.
-- [ ] **Respaldos fuera de Git:** Script simple para comprimir y respaldar `memoria.json`, audios y configuraciones en carpeta segura o nube privada.
-- [ ] **Anillo y saludo a invitados:** Pospuesto hasta contar con el hardware del anillo físico Bluetooth.
+- [ ] **Rotar clave de Groq:** Clave expuesta en el pasado; cambiarla en `config.py` y consola de Groq.
+- [ ] **Cerebro premium ($5/mes):** Integrar proveedor de alta calidad con límite estricto de gasto como opción alternativa.
+- [ ] **Respaldo local:** Modelo SLM/LLM cuantizado local (Ollama / llama.cpp) para operar 100% offline.
+- [ ] **Iniciativa propia:** Saludos o comentarios espontáneos en momentos adecuados sin esperar turno.
+- [ ] **Núcleo headless y nube:** Separar lógica para correr 24/7 en VPS conectada al bot de Telegram.
+- [ ] **Respaldos fuera de Git:** Script para respaldar `memoria.json`, audios y config en carpeta segura.
+- [ ] **Anillo físico:** Pospuesto hasta contar con el hardware del anillo físico Bluetooth.
 
 ## 6. Guía de prompts para Gemini (Antigravity)
 

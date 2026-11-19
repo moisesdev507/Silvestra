@@ -104,12 +104,37 @@ def verificar_modulos_clave():
     print("OK: Filtro de acciones prohibidas verificado.")
 
     # 3. Flujo interactivo con simulación de app
+    class DummyRoot:
+        def after(self, ms, fn, *args):
+            return 1
+        def after_cancel(self, tid):
+            pass
+
+    class DummyCara:
+        def __init__(self):
+            self.root = DummyRoot()
+        def decir(self, txt, ms=2000):
+            pass
+        def mostrar(self):
+            pass
+        def pasear_ahora(self):
+            pass
+        def quedarse_quieta(self):
+            pass
+        def ir_a(self, lugar):
+            pass
+        def seguir_mouse(self):
+            pass
+        def bailar(self):
+            pass
+
     class DummyApp:
         def __init__(self):
             self.cola = queue.Queue()
             self.origen_entrada_actual = "chat"
             self.frases = []
             self.musica_activa = False
+            self.cara = DummyCara()
         def decir(self, txt, ms=2000):
             self.frases.append(txt)
 
@@ -188,6 +213,53 @@ def verificar_modulos_clave():
             assert codigo_esperado not in contenido_log, "ALERTA: El código de seguridad apareció en acciones_log.txt"
     print("OK: Control de seguridad y control_laptop verificados exitosamente.")
 
+    # 7. Verificación de CATEGORIAS_ACCIONES y ACCIONES_BASE
+    try:
+        from PySide6.QtWidgets import QApplication
+        _ = QApplication.instance() or QApplication(sys.argv)
+    except Exception:
+        pass
+
+    from cerebro_categorias import ACCIONES_BASE, CATEGORIAS_ACCIONES
+
+    cara_d = app_dummy.cara
+    acciones.registrar("pasear", cara_d.pasear_ahora, "se pasea por toda la pantalla")
+    acciones.registrar("quedarse_quieta", cara_d.quedarse_quieta, "se queda quieta en su lugar")
+    acciones.registrar("ir_esquina_derecha", lambda: cara_d.ir_a("derecha"), "va a la esquina derecha")
+    acciones.registrar("ir_esquina_izquierda", lambda: cara_d.ir_a("izquierda"), "va a la esquina izquierda")
+    acciones.registrar("ir_centro", lambda: cara_d.ir_a("centro"), "va al centro")
+    acciones.registrar("seguir_mouse", cara_d.seguir_mouse, "sigue el cursor")
+    acciones.registrar("bailar", cara_d.bailar, "baila")
+
+    modulos_sistema = [
+        "memoria", "presentacion", "casa", "camara", "habilidades",
+        "ideas", "hilos", "estudio", "iniciativa", "palabra_clave",
+        "pantalla", "hud", "escenario", "telegram_puente", "diario",
+        "recordatorios", "cuidado", "propuestas", "voz_dueno",
+        "control_pc", "control_laptop", "correcciones", "resumen",
+        "aprendizaje", "pantalla_remota", "presencia", "proveedores",
+        "conversacion"
+    ]
+    for m in modulos_sistema:
+        try:
+            mod = __import__(m)
+            if hasattr(mod, "instalar"):
+                mod.instalar(app_dummy)
+        except Exception as e:
+            print(f"Aviso al instalar módulo {m} en prueba_humo: {e}")
+
+    todas_registradas = set(acciones.ACCIONES.keys()) | set(acciones.ESPECIALES.keys()) | set(acciones.VIVAS.keys())
+    cat_acts = set()
+    for cat, (kw, acts) in CATEGORIAS_ACCIONES.items():
+        cat_acts.update(acts)
+
+    inexistentes = (cat_acts | ACCIONES_BASE) - todas_registradas
+    assert not inexistentes, f"Acciones en categorías/base que no existen en el sistema: {inexistentes}"
+
+    huerfanas = (todas_registradas - {"test_humo"}) - (cat_acts | ACCIONES_BASE)
+    assert not huerfanas, f"Acciones registradas huérfanas sin categoría ni base: {huerfanas}"
+    print(f"OK: Categorías y acciones verificadas ({len(todas_registradas)} registradas, 0 inexistentes, 0 huérfanas).")
+
     return True
 
 def main():
@@ -201,7 +273,7 @@ def main():
         sys.exit(1)
         
     print("=== [PRUEBA_HUMO] TODOS LOS TESTS PASARON EXITOSAMENTE ===")
-    sys.exit(0)
+    os._exit(0)
 
 if __name__ == "__main__":
     main()

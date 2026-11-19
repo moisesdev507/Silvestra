@@ -4,6 +4,7 @@ import os
 import re
 
 import acciones
+from cerebro_categorias import ACCIONES_BASE, CATEGORIAS_ACCIONES
 import hilos
 import ideas
 import memoria_busqueda as mb
@@ -73,38 +74,6 @@ def recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5):
     return "\n".join(f"- {h}" for h in elegidos), n_rec
 
 
-CATEGORIAS_ACCIONES = {
-    "casa": ({"luz", "bombillo", "ventilador", "aire", "casa", "cuarto", "sala"},
-             {"luz_on", "luz_off", "ventilador_on", "ventilador_off", "estado_casa"}),
-    "musica": ({"musica", "cancion", "youtube", "play", "pausar", "reproducir", "tema", "volumen", "pista"},
-               {"musica_youtube", "pausar_musica", "reanudar_musica", "siguiente_cancion", "anterior_cancion", "subir_volumen", "bajar_volumen", "silenciar"}),
-    "pantalla": ({"pantalla", "mira", "ves", "ver", "leer", "captura", "copiloto", "ventana", "minimizar"},
-                 {"captura_pantalla", "minimizar_todo", "bloquear_pantalla", "describir_pantalla"}),
-    "laptop": ({"laptop", "pc", "computadora", "windows", "apagar", "reiniciar", "suspender", "sesion"},
-               {"apagar_laptop", "reiniciar_laptop", "suspender_laptop", "cerrar_sesion_laptop"}),
-    "aplicaciones": ({"abrir", "cerrar", "programa", "app", "carpeta", "sitio", "ir"},
-                     {"abrir_app", "cerrar_app", "ir_a"}),
-    "camara": ({"camara", "foto", "mirame", "rostro", "ojo", "gesto"},
-               {"encender_camara", "apagar_camara", "tomar_foto"}),
-    "estudio": ({"estudiar", "pomodoro", "examen", "repaso", "temporizador", "nota"},
-                {"modo_estudio", "tomar_examen", "tomar_nota"}),
-    "telegram": ({"telegram", "celular", "mensaje", "aviso", "avisar"},
-                 {"avisar_celular", "enviar_telegram"}),
-    "cuidado": ({"salgo", "voy", "calle", "cuidado"},
-                {"registrar_salida", "cancelar_salida"}),
-    "diagnostico": ({"proveedor", "modelo", "error", "log", "falla"},
-                    {"estado_proveedores", "explicar_error"}),
-    "escenario": ({"presentate", "presentacion", "escenario", "presentar", "quien eres", "demo"},
-                  {"presentarse", "cerrar_escenario"}),
-}
-
-ACCIONES_BASE = {
-    "poner_recordatorio", "listar_recordatorios", "cancelar_recordatorio",
-    "silencio", "buscar", "anotar_pendiente", "cerrar_pendiente",
-    "guardar_recuerdo", "olvidar", "consultar_memoria"
-}
-
-
 def describir_acciones_compactas(texto_actual=None):
     """Genera lista compacta de sólo las acciones relevantes al mensaje actual."""
     import unicodedata
@@ -121,7 +90,17 @@ def describir_acciones_compactas(texto_actual=None):
 
     palabras = set(re.findall(r"[a-z0-9]+", texto_norm))
     for _, (kw, act_names) in CATEGORIAS_ACCIONES.items():
-        if palabras & kw or any(k in texto_norm for k in kw):
+        coincide = False
+        for k in kw:
+            if " " in k:
+                if k in texto_norm:
+                    coincide = True
+                    break
+            else:
+                if k in palabras:
+                    coincide = True
+                    break
+        if coincide:
             elegidas.update(act_names)
 
     lineas = []
