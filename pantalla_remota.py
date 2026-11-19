@@ -251,12 +251,17 @@ class GestorPantallaRemota:
             emocion = getattr(self.app.cara, "emocion_objetivo", "neutral") or "neutral"
             vol = float(getattr(voz, "nivel_volumen", 0.0) if voz else 0.0)
             subtitulo = getattr(self.app, "ultimo_dicho", "") if hablando else ""
+            cara_activa = False
+            pres = getattr(self.app, "presencia", None)
+            if pres and getattr(pres, "activa", False) and getattr(pres, "ausente", False):
+                cara_activa = True
 
             return {
                 "estado": est,
                 "emocion": emocion,
                 "volumen": vol,
                 "subtitulo": subtitulo,
+                "cara_activa": cara_activa,
                 "t": time.time(),
             }
 

@@ -98,6 +98,34 @@ def atender_evento(app, tipo, texto):
     elif tipo == "telegram_burbuja":
         app.cara.decir(texto, 4000)
 
+    elif tipo == "presencia_modo_discreto":
+        discreto = bool(texto)
+        if hasattr(app, "cara") and app.cara:
+            if discreto:
+                if hasattr(app.cara, "burbuja") and app.cara.burbuja:
+                    try:
+                        app.cara.burbuja.hide()
+                    except Exception:
+                        pass
+                app.cara.hide()
+            else:
+                try:
+                    app.cara.setWindowOpacity(0.0)
+                    app.cara.show()
+                    app.cara.raise_()
+
+                    def _animar_aparicion(op):
+                        if hasattr(app, "cara") and app.cara:
+                            op = min(1.0, op + 0.15)
+                            app.cara.setWindowOpacity(op)
+                            if op < 1.0:
+                                app.cara.root.after(30, lambda: _animar_aparicion(op))
+
+                    _animar_aparicion(0.0)
+                except Exception:
+                    app.cara.show()
+                    app.cara.raise_()
+
     elif tipo == "ejecutar_accion":
         app.ejecutar(texto)
 

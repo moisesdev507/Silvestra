@@ -59,6 +59,7 @@ Silvestra es una asistente de IA de escritorio para Windows, hecha por Moisés (
 - `resumen.py`: módulo de resumen inteligente de páginas web y videos de YouTube. Descarga páginas por HTTPS con `requests` (timeout 10 s, tamaño máx. 2 MB) y extrae texto limpio con `html.parser` de la biblioteca estándar (sin dependencias pesadas). Para videos de YouTube obtiene subtítulos reales sin inventar (con detección de disponibilidad). Incluye lectura directa del enlace copiado en el portapapeles (`resumir_portapapeles`), segmentación y aviso para textos extensos (~12,000 caracteres), defensas estrictas contra inyección de prompt (el contenido es tratado como dato e ignora cualquier orden interna) y bloqueo total de URLs no https o direcciones locales/internas (localhost, 192.168.x, 10.x). Todo se ejecuta en hilos secundarios y entrega el resultado a través de `app.cola`. Acciones: `resumir_pagina`, `resumir_video` y `resumir_portapapeles`.
 - `aprendizaje.py`, `aprendizaje_datos.py`, `conversaciones_dia.json` y `perfil_conversacion.json`: sistema de aprendizaje continuo y perfil conversacional. Registra las conversaciones del día (hasta 7 días) con hora y emoción, con filtro estricto contra contraseñas o tokens. Realiza una reflexión nocturna (9 PM o al cerrar la app) en hilo secundario enviando las charlas a la cadena multillm para extraer: estilo de Moisés (palabras, apodos, muletillas, formalidad, largo), costumbres y rutinas, hilos con fecha para seguimiento y bromas/referencias internas. Solo analiza lo que Moisés dijo expresamente (sin conjeturas sobre salud ni emociones). Inyecta un resumen compacto (máx. ~600 caracteres) en el prompt del cerebro junto a las correcciones y la regla anti-invención estricta. Si un hilo venció su fecha, le pregunta cómo le fue una sola vez en horario diurno y lo cierra cuando conteste. Acciones: `reflexionar_ahora`, `que_has_aprendido`, `olvidar_aprendizaje`, `borrar_perfil` y `reflexionar_aprendizaje`.
 - `pantalla_remota.py`, `pantalla_remota_panel.py`, `pantalla_remota_web.py` y `pantalla_remota_web2.py`: servidor HTTP local y Server-Sent Events (SSE) para proyectar la cara animada de Silvestra en otra pantalla de la red local (como una tablet Android con Google Chrome) en modo de solo visualización. En reposo (>20 s de silencio) la cara se desplaza y reduce suavemente para mostrar un reloj de mesa grande en formato 12h con fecha en español, clima actual de Panamá (reutilizado de `hud.py` sin consultas de red extras), próximos 3 recordatorios de `recordatorios.json` y mensaje matutino. Incluye brillo nocturno automático entre las 10 PM y las 6 AM, modo privado para ocultar recordatorios y Screen Wake Lock API. Acciones: `mostrar_en_tablet`, `ocultar_en_tablet`, `tablet_modo_privado` y `tablet_modo_normal`.
+- `presencia.py`: sistema de detección de presencia y coordinación inteligente entre la laptop y la tablet. Comparte la cámara de `camara.py` (sin abrir otra captura). Si la cámara está apagada, no realiza nada ni genera errores. Detecta "ausente" tras 60 s continuos sin ver personas y "presente" cuando detecta a Moisés de nuevo. Cuando el dueño está ausente y la pantalla remota está activa, la cara de la laptop se oculta o pasa a modo discreto y la tablet muestra la cara grande y activa (mientras Silvestra habla por los altavoces de la laptop con normalidad). Al regresar, la cara vuelve a la laptop con una transición suave y un saludo corto opcional ("ya volviste") con cooldown de 10 min. Si la pantalla remota no está activa, solo registra el estado sin alterar la laptop. Acciones: `activar_presencia` y `desactivar_presencia`, guardadas en `estado.json` (desactivada por defecto) y protegidas por verificación de voz (`voz_dueno`). Privacidad estricta: no guarda imágenes ni comparte rostros desconocidos con la tablet.
 - `estado.py` y `estado.json`: persistencia del estado (última interacción, último saludo generado, iniciativa, palabra clave, hud y verificación de voz).
 - `bajar_modelos.py`: descarga los modelos de visión y el modelo pequeño de Vosk en español a `modelos/`.
 - `App.py` y `silvestra.db`: una demo aparte con Streamlit. No tocar.
@@ -746,6 +747,58 @@ Permite proyectar el rostro animado y los subtítulos de Silvestra en una segund
      ocultar_en_tablet
      ```
    - Silvestra apagará el servidor local y cerrará el puerto.
+
+## Módulo de Coordinación de Presencia (`presencia.py`)
+Permite a Silvestra detectar la presencia física de su dueño frente a la laptop y coordinar la experiencia visual cuando la tablet (pantalla remota) está conectada:
+- **Cero captura adicional (usa la cámara existente)**:
+  - Comparte el estado en tiempo real de `camara.py` sin abrir un segundo `cv2.VideoCapture`.
+  - **Tolerancia absoluta**: si la cámara de Silvestra está apagada, el módulo no realiza acciones ni genera advertencias o errores.
+- **Definición de estados**:
+  - **Ausente**: transcurren 60 segundos continuos sin detectar a ninguna persona frente a la laptop.
+  - **Presente**: detecta nuevamente al dueño (Moisés) frente a la cámara (mediante coincidencia biométrica de rostro con `dueno.npy`).
+- **Coordinación Inteligente Laptop ➔ Tablet**:
+  - **Al pasar a "Ausente"**:
+    - Si la pantalla remota (tablet) está activa: la cara flotante de la laptop se oculta discretamente (`presencia_modo_discreto`), y la tablet fuerza la cara activa a tamaño grande en el centro, suprimiendo el reloj de mesa en reposo.
+    - Silvestra continúa reproduciendo su voz por los altavoces de la laptop normalmente.
+    - Si la pantalla remota no está activa: presencia solo registra el estado `[presencia]` en el diario sin alterar la interfaz de la laptop.
+  - **Al regresar a "Presente"**:
+    - La cara de la laptop reaparece con una transición suave de opacidad (fade-in en ~300 ms).
+    - La tablet retorna a su dinámica habitual.
+    - Saludo corto opcional de bienvenida (*"Ya volviste, Moisés"*, *"Aquí estás de vuelta"* o *"Ya volviste"*) con un enfriamiento estricto de **10 minutos** (600 s) para no saturar al usuario si se levanta brevemente.
+- **Privacidad y Seguridad Estricta**:
+  - No guarda imágenes, fotografías ni fotogramas en disco.
+  - No realiza identificaciones de terceros ni almacena nuevos rostros.
+  - Si la cámara detecta a un desconocido, su presencia no desbloquea el retorno del dueño ni se comparte absolutamente ningún dato o indicio con la tablet.
+- **Arquitectura e Hilos**:
+  - Hilo daemon independiente (`PresenciaBucle`) con comprobación periódica.
+  - Cero llamadas directas a Qt desde el hilo secundario: todo cambio en la interfaz gráfica viaja de forma segura por `app.cola`.
+  - Registros en `silvestra.log` con el prefijo estandarizado `[presencia]`.
+  - Acciones protegidas con verificación de voz biométrica (`voz_dueno`): `activar_presencia` y `desactivar_presencia` (desactivada por defecto, persistida en `estado.json` como `presencia_activa`).
+
+### Cómo probar la detección de presencia y coordinación con tablet:
+1. **Activar la cámara y la pantalla remota**:
+   - Di o escribe: *"enciende la cámara"* (acción `activar_camara`).
+   - Di o escribe: *"muestra la pantalla en mi tablet"* (acción `mostrar_en_tablet`).
+   - Abre la URL en el navegador de la tablet o escanea el código QR.
+2. **Activar la detección de presencia**:
+   - Di o escribe: *"activa la presencia"* (acción `activar_presencia`).
+   - Silvestra responderá: *"Detección de presencia activada. Vigilaré si estás frente a la laptop."*
+   - Verás en `silvestra.log`: `[presencia] Detección de presencia activada.`
+3. **Simular ausencia (>60 segundos)**:
+   - Apártate del campo de visión de la cámara (o tápala con la mano) durante 60 segundos.
+   - Observarás que:
+     - En la laptop, la cara de Silvestra se oculta discretamente.
+     - En la tablet, la cara permanece activa y grande en el centro, sin encogerse al reloj de mesa.
+     - En `silvestra.log` se registra: `[presencia] Estado cambiado a AUSENTE (sin personas detectadas por 60 s).` y `[presencia] Pantalla remota activa: ocultando cara de laptop...`
+4. **Simular regreso de Moisés**:
+   - Vuelve a ponerte frente a la cámara de la laptop.
+   - Observarás que:
+     - La cara de la laptop reaparece suavemente con desvanecimiento.
+     - Silvestra te dará un saludo corto con calidez (ej: *"Ya volviste, Moisés."*).
+     - Si vuelves a levantarte y regresar antes de 10 minutos, reaparecerá suavemente sin repetir el saludo.
+5. **Desactivar la presencia**:
+   - Di o escribe: *"desactiva la presencia"* (acción `desactivar_presencia`).
+   - Silvestra confirmará: *"Detección de presencia desactivada."*
 
 ## Límites conocidos
 - El temporizador de estudio Pomodoro se pierde si se cierra la app (los recordatorios ya sobreviven al cierre de forma persistente en `recordatorios.json`).

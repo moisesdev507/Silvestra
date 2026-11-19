@@ -126,9 +126,9 @@ _BASE_HTML = r"""<!DOCTYPE html>
 
       const hablando = (vivo.estado === 'hablando'), escuchando = (vivo.estado === 'escuchando'), pensando = (vivo.estado === 'pensando');
 
-      if (hablando || escuchando) ultimaActividad = ahora;
+      if (hablando || escuchando || vivo.cara_activa) ultimaActividad = ahora;
       const enReposo = (ahora - ultimaActividad >= 20.0);
-      const targetReposo = (enReposo && !hablando && !escuchando) ? 1.0 : 0.0;
+      const targetReposo = (enReposo && !hablando && !escuchando && !vivo.cara_activa) ? 1.0 : 0.0;
       progresoReposo += (targetReposo - progresoReposo) * 0.08;
 
       if (progresoReposo > 0.1) {

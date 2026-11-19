@@ -57,6 +57,7 @@ class Camara:
         self.ult_negativa = 0.0
         self.consecutivos_ajeno = 0
         self.ult_aviso_invitado = 0.0
+        self.ult_rostro = 0.0
         self._generando_saludo = False
         self._cargar_dueno()
 
@@ -167,6 +168,7 @@ class Camara:
             self.consecutivos_ajeno = 0
             return
         caras = sorted(caras, key=lambda c: -c[2] * c[3])[:3]
+        self.ult_rostro = ahora
         vio_dueno = False
         vio_ajeno = False
         for cara in caras:
