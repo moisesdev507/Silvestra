@@ -179,7 +179,7 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None):
         "EMOCION: <neutral | alegre | calida | seria | preocupada | animada>\n"
         "RESPUESTA: <lo que dices en voz alta, breve y con personalidad de 1 a 3 frases>\n"
         "ACCION: <acción de la lista, o ninguna>\n"
-        f"RECUERDO: <nuevo dato duradero de {m.creador}, o ninguno>"
+        f"RECUERDO: <nuevo dato personal duradero de {m.creador} (gustos, familia, proyectos), o ninguno. NUNCA sobre comandos, pruebas, interfaz ni Silvestra>"
     )
     tok_inst = max(1, int(len(instrucciones_texto) / 3.6))
 

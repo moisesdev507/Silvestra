@@ -28,7 +28,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - **`voz.py` / `voz_reproductor.py` / `voz_cache.py`**: Síntesis `edge-tts` modulada, reproductor thread-safe SDL/mixer, RMS labial, corte rápido barge-in y caché.
 - **`cerebro.py` / `cerebro_prompt.py` / `cerebro_parser.py`**: Prompt (<2000 tokens), streaming y emociones/acciones.
 - **`proveedores.py` / `proveedores_cadenas.py` / `sesion_http.py`**: Multi-LLM en cascada con pool HTTP Keep-Alive persistente y cooldown por modelo.
-- **`memoria.py` / `memoria_busqueda.py`**: Memoria permanente con fechas, categorías y anti-invención.
+- **`memoria.py` / `memoria_busqueda.py` / `memoria_filtro.py`**: Memoria con fechas, filtro anti-meta y desduplicación.
 - **`acciones.py`**: Registro central de acciones (`acciones.registrar`).
 - **`recordatorios.py`**: Recordatorios por voz persistentes en disco (`recordatorios.json`).
 - **`control_laptop.py` / `control_seguridad.py`**: Control de la laptop por niveles (libre, con código y prohibido) con lista permitida y auditoría.

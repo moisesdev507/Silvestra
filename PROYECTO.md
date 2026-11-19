@@ -988,12 +988,13 @@ Para mantener todos los archivos bajo el límite de 15 KB, `cerebro.py` se divid
 - Registro en log: `[hora] inyectada='...'`
 
 ### 3. Memoria permanente con fechas, categorías semánticas y extracción continua
-- **Estructura modular (`memoria.py` ~14.0 KB y `memoria_busqueda.py` ~7.8 KB)**:
+- **Estructura modular (`memoria.py` ~14.3 KB, `memoria_busqueda.py` ~7.8 KB y `memoria_filtro.py` ~4.0 KB)**:
   - `memoria.py`: API principal (`recordar`, `olvidar`, `consultar`, `extraer_hechos_conversacion`), registro de acciones y persistencia en `memoria.json`.
   - `memoria_busqueda.py`: Motor de búsqueda semántica con normalización NFD, eliminación de stopwords, ponderación por recencia, mapeo categórico y resumen temático de recuerdos antiguos.
+  - `memoria_filtro.py`: Validación de hechos, filtro estricto anti-meta (comandos, interfaz, pruebas, conjeturas) y desduplicación semántica por coincidencia de conceptos.
 - **Registro duradero y con fecha**: Cada nuevo recuerdo o hecho importante sobre Moisés (gustos, personas, planes, proyectos) se registra con su fecha en `memoria.json` (ej: `[2026-11-19] hecho`).
 - **Filtro de privacidad estricto**: Rechaza y nunca guarda contraseñas, tokens, claves, secretos, API keys o datos financieros sensibles (`PALABRAS_PRIVADAS`).
-- **Extracción más completa en segundo plano (`extraer_hechos_conversacion`)**: Al terminar una sesión o cada 3 turnos de conversación, se lanza un hilo daemon secundario que analiza el diálogo reciente con el proveedor de charla para extraer automáticamente hechos duraderos, desduplicarlos y persistirlos con fecha y filtro de privacidad.
+- **Extracción más completa en segundo plano (`extraer_hechos_conversacion`)**: Al terminar una sesión o cada 3 turnos de conversación, se lanza un hilo daemon secundario con prompt depurado anti-meta para extraer automáticamente hechos duraderos, desduplicarlos y persistirlos con fecha y filtro de privacidad.
 - **Búsqueda semántica por categorías y sinónimos**: Mapeo inteligente en categorías (`familia`, `trabajo`, `comida`, `planes`, `proyectos`) y sinónimos para recuperar recuerdos relevantes aunque la pregunta use palabras distintas (ej. *"cenar"* encuentra recuerdos de *"pizza"*).
 - **Memoria antigua resumida**: Al superar ~200 recuerdos, los hechos más antiguos se compactan en párrafos temáticos (`resumenes_tematicos`) sin perder conocimiento histórico ni sobrecargar el almacenamiento.
 - **Comandos y acciones por voz**:

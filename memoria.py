@@ -8,11 +8,8 @@ import threading
 from config import ARCHIVO_MEMORIA
 import acciones
 import memoria_busqueda as mb
-
-PALABRAS_PRIVADAS = (
-    "clave", "password", "contraseñ", "contrasena", "token", "api_key",
-    "apikey", "secret", "cvv", "tarjeta de credito", "pin "
-)
+import memoria_filtro as mf
+from memoria_filtro import PALABRAS_PRIVADAS
 
 _memoria_instancia = None
 
@@ -108,35 +105,32 @@ class Memoria:
         if not hecho:
             return False
 
-        # Filtro de privacidad estricto
-        hecho_low = hecho.lower()
-        for p in PALABRAS_PRIVADAS:
-            if p in hecho_low:
-                print(f"[memoria] Rechazado por filtro de privacidad: '{p}'", flush=True)
-                return False
-
-        # Fecha de cuándo se dijo en zona de Panamá
-        if not fecha:
-            try:
-                from zoneinfo import ZoneInfo
-                ahora = datetime.datetime.now(ZoneInfo("America/Panama"))
-            except Exception:
-                ahora = datetime.datetime.now()
-            fecha = ahora.strftime("%Y-%m-%d")
-
-        # Prefijo de fecha
-        if not re.match(r"^\[\d{4}-\d{2}-\d{2}\]", hecho) and not re.match(r"^\[\d{2}/\d{2}/\d{4}\]", hecho):
-            hecho_guardar = f"[{fecha}] {hecho}"
-        else:
-            hecho_guardar = hecho
+        # Filtro estricto de privacidad, meta-conversaciones y calidad
+        valido, razon = mf.es_recuerdo_valido(hecho)
+        if not valido:
+            print(f"[memoria] Rechazado ({razon}): '{hecho}'", flush=True)
+            return False
 
         with self._bloqueo:
-            # Evitar duplicados exactos
-            hecho_puro = re.sub(r"^\[[^\]]+\]\s*", "", hecho).strip().lower()
-            for existente in self.datos["hechos"]:
-                existente_puro = re.sub(r"^\[[^\]]+\]\s*", "", existente).strip().lower()
-                if hecho_puro == existente_puro:
-                    return False
+            # Evitar duplicados exactos y semánticos
+            if mf.es_duplicado(hecho, self.datos.get("hechos", [])):
+                print(f"[memoria] Rechazado por duplicado: '{hecho}'", flush=True)
+                return False
+
+            # Fecha de cuándo se dijo en zona de Panamá
+            if not fecha:
+                try:
+                    from zoneinfo import ZoneInfo
+                    ahora = datetime.datetime.now(ZoneInfo("America/Panama"))
+                except Exception:
+                    ahora = datetime.datetime.now()
+                fecha = ahora.strftime("%Y-%m-%d")
+
+            # Prefijo de fecha
+            if not re.match(r"^\[\d{4}-\d{2}-\d{2}\]", hecho) and not re.match(r"^\[\d{2}/\d{2}/\d{4}\]", hecho):
+                hecho_guardar = f"[{fecha}] {hecho}"
+            else:
+                hecho_guardar = hecho
 
             self.datos["hechos"].append(hecho_guardar)
 
@@ -221,15 +215,17 @@ class Memoria:
             creador = self.creador
             sistema = (
                 f"Eres un extractor de memoria objetivo y honesto para Silvestra, asistente de {creador}.\n"
-                "Analiza la conversación reciente y extrae TODOS los hechos duraderos que el dueño dijo:\n"
+                "Analiza la conversación reciente y extrae hechos duraderos que el dueño dijo:\n"
                 "- Personas (familiares, amigos, compañeros)\n"
                 "- Gustos y preferencias (comida, música, pasatiempos)\n"
-                "- Planes, metas y fechas (exámenes, viajes, proyectos)\n"
+                "- Planes, metas y fechas (exámenes, viajes, proyectos reales)\n"
                 "- Trabajo, estudios y opiniones firmes\n\n"
                 "REGLAS ESTRICTAS:\n"
-                "1. Extrae ÚNICAMENTE lo que el usuario afirmó directamente. Cero suposiciones. Cero salud íntima ni contraseñas.\n"
-                "2. Si no hay hechos nuevos o duraderos, responde 'NINGUNO'.\n"
-                "3. Formato: una línea por hecho iniciando con 'HECHO: '\n"
+                "1. Extrae ÚNICAMENTE lo que el usuario afirmó directamente sobre su vida real o proyectos personales. Cero suposiciones. Cero salud íntima ni contraseñas.\n"
+                "2. PROHIBIDO guardar recuerdos sobre comandos, pruebas, pedidos a Silvestra, HUD, casa inteligente, hora, clima, saludos ni interacciones con la asistente.\n"
+                "3. PROHIBIDO especular o usar frases como 'el usuario parece tener interés en...'. Cada hecho debe ser concreto, útil y en UNA sola línea.\n"
+                "4. Si no hay hechos personales nuevos o relevantes, responde 'NINGUNO'.\n"
+                "5. Formato: una línea por hecho iniciando con 'HECHO: '\n"
                 "Ejemplo:\n"
                 "HECHO: A Moisés le gusta la comida italiana.\n"
                 "HECHO: Su hermano Carlos vive en David."
