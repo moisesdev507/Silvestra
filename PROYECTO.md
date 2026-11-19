@@ -58,7 +58,7 @@ Silvestra es una asistente de IA de escritorio para Windows, hecha por Moisés (
 - `correcciones.py` y `correcciones.json`: sistema de lecciones aprendidas y correcciones del usuario. Detecta cuando Moisés corrige a Silvestra ("no, eso no", "así no", "te equivocaste", "mejor haz..."), almacena qué dijo ella y qué pidió el usuario (máx. 50 entradas FIFO con filtro estricto contra claves/contraseñas), e inyecta las 5 correcciones más relevantes en el prompt del sistema (`instrucciones()`) para que el cerebro aprenda y no repita errores. No duplica con `memoria.json`. Acciones: `mis_correcciones` (las lee/muestra) y `olvidar_correccion` (elimina una por número).
 - `resumen.py`: módulo de resumen inteligente de páginas web y videos de YouTube. Descarga páginas por HTTPS con `requests` (timeout 10 s, tamaño máx. 2 MB) y extrae texto limpio con `html.parser` de la biblioteca estándar (sin dependencias pesadas). Para videos de YouTube obtiene subtítulos reales sin inventar (con detección de disponibilidad). Incluye lectura directa del enlace copiado en el portapapeles (`resumir_portapapeles`), segmentación y aviso para textos extensos (~12,000 caracteres), defensas estrictas contra inyección de prompt (el contenido es tratado como dato e ignora cualquier orden interna) y bloqueo total de URLs no https o direcciones locales/internas (localhost, 192.168.x, 10.x). Todo se ejecuta en hilos secundarios y entrega el resultado a través de `app.cola`. Acciones: `resumir_pagina`, `resumir_video` y `resumir_portapapeles`.
 - `aprendizaje.py`, `aprendizaje_datos.py`, `conversaciones_dia.json` y `perfil_conversacion.json`: sistema de aprendizaje continuo y perfil conversacional. Registra las conversaciones del día (hasta 7 días) con hora y emoción, con filtro estricto contra contraseñas o tokens. Realiza una reflexión nocturna (9 PM o al cerrar la app) en hilo secundario enviando las charlas a la cadena multillm para extraer: estilo de Moisés (palabras, apodos, muletillas, formalidad, largo), costumbres y rutinas, hilos con fecha para seguimiento y bromas/referencias internas. Solo analiza lo que Moisés dijo expresamente (sin conjeturas sobre salud ni emociones). Inyecta un resumen compacto (máx. ~600 caracteres) en el prompt del cerebro junto a las correcciones. Si un hilo venció su fecha, le pregunta cómo le fue una sola vez en horario diurno y lo cierra cuando conteste. Acciones: `que_has_aprendido`, `olvidar_aprendizaje`, `borrar_perfil` y `reflexionar_aprendizaje`.
-- `pantalla_remota.py` y `pantalla_remota_web.py`: servidor HTTP local y Server-Sent Events (SSE) para proyectar la cara animada de Silvestra en otra pantalla de la red local (como una tablet Android con Google Chrome) en modo de solo visualización. No requiere librerías externas (usa `http.server` estándar y OpenCV para el código QR). Renderiza en HTML5 `<canvas>` a pantalla completa con diseño fiel a `cara_dibujo.py`: resplandor, cabeza, lacito, ojos con brillo, cejas expresivas, rubor, boca con sincronía labial RMS y anillos giratorios. Soporta Screen Wake Lock API para mantener la pantalla de la tablet encendida y botón de pantalla completa. Máxima seguridad con token aleatorio persistido en `estado.json` y cero endpoints de control. Acciones: `mostrar_en_tablet` y `ocultar_en_tablet`.
+- `pantalla_remota.py`, `pantalla_remota_panel.py`, `pantalla_remota_web.py` y `pantalla_remota_web2.py`: servidor HTTP local y Server-Sent Events (SSE) para proyectar la cara animada de Silvestra en otra pantalla de la red local (como una tablet Android con Google Chrome) en modo de solo visualización. En reposo (>20 s de silencio) la cara se desplaza y reduce suavemente para mostrar un reloj de mesa grande en formato 12h con fecha en español, clima actual de Panamá (reutilizado de `hud.py` sin consultas de red extras), próximos 3 recordatorios de `recordatorios.json` y mensaje matutino. Incluye brillo nocturno automático entre las 10 PM y las 6 AM, modo privado para ocultar recordatorios y Screen Wake Lock API. Acciones: `mostrar_en_tablet`, `ocultar_en_tablet`, `tablet_modo_privado` y `tablet_modo_normal`.
 - `estado.py` y `estado.json`: persistencia del estado (última interacción, último saludo generado, iniciativa, palabra clave, hud y verificación de voz).
 - `bajar_modelos.py`: descarga los modelos de visión y el modelo pequeño de Vosk en español a `modelos/`.
 - `App.py` y `silvestra.db`: una demo aparte con Streamlit. No tocar.
@@ -659,11 +659,11 @@ Permite a Silvestra aprender de la forma de hablar de Moisés, sus rutinas e int
    - Para olvidar un dato: *"olvida lo que aprendiste sobre [dato]"* (acción `olvidar_aprendizaje | examen`).
    - Para borrar todo: acción `borrar_perfil` (te pedirá confirmación) y luego `borrar_perfil | confirmar`.
 
-## Módulo de Pantalla Remota para Tablet (`pantalla_remota.py`, `pantalla_remota_web.py`)
-Permite proyectar el rostro animado y los subtítulos de Silvestra en una segunda pantalla de la red local (por ejemplo, una tablet Android de 8.7" con Google Chrome) en modo de visualización pasiva (solo ver, sin control):
+## Módulo de Pantalla Remota para Tablet (`pantalla_remota.py`, `pantalla_remota_panel.py`, `pantalla_remota_web.py`, `pantalla_remota_web2.py`)
+Permite proyectar el rostro animado y los subtítulos de Silvestra en una segunda pantalla de la red local (por ejemplo, una tablet Android de 8.7" con Google Chrome) en modo de visualización pasiva (solo ver, sin control) y transformarse en un reloj de mesa inteligente durante el reposo:
 - **Servidor ligero sin dependencias**:
   - Utiliza exclusivamente la librería estándar `http.server.ThreadingHTTPServer` en un hilo secundario daemon.
-  - Actualizaciones en tiempo real a ~25 Hz mediante Server-Sent Events (SSE) en `/eventos?token=...`.
+  - Actualizaciones en tiempo real a ~25 Hz mediante Server-Sent Events (SSE) en `/eventos?token=...`, incorporando los datos del panel cada 10-15 s sin recargar la página.
   - Si el puerto está ocupado o falla la apertura de red, se registra en `silvestra.log` y Silvestra continúa funcionando normalmente.
 - **Renderizado fiel con HTML5 `<canvas>`**:
   - Reproduce en JavaScript y canvas 2D el diseño visual exacto de [cara_dibujo.py](file:///c:/Proyecto_Silvestra/cara_dibujo.py):
@@ -675,7 +675,19 @@ Permite proyectar el rostro animado y los subtítulos de Silvestra en una segund
     - Sincronía labial por volumen RMS (`nivel_volumen`) o animación silábica suave.
     - Vida en reposo con respiración y microgestos continuos.
     - Caja de subtítulos translúcida en la parte inferior con tipografía nítida y desvanecimiento suave.
-  - Diseño responsivo adaptado tanto a orientación horizontal (landscape) como vertical (portrait) para tablets de 8.7".
+- **Modo Reloj de Mesa en Reposo (>20 s de inactividad)**:
+  - Cuando pasan 20 segundos sin hablar ni escuchar, la cara se reduce y se desplaza suavemente hacia un lado (en horizontal) o hacia arriba (en vertical).
+  - Aparece en pantalla un reloj digital grande en formato de 12 horas con indicador AM/PM y la fecha completa en español.
+  - **Panel de información útil**:
+    - **Clima de Panamá**: reutiliza los datos que `hud.py` obtiene de Open-Meteo sin realizar ninguna petición de red adicional desde el servidor.
+    - **Próximos recordatorios**: muestra hasta 3 recordatorios pendientes de `recordatorios.json` con su hora exacta y título corto (protegido contra textos extensos).
+    - **Mensaje del día**: muestra el último saludo o reflexión matutina de Silvestra si está disponible.
+  - En cuanto Silvestra o Moisés hablan o escuchan, la cara regresa al centro a tamaño completo con una transición fluida.
+- **Privacidad y comandos de voz**:
+  - `tablet_modo_privado`: oculta la sección de recordatorios del panel de la tablet para mayor discreción, dejando solo la hora, el clima y la cara (persistido en `estado.json`).
+  - `tablet_modo_normal`: restaura la visualización de los recordatorios en la tablet.
+- **Brillo Nocturno Automático (10:00 PM a 6:00 AM)**:
+  - Entre las 10 PM y las 6 AM, la página web adopta automáticamente el tema nocturno: fondo negro profundo (`#030509`), colores atenuados y menor contraste para no deslumbrar en la habitación ni perturbar el descanso. No modifica el brillo del sistema de la tablet.
 - **Pantalla siempre encendida y pantalla completa**:
   - Integra la **Screen Wake Lock API** del navegador para evitar que la tablet apague la pantalla mientras muestra a Silvestra.
   - Botón discreto (`⛶`) en la esquina superior derecha para alternar pantalla completa.
@@ -684,11 +696,10 @@ Permite proyectar el rostro animado y los subtítulos de Silvestra en una segund
   - Exige un token largo aleatorio generado criptográficamente (`secrets.token_urlsafe(24)`) y persistido en `estado.json` (`remota_token`, `remota_puerto`, `remota_activa`).
   - Cualquier petición sin el token o con token erróneo recibe un `403 Forbidden` inmediato.
   - 100% de solo lectura: no existen endpoints de control, comandos ni ejecución remota.
-  - Solo expone: `{estado, emocion, volumen, subtitulo}`.
 - **Código QR y acciones**:
   - `mostrar_en_tablet`: inicia el servidor si estaba detenido, copia la URL con el token al portapapeles, muestra la URL en la burbuja y abre una ventana en la laptop con un código QR de alta resolución generado con OpenCV (`cv2.QRCodeEncoder`) para escanear con la cámara de la tablet.
   - `ocultar_en_tablet`: detiene el servidor y cierra la ventana QR.
-  - Ambas acciones respetan la verificación de voz del dueño (`voz_dueno`).
+  - Todas las acciones respetan la verificación de voz del dueño (`voz_dueno`).
 
 > [!WARNING] Advertencia del Firewall de Windows:
 > Al ejecutar por primera vez la pantalla remota, Windows Defender Firewall puede mostrar una ventana emergente preguntando si deseas permitir que Python se comunique en redes privadas. Debes marcar la casilla **"Redes privadas"** (tu red WiFi doméstica) y hacer clic en **"Permitir acceso"**. Si la tablet no carga la página, comprueba que:
@@ -696,7 +707,7 @@ Permite proyectar el rostro animado y los subtítulos de Silvestra en una segund
 > 2. El tipo de red en Windows esté configurado como "Red privada" (en Configuración de Windows > Red e Internet > Propiedades de WiFi).
 > 3. El puerto 8765 esté permitido en el Firewall de Windows para conexiones entrantes de Python.
 
-### Cómo probar la pantalla remota:
+### Cómo probar la pantalla remota y el reloj de mesa:
 1. **Activar la pantalla remota**:
    - Di o escribe a Silvestra:
      ```text
@@ -707,10 +718,24 @@ Permite proyectar el rostro animado y los subtítulos de Silvestra en una segund
 2. **Conectar la tablet**:
    - Abre la app de Cámara o Google Chrome en tu tablet Android y escanea el código QR en la pantalla de tu laptop.
    - O bien, abre Chrome en la tablet y pega la URL (ej: `http://192.168.1.50:8765/?token=...`).
-3. **Observar la sincronización en vivo**:
-   - Presiona el botón `⛶` en la esquina superior derecha de la tablet para entrar a pantalla completa.
-   - Habla con Silvestra en la laptop: notarás cómo la cara en la tablet reacciona en tiempo real, modula sus emociones (cian, verde, rosa, azul, amarillo), abre la boca al compás de la voz y muestra lo que dice como subtítulo abajo.
-4. **Desactivar el servidor**:
+3. **Comprobar la sincronización en conversación**:
+   - Presiona el botón `⛶` arriba a la derecha en la tablet para ponerla a pantalla completa.
+   - Habla con Silvestra: la cara reaccionará en tiempo real en el centro con sus expresiones, anillos, apertura de boca y subtítulos.
+4. **Verificar el modo reloj de mesa en reposo**:
+   - Deja a Silvestra en silencio durante 20 segundos sin hablar ni tocar la pantalla.
+   - Observarás cómo la cara se encoge suavemente y se desplaza hacia un lado, dando paso al reloj grande de 12 horas, fecha, clima de Panamá y próximos recordatorios.
+   - Vuelve a hablarle a Silvestra: la cara crecerá de nuevo al centro de inmediato sin saltos bruscos.
+5. **Probar el modo privado y normal por voz**:
+   - Di o escribe:
+     ```text
+     tablet_modo_privado
+     ```
+     Silvestra confirmará por voz y verás que en la tablet desaparece la lista de recordatorios.
+   - Para volver a verlos:
+     ```text
+     tablet_modo_normal
+     ```
+6. **Desactivar el servidor**:
    - Di o escribe:
      ```text
      ocultar_en_tablet

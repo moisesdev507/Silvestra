@@ -138,6 +138,7 @@ def atender_evento(app, tipo, texto):
     elif tipo == "hud_clima":
         if hasattr(app, "hud") and app.hud:
             app.hud.actualizar_clima(texto)
+        app.ultimo_clima = texto
 
     elif tipo == "fin_voz":
         if hasattr(app, "cara") and app.cara:

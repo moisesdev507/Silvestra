@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 import acciones
 import estado
+from pantalla_remota_panel import GestorPanelRemoto
 from pantalla_remota_web import PAGINA_HTML
 
 PUERTO_DEFECTO = 8765
@@ -166,9 +167,16 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
 
             log(f"Conexión de eventos SSE establecida desde {self.client_address[0]}")
+            ultimo_panel = 0.0
             try:
                 while not self.server.detener_event.is_set():
+                    ahora_t = time.time()
                     datos = self.server.gestor.obtener_estado_dict()
+                    if ahora_t - ultimo_panel >= 10.0 or ultimo_panel == 0.0:
+                        if hasattr(self.server.gestor, "panel") and self.server.gestor.panel:
+                            datos["panel"] = self.server.gestor.panel.obtener_datos()
+                        ultimo_panel = ahora_t
+
                     payload = json.dumps(datos, ensure_ascii=False)
                     msg = f"data: {payload}\n\n".encode("utf-8")
                     self.wfile.write(msg)
@@ -195,6 +203,7 @@ class GestorPantallaRemota:
         self._hilo = None
         self._detener_event = threading.Event()
         self.ventana_qr = None
+        self.panel = GestorPanelRemoto(app)
 
         d = estado.cargar()
         self.token = d.get("remota_token")
@@ -338,6 +347,18 @@ class GestorPantallaRemota:
                 pass
         self.app.cola.put(("hablar", "Pantalla remota desactivada."))
 
+    def accion_modo_privado(self):
+        """Activa el modo privado en la tablet ocultando los recordatorios."""
+        if hasattr(self, "panel") and self.panel:
+            self.panel.fijar_modo_privado(True)
+        self.app.cola.put(("hablar", "Modo privado de la tablet activado. Oculté los recordatorios."))
+
+    def accion_modo_normal(self):
+        """Activa el modo normal en la tablet mostrando los recordatorios."""
+        if hasattr(self, "panel") and self.panel:
+            self.panel.fijar_modo_privado(False)
+        self.app.cola.put(("hablar", "Modo normal de la tablet activado. Mostrando recordatorios."))
+
 
 def instalar(app):
     """Instala el módulo de pantalla remota y registra sus acciones en Silvestra."""
@@ -353,6 +374,16 @@ def instalar(app):
         "ocultar_en_tablet",
         lambda: gestor.accion_ocultar_en_tablet(),
         "apaga el servidor de pantalla remota para tablet.",
+    )
+    acciones.registrar(
+        "tablet_modo_privado",
+        lambda: gestor.accion_modo_privado(),
+        "activa el modo privado en la tablet para ocultar los recordatorios del panel de reloj.",
+    )
+    acciones.registrar(
+        "tablet_modo_normal",
+        lambda: gestor.accion_modo_normal(),
+        "activa el modo normal en la tablet para mostrar los recordatorios en el panel de reloj.",
     )
 
     log("Módulo de pantalla remota instalado.")
