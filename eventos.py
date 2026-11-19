@@ -105,8 +105,9 @@ def atender_evento(app, tipo, texto):
         app.despertar()
 
     elif tipo == "alternar_conversacion":
+        motivo = texto or "evento"
         if not app.conversacion:
-            app.alternar_conversacion()
+            app.alternar_conversacion(motivo=motivo)
 
     elif tipo == "mirando_pantalla":
         app.cara.decir("Mirando la pantalla...", 4000)

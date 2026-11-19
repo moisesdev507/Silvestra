@@ -108,6 +108,8 @@ class Oido:
 
         espera_silencio = float(getattr(config, "ESPERA_SILENCIO_SEGUNDOS", 0.55))
         max_silencio = max(7, int(espera_silencio / 0.05))
+        vad_adaptativo = getattr(config, "VAD_ADAPTATIVO", True)
+        max_silencio_adaptativo = max(6, int(0.30 / 0.05))
         ganancia = float(getattr(config, "GANANCIA_MICROFONO", 1.2))
 
         try:
@@ -187,8 +189,20 @@ class Oido:
 
                     if hablo:
                         trozos.append(datos.copy())
-                        # Detección de fin de habla optimizada con parámetro configurable
-                        if silencio >= max_silencio or len(trozos) > (80 if corto else 300):
+                        # Detección de fin de habla optimizada con VAD adaptativo
+                        terminado = False
+                        if silencio >= max_silencio:
+                            terminado = True
+                        elif (
+                            vad_adaptativo
+                            and len(trozos) >= 16
+                            and silencio >= max_silencio_adaptativo
+                            and nivel < (piso_ruido * 1.35)
+                        ):
+                            terminado = True
+                        elif len(trozos) > (80 if corto else 300):
+                            terminado = True
+                        if terminado:
                             break
                     elif espera >= 160:
                         break

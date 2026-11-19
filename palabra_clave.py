@@ -20,6 +20,12 @@ import estado
 UMBRAL_RATIO = 0.6
 OBJETIVO = "silvestra"
 
+# Palabras que nunca deben coincidir con la palabra clave para evitar bucles o falsos disparos
+PALABRAS_EXCLUIDAS = {
+    "silencio", "silenciosa", "silencioso", "silaba", "silabas",
+    "silla", "sillon", "silbido", "silbato", "silicona", "simple",
+}
+
 # Lista de palabras candidatas para verificar contra el modelo Vosk
 CANDIDATAS = [
     "silvestra",
@@ -52,8 +58,7 @@ def normalizar(texto):
 
 
 def coincide_palabra(texto, objetivo=OBJETIVO, umbral=UMBRAL_RATIO):
-    """Comprueba si alguna palabra reconocida tiene difflib ratio >= umbral con objetivo,
-    o empieza con 'sil' y tiene al menos 5 letras."""
+    """Comprueba si alguna palabra reconocida es afín al nombre objetivo, descartando falsos positivos."""
     if not texto:
         return False
     t = normalizar(texto)
@@ -64,15 +69,20 @@ def coincide_palabra(texto, objetivo=OBJETIVO, umbral=UMBRAL_RATIO):
         return False
 
     for i, p in enumerate(palabras):
-        if difflib.SequenceMatcher(None, p, objetivo).ratio() >= umbral:
+        if p in PALABRAS_EXCLUIDAS:
+            continue
+        # Prefijo específico del nombre (silvest..., sylvest..., silvi...)
+        if p.startswith(("silvest", "sylvest", "silvi")):
             return True
-        if p.startswith("sil") and len(p) >= 5:
+        if difflib.SequenceMatcher(None, p, objetivo).ratio() >= umbral:
             return True
         if i + 1 < len(palabras):
             par = p + palabras[i + 1]
-            if difflib.SequenceMatcher(None, par, objetivo).ratio() >= umbral:
+            if par in PALABRAS_EXCLUIDAS:
+                continue
+            if par.startswith(("silvest", "sylvest", "silvi")):
                 return True
-            if par.startswith("sil") and len(par) >= 5:
+            if difflib.SequenceMatcher(None, par, objetivo).ratio() >= umbral:
                 return True
     return False
 
@@ -225,7 +235,7 @@ class PalabraClave:
         if self.app.descansando:
             self.app.cola.put(("despertar", None))
         elif self.siempre_atenta and not self.app.conversacion:
-            self.app.cola.put(("alternar_conversacion", None))
+            self.app.cola.put(("alternar_conversacion", "palabra_clave_vosk"))
 
     def detener(self):
         self.vivo = False

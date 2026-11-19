@@ -66,15 +66,18 @@ def grabar(app):
     app.cola.put(("silencio", None) if texto is None else ("oido", texto))
 
 
-def alternar_conversacion(app):
+def alternar_conversacion(app, motivo="desconocido"):
     """Enciende o apaga la conversación continua por voz."""
     if not app.memoria.nombre:
         return
     app.conversacion = not app.conversacion
     app.silencios = 0
+    print(f"[conversacion] alternar_conversacion motivo='{motivo}' nuevo_estado={'escuchando' if app.conversacion else 'silencio'}", flush=True)
     if app.conversacion:
         app.decir("Te escucho. Háblame.", 2500)
+        escuchar(app)
     else:
+        dejar_de_escuchar(app)
         app.decir("Listo, dejo de escuchar.", 2500)
         app._iniciar_reflexion()
 
@@ -161,7 +164,7 @@ def enviar(app, texto):
                 if hasattr(app, "voz_dueno") and getattr(app.voz_dueno, "activa", False) and not uv.get("es_dueno", False):
                     return
         if app.conversacion:
-            app.alternar_conversacion()
+            app.alternar_conversacion(motivo="comando_voz_deja_de_escuchar")
         return
 
     if "cancelar" in t_norm:
@@ -206,7 +209,7 @@ def pensar(app, texto):
     muletillas_activas = getattr(config, "MULETILLAS_ACTIVAS", False)
     timer_espera = None
     if muletillas_activas:
-        umbral_espera = getattr(config, "UMBRAL_MULETILLA_SEGUNDOS", 0.70)
+        umbral_espera = getattr(config, "UMBRAL_MULETILLA_SEGUNDOS", 0.30)
         timer_espera = threading.Timer(
             umbral_espera,
             lambda: getattr(app, "voz", None) and hasattr(app.voz, "soltar_espera") and app.voz.soltar_espera()

@@ -187,6 +187,7 @@ class Silvestra:
             return
         self.pendiente_descanso = True
         self.conversacion = False
+        self._dejar_de_escuchar()
         self._iniciar_reflexion()
         self.cara.root.after(7000, self.descansar)
 
@@ -220,8 +221,8 @@ class Silvestra:
                 pass
         conversacion.enviar(self, texto)
 
-    def alternar_conversacion(self):
-        conversacion.alternar_conversacion(self)
+    def alternar_conversacion(self, motivo="interfaz"):
+        conversacion.alternar_conversacion(self, motivo=motivo)
 
     def escuchar(self):
         conversacion.escuchar(self)

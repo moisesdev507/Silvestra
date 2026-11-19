@@ -4,6 +4,7 @@ import json
 import os
 import re
 import threading
+import time
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 ARCHIVO_CONVERSACIONES = os.path.join(BASE, "conversaciones_dia.json")
@@ -12,20 +13,8 @@ ARCHIVO_PERFIL = os.path.join(BASE, "perfil_conversacion.json")
 _lock = threading.RLock()
 
 PALABRAS_PRIVADAS = (
-    "clave",
-    "password",
-    "contraseñ",
-    "contrasena",
-    "token",
-    "api_key",
-    "apikey",
-    "secret",
-    "gsk_",
-    "sk-",
-    "pin de acceso",
-    "credencial",
-    "tarjeta",
-    "cvv",
+    "clave", "password", "contraseñ", "contrasena", "token", "api_key",
+    "apikey", "secret", "gsk_", "sk-", "pin de acceso", "credencial", "tarjeta", "cvv",
 )
 
 PERFIL_POR_DEFECTO = {
@@ -92,12 +81,22 @@ def guardar_conversaciones(datos):
             return False
 
 
+_perfil_cache = None
+_perfil_mtime = 0.0
+_perfil_ts = 0.0
+
+
 def cargar_perfil():
-    """Carga perfil_conversacion.json asegurando la estructura por defecto."""
+    """Carga perfil_conversacion.json con caché en RAM de baja latencia (<1ms)."""
+    global _perfil_cache, _perfil_mtime, _perfil_ts
+    ahora = time.time()
     with _lock:
         if not os.path.exists(ARCHIVO_PERFIL):
             return json.loads(json.dumps(PERFIL_POR_DEFECTO))
         try:
+            mtime = os.path.getmtime(ARCHIVO_PERFIL)
+            if _perfil_cache is not None and mtime == _perfil_mtime and (ahora - _perfil_ts < 5.0):
+                return json.loads(json.dumps(_perfil_cache))
             with open(ARCHIVO_PERFIL, "r", encoding="utf-8") as f:
                 datos = json.load(f)
                 if isinstance(datos, dict):
@@ -105,18 +104,25 @@ def cargar_perfil():
                     res.update(datos)
                     if not isinstance(res.get("estilo"), dict):
                         res["estilo"] = dict(PERFIL_POR_DEFECTO["estilo"])
-                    return res
+                    _perfil_cache = res
+                    _perfil_mtime = mtime
+                    _perfil_ts = ahora
+                    return json.loads(json.dumps(res))
         except Exception as e:
             log(f"Error leyendo {ARCHIVO_PERFIL}: {e}")
         return json.loads(json.dumps(PERFIL_POR_DEFECTO))
 
 
 def guardar_perfil(datos):
-    """Guarda perfil_conversacion.json de forma segura."""
+    """Guarda perfil_conversacion.json de forma segura actualizando la caché en RAM."""
+    global _perfil_cache, _perfil_mtime, _perfil_ts
     with _lock:
         try:
             with open(ARCHIVO_PERFIL, "w", encoding="utf-8") as f:
                 json.dump(datos, f, ensure_ascii=False, indent=2)
+            _perfil_cache = json.loads(json.dumps(datos))
+            _perfil_mtime = os.path.getmtime(ARCHIVO_PERFIL) if os.path.exists(ARCHIVO_PERFIL) else time.time()
+            _perfil_ts = time.time()
             return True
         except Exception as e:
             log(f"Error guardando {ARCHIVO_PERFIL}: {e}")
@@ -244,37 +250,22 @@ def eliminar_del_perfil(clave):
     with _lock:
         perfil = cargar_perfil()
         c = clave.strip().lower()
-        borrado = False
-
         estilo = perfil.get("estilo", {})
-        p_ant = len(estilo.get("palabras_y_apodos", []))
+        p0, m0 = len(estilo.get("palabras_y_apodos", [])), len(estilo.get("muletillas", []))
+        c0, b0 = len(perfil.get("costumbres_y_horarios", [])), len(perfil.get("bromas_y_referencias", []))
+        h0 = len(perfil.get("hilos_abiertos", []))
+
         estilo["palabras_y_apodos"] = [p for p in estilo.get("palabras_y_apodos", []) if c not in p.lower()]
-        if len(estilo["palabras_y_apodos"]) < p_ant:
-            borrado = True
-
-        m_ant = len(estilo.get("muletillas", []))
         estilo["muletillas"] = [m for m in estilo.get("muletillas", []) if c not in m.lower()]
-        if len(estilo["muletillas"]) < m_ant:
-            borrado = True
+        perfil["costumbres_y_horarios"] = [x for x in perfil.get("costumbres_y_horarios", []) if c not in x.lower()]
+        perfil["bromas_y_referencias"] = [x for x in perfil.get("bromas_y_referencias", []) if c not in x.lower()]
+        perfil["hilos_abiertos"] = [h for h in perfil.get("hilos_abiertos", []) if c not in h.get("tema", "").lower() and str(h.get("id")) != c]
 
-        c_ant = len(perfil.get("costumbres_y_horarios", []))
-        perfil["costumbres_y_horarios"] = [item for item in perfil.get("costumbres_y_horarios", []) if c not in item.lower()]
-        if len(perfil["costumbres_y_horarios"]) < c_ant:
-            borrado = True
-
-        b_ant = len(perfil.get("bromas_y_referencias", []))
-        perfil["bromas_y_referencias"] = [item for item in perfil.get("bromas_y_referencias", []) if c not in item.lower()]
-        if len(perfil["bromas_y_referencias"]) < b_ant:
-            borrado = True
-
-        h_ant = len(perfil.get("hilos_abiertos", []))
-        perfil["hilos_abiertos"] = [
-            h for h in perfil.get("hilos_abiertos", [])
-            if c not in h.get("tema", "").lower() and str(h.get("id")) != c
-        ]
-        if len(perfil["hilos_abiertos"]) < h_ant:
-            borrado = True
-
+        borrado = any([
+            len(estilo["palabras_y_apodos"]) < p0, len(estilo["muletillas"]) < m0,
+            len(perfil["costumbres_y_horarios"]) < c0, len(perfil["bromas_y_referencias"]) < b0,
+            len(perfil["hilos_abiertos"]) < h0,
+        ])
         if borrado:
             guardar_perfil(perfil)
         return borrado

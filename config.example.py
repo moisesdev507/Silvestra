@@ -66,10 +66,11 @@ ARCHIVO_RECORDATORIOS = "recordatorios.json"
 
 # Ajustes de escucha y respuesta rápida
 ESPERA_SILENCIO_SEGUNDOS = 0.55   # Espera de silencio para detectar fin de habla (en s)
+VAD_ADAPTATIVO = True             # Corta a 0.30s si la frase ya terminó claramente en silencio
 GANANCIA_MICROFONO = 1.2          # Ganancia aplicada al audio del micrófono
-UMBRAL_MULETILLA_SEGUNDOS = 0.70  # Tiempo sin respuesta antes de soltar sonido natural ("mm", "a ver")
+UMBRAL_MULETILLA_SEGUNDOS = 0.30  # Tiempo sin respuesta antes de soltar muletilla desde RAM (<0.3s)
 BARGE_IN_ACTIVO = False           # Interrupción al hablar desactivada para evitar eco
-MULETILLAS_ACTIVAS = False        # Muletillas de espera desactivadas para evitar pisar audio
+MULETILLAS_ACTIVAS = True         # Muletillas de espera activadas desde caché en RAM
 
 # Proveedores compatibles con OpenAI con modelos organizados por tarea
 PROVEEDORES = [
@@ -78,13 +79,13 @@ PROVEEDORES = [
         "base_url": "https://api.groq.com/openai/v1",
         "clave": CLAVE,
         "modelos": [
-            "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b",
             "qwen/qwen3.8-27b",
+            "openai/gpt-oss-20b",
+            "openai/gpt-oss-120b",
         ],
         "modelos_charla": [
-            "openai/gpt-oss-20b",
             "qwen/qwen3.8-27b",
+            "openai/gpt-oss-20b",
             "openai/gpt-oss-120b",
         ],
         "modelos_razonamiento": [

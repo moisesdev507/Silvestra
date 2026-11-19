@@ -1066,6 +1066,19 @@ Para mantener todos los archivos bajo el límite de 15 KB, `cerebro.py` se divid
 - **Registro de auditoría**:
   - `acciones_log.txt`: registra cada acción solicitada, nivel, origen, estado y detalle (sin registrar jamás el código).
 
+### 5. Optimización de Latencia, VAD Adaptativo, Sincronización del Aro y Filtro de Falsos Disparos
+- **Optimización de Latencia y Camino Crítico**:
+  - **Caché en RAM para perfil de conversación (`aprendizaje_datos.py`)**: `resumen_para_prompt` leía `perfil_conversacion.json` de disco bajo bloqueo sincrónico en cada turno (~93.7 ms). Con caché en RAM basada en mtime/TTL, se redujo a **0.57 ms** (~93 ms ahorrados antes de llamar al LLM).
+  - **VAD Adaptativo (`oido.py`)**: Si el usuario habló una frase completa (>0.8s) y la energía cae a nivel de ruido ambiente, la detección de fin de habla se corta a **0.30s** en vez de 0.55s (`VAD_ADAPTATIVO = True`).
+  - **Muletillas ultrarrápidas desde RAM (`voz_cache.py`, `conversacion.py`)**: Si la respuesta tarda más de 0.30s (`UMBRAL_MULETILLA_SEGUNDOS = 0.30`, `MULETILLAS_ACTIVAS = True`), se suelta una muletilla precargada en RAM (<0.03 ms) evitando silencios muertos mientras sintetiza Edge-TTS.
+  - **Enrutamiento rápido en Groq**: Modelo `qwen/qwen3.8-27b` priorizado en `modelos_charla` (TTFT de 0.24-0.76s; primera frase en <0.85s).
+- **Aro de la Cara Sincronizado (`cara_qt.py`, `conversacion.py`)**:
+  - Al desactivar la escucha (por botón, comando "deja de escuchar", o timeout de silencio), se invoca `dejar_de_escuchar(app)` apagando `app.escuchando` y forzando `self.update()`, retornando de inmediato al color celeste (`CIAN`). Al escuchar, el aro pulsa en amarillo (`AMARILLO`).
+- **Erradicación del Bucle de Falsos Disparos ("Te escucho" / "Listo, dejo de escuchar")**:
+  - `palabra_clave.py` tenía una regla `p.startswith("sil") and len(p) >= 5` que confundía *"silencio"* con la palabra clave y relanzaba la conversación en un ciclo infinito.
+  - Se añadieron `PALABRAS_EXCLUIDAS` (silencio, silenciosa, silaba, etc.) y prefijos estrictos (`silvest`, `sylvest`, `silvi`).
+  - `alternar_conversacion` registra ahora el motivo explícito en el log: `[conversacion] alternar_conversacion motivo=... nuevo_estado=...`.
+
 ## Límites conocidos
 - El temporizador de estudio Pomodoro se pierde si se cierra la app (los recordatorios ya sobreviven al cierre de forma persistente en `recordatorios.json`).
 - Los gestos asumen mano derecha con los dedos hacia arriba.

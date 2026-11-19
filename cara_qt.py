@@ -149,7 +149,8 @@ class Cara(CaraMovimientoMixin, QWidget):
         self.viva = viva
 
     def poner_escuchando(self, escuchando):
-        self.escuchando = escuchando
+        self.escuchando = bool(escuchando)
+        self.update()
 
     @property
     def nivel_volumen(self):
