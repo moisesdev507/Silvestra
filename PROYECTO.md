@@ -956,6 +956,37 @@ Para mantener todos los archivos bajo el límite de 15 KB, `cerebro.py` se divid
 - **Confirmación hablada**: Cada recordatorio creado se confirma en voz alta indicando la hora exacta programada.
 - **Registros en log**: `[recordatorio] creado='...' hora='...'`, `[recordatorio] disparado='...'`
 
+## Interrupción al hablar (Barge-in), Respuestas Ágiles en Streaming y Rostro Vivo
+
+### 1. Interrupción al hablar (Barge-in) con filtrado de eco
+- **Corte instantáneo de voz (`voz.py`)**: Método `detener()` que incrementa la versión interna, detiene el reproductor pygame / proceso SAPI y limpia la cola de síntesis en menos de 10 ms.
+- **Escucha continua y detección en tiempo real (`oido.py` / `conversacion.py`)**: Mientras Silvestra habla, el micrófono analiza bloques de 100 ms usando el reconocedor local Vosk.
+- **Filtrado anti-eco y comandos de corte**: Compara las palabras detectadas con la salida actual (`_es_eco`). Si el usuario dice comandos claros (*"espera"*, *"ya"*, *"para"*, *"silencio"*, *"cállate"*, *"alto"*) o inicia una frase distinta, se corta el audio de inmediato y continúa escuchando al usuario para responder a lo nuevo.
+- **Acción por voz**: `silencio` (alias: `para`, `callate`, `callar`) registrada con `acciones.registrar`.
+- **Registro en log**: `[interrupcion] motivo=... tiempo_corte=...ms`
+
+### 2. Respuestas más rápidas en streaming y medición de primera palabra
+- **Extracción temprana de frases (`cerebro_parser.py`)**: Umbral de corte ajustado a 6 caracteres (`_cortar`) para emitir frases breves iniciales (*"¡Hola!"*, *"Claro."*) sin esperar al resto de la respuesta ni al cierre del bloque.
+- **Canalización en segundo plano (`voz.py`)**: Mientras la primera frase se reproduce, la segunda se sintetiza en paralelo en un hilo secundario sin pausas ni cortes audibles.
+- **Soporte robusto de etiquetas**: Parseo tolerante de respuestas directas y extracción de `EMOCION:` antes de `RESPUESTA:`.
+- **Medición de latencia de primera palabra**: Registra el tiempo transcurrido desde el final de la voz del usuario hasta el primer sonido emitido:
+  `[tiempo] primera_palabra=...s desde que terminé de hablar (anterior=...s, diff=...s)`.
+
+### 3. Rostro vivo, seguimiento ocular y modularización (< 15 KB)
+- **Modularización de interfaz**: Para cumplir la regla de 15 KB por archivo, `cara_qt.py` se separó en:
+  - **[burbuja.py](file:///c:/Proyecto_Silvestra/burbuja.py)** (~1.7 KB): Widgets de burbuja flotante y diálogo de entrada.
+  - **[cara_movimiento.py](file:///c:/Proyecto_Silvestra/cara_movimiento.py)** (~5.4 KB): `CaraMovimientoMixin` con paseo, ida a esquinas, seguimiento de mouse y baile.
+  - **[cara_qt.py](file:///c:/Proyecto_Silvestra/cara_qt.py)** (~12.9 KB): Ventana principal Qt, timers de dibujo y eventos.
+  - **[cara_dibujo.py](file:///c:/Proyecto_Silvestra/cara_dibujo.py)** (~12.4 KB): Renderizado visual con `QPainter` (siempre cerrado en `try: ... finally: p.end()`).
+- **Seguimiento ocular con la cámara (`camara.py`)**: Detecta la posición normalizada del rostro del dueño (`ult_pos_rostro`) e interpola la mirada con factor de suavizado 0.09, logrando movimientos oculares sutiles, orgánicos y no bruscos.
+- **Microexpresiones al escuchar y asentimiento**:
+  - Inclinación curiosa de la cabeza cuando `self.escuchando` está activo.
+  - Asentimiento suave (`asentir`) al terminar de oír al usuario.
+  - Respiración sutil en reposo y parpadeo con variación aleatoria y probabilidad de doble parpadeo.
+- **Contraste emocional vivo**: Mayor diferenciación visual en cejas, boca, rubor y color base entre las emociones (`alegre`, `preocupada`, `seria`, `calida`) con transiciones fluidas.
+- **Regulación de FPS y bajo consumo de CPU**: En reposo reduce la tasa de refresco a 50 ms (~20 FPS) para ahorrar CPU. Registro cada 5 segundos:
+  `[cara] fps=..., cpu_estimada=...%`.
+
 ## Límites conocidos
 - El temporizador de estudio Pomodoro se pierde si se cierra la app (los recordatorios ya sobreviven al cierre de forma persistente en `recordatorios.json`).
 - Los gestos asumen mano derecha con los dedos hacia arriba.

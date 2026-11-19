@@ -22,17 +22,17 @@
 Silvestra es una asistente personal / compañera con rostro virtual interactivo en PyQt5, voz en español panameño (`es-PA-MargaritaNeural` / SAPI de respaldo) y comprensión de audio con Whisper.
 
 ### Módulos principales
-- **`silvestra.py`**: Punto de entrada, ciclo principal y orquestación con PyQt5.
-- **`cara_qt.py` / `burbuja.py`**: Interfaz visual (rostro animado, ojos, boca sincronizada y burbuja de diálogo).
-- **`oido.py`**: Captura de micrófono (`sounddevice`), VAD y transcripción Whisper (Groq) con respaldo local (Vosk).
-- **`voz.py`**: Síntesis de voz (`edge-tts` con modulación emocional, respaldo Windows SAPI).
-- **`cerebro.py` / `cerebro_prompt.py` / `cerebro_parser.py`**: Armado de prompt (< 2000 tokens), extracción de emociones y acciones.
+- **`main.py`**: Punto de entrada, ciclo principal y orquestación con PyQt5.
+- **`cara_qt.py` / `cara_dibujo.py` / `cara_movimiento.py` / `burbuja.py`**: Interfaz visual (rostro animado, mirada, paseo, boca sincronizada y burbuja).
+- **`oido.py`**: Captura de micrófono (`sounddevice`), VAD, detección de barge-in e interrupción, y transcripción Whisper/Vosk.
+- **`voz.py`**: Síntesis de voz (`edge-tts` con modulación emocional, respaldo Windows SAPI, detención instantánea y medición de primera palabra).
+- **`cerebro.py` / `cerebro_prompt.py` / `cerebro_parser.py`**: Prompt (< 2000 tokens), streaming ágil por frases y parseo de emociones/acciones.
 - **`proveedores.py` / `proveedores_cadenas.py`**: Multi-LLM en cascada con cooldown independiente por modelo (Groq, Cerebras, Gemini, Mistral, NVIDIA, OpenRouter, SambaNova, GitHub Models, Cohere) y conmutación automática.
 - **`memoria.py` / `memoria_busqueda.py`**: Memoria permanente con fechas, categorías semánticas, resumen de recuerdos viejos (>200) y regla anti-invención.
 - **`acciones.py`**: Registro central de acciones (`acciones.registrar`) invocadas por el cerebro.
 - **`recordatorios.py`**: Alarmas y recordatorios por voz que sobreviven al reinicio (`recordatorios.json`).
 - **`pantalla_remota.py`**: Servidor local para visualizar el rostro o panel en tablet/móvil vía navegador.
-- **`presencia.py`**: Detección de presencia con la cámara para alternar laptop y tablet.
+- **`presencia.py` / `camara.py`**: Detección de presencia y seguimiento facial para mirada natural.
 
 ### Reglas de oro de desarrollo
 1. **Tamaño máximo:** Ningún archivo de código debe superar los **15 KB** (~15,360 bytes). Si crece, dividir en módulos especializados.
@@ -42,20 +42,22 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 5. **Configuración y claves:** Exclusivamente en `config.py` (ignorado en git). Plantilla pública en `config.example.py`.
 
 ## 4. Estado actual (lo que ya funciona)
-- Rostro animado reactivo y burbuja con emociones en PyQt5.
+- Rostro animado reactivo con mirada suave que sigue al dueño vía cámara (`camara.py`), microexpresiones (inclinación curiosa al escuchar, asentimiento al terminar frase), parpadeo variable y contraste emocional vivo.
+- Interrupción por voz (barge-in): corte instantáneo de audio (< 500 ms) al decir "espera", "ya", "para", "silencio" o hablarle, con filtro de eco.
+- Respuestas más rápidas: síntesis en streaming frase por frase en segundo plano y medición de primera palabra (`[tiempo] primera_palabra=...s`).
+- Regulación dinámica de FPS en reposo y registro de CPU estimada (`[cara] fps=..., cpu_estimada=...`).
 - Voz panameña natural modulada emocionalmente con respaldo SAPI local.
 - Reconocimiento de voz con Whisper y respaldo Vosk.
 - Enrutamiento inteligente a múltiples proveedores de IA gratis con fallback y cooldown por modelo.
 - Memoria duradera con fechas, búsqueda semántica por categorías y filtro de privacidad.
-- Acciones por voz: `guardar_recuerdo`, `consultar_memoria`, `olvidar`, `poner_recordatorio`, `listar_recordatorios`, `cancelar_recordatorio`, `estado_proveedores`.
+- Acciones por voz: `guardar_recuerdo`, `consultar_memoria`, `olvidar`, `poner_recordatorio`, `listar_recordatorios`, `cancelar_recordatorio`, `estado_proveedores`, `silencio`.
 - Modo reposo y panel para tablet vía navegador web.
 - Detección de presencia básica por cámara.
 - Control de versiones local en Git con archivos sensibles ignorados.
+- Modularización limpia: todos los archivos estrictamente por debajo de 15 KB.
 
 ## 5. Tareas pendientes y pospuestas
 - [ ] **Rotar clave de Groq:** La clave actual se expuso accidentalmente en el pasado; cambiarla en `config.py` y consola de Groq.
-- [ ] **Interrupciones por voz:** Que Silvestra se calle de inmediato si Moisés empieza a hablar mientras ella responde.
-- [ ] **Respuestas más rápidas:** Optimizar latencia de primer token y streaming de audio.
 - [ ] **Cerebro premium de pago (tope $5/mes):** Integrar proveedor de alta calidad con límite estricto de gasto mensual como alternativa a los gratuitos.
 - [ ] **Respaldo local ligero:** Modelo SLM/LLM local cuantizado (ej. Ollama / llama.cpp) para operar 100% offline.
 - [ ] **Iniciativa propia:** Que salude o comente espontáneamente en momentos adecuados sin esperar a que le hablen.
