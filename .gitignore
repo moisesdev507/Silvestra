@@ -29,6 +29,8 @@ voz_dueno.npy
 # Logs de ejecución
 *.log
 silvestra.log
+acciones_log.txt
+scratch/
 
 # Datos personales y archivos de persistencia local
 memoria.json
