@@ -166,6 +166,9 @@ class Silvestra:
                 self.cara.root.after(300, self.escuchar)
 
     def ejecutar(self, linea):
+        if not self.puede_hablar_sola():
+            self.cara.root.after(300, lambda: self.ejecutar(linea))
+            return
         nombre, arg = acciones.interpretar(linea)
         if nombre is None:
             return

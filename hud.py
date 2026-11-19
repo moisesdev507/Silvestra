@@ -219,27 +219,19 @@ class HUD:
 
     def mostrar(self):
         self.activo = True
-        try:
-            est = estado.cargar()
-            est["hud"] = True
-            estado.guardar(est)
-        except Exception:
-            pass
+        est = estado.cargar()
+        est["hud"] = True
+        estado.guardar(est)
         self.panel.mostrar()
-        if not getattr(self.app, "ultimo_dicho", ""):
-            self.app.cara.decir("Panel HUD activado.", 2500)
+        self.app.cara.decir("Panel HUD activado.", 2500)
 
     def ocultar(self):
         self.activo = False
-        try:
-            est = estado.cargar()
-            est["hud"] = False
-            estado.guardar(est)
-        except Exception:
-            pass
+        est = estado.cargar()
+        est["hud"] = False
+        estado.guardar(est)
         self.panel.ocultar()
-        if not getattr(self.app, "ultimo_dicho", ""):
-            self.app.cara.decir("Panel HUD ocultado.", 2500)
+        self.app.cara.decir("Panel HUD ocultado.", 2500)
 
     def actualizar_clima(self, texto):
         self.panel.actualizar_clima(texto)
