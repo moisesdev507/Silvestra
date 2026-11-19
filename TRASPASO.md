@@ -25,7 +25,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - **`main.py`**: Punto de entrada, ciclo principal y orquestación con PyQt5.
 - **`cara_qt.py` / `cara_dibujo.py` / `cara_movimiento.py` / `burbuja.py`**: Interfaz visual (rostro animado, mirada suave, paseo y boca sincronizada).
 - **`oido.py`**: Micrófono (`sounddevice`), VAD ágil (0.55s), barge-in, normalización y Whisper/Vosk.
-- **`voz.py` / `voz_cache.py`**: Síntesis `edge-tts` modulada, caché en memoria (0.00s), muletillas (<0.7s) y corte rápido.
+- **`voz.py` / `voz_reproductor.py` / `voz_cache.py`**: Síntesis `edge-tts` modulada, reproductor thread-safe SDL/mixer, RMS labial, corte rápido barge-in y caché.
 - **`cerebro.py` / `cerebro_prompt.py` / `cerebro_parser.py`**: Prompt (<2000 tokens), streaming y emociones/acciones.
 - **`proveedores.py` / `proveedores_cadenas.py` / `sesion_http.py`**: Multi-LLM en cascada con pool HTTP Keep-Alive persistente y cooldown por modelo.
 - **`memoria.py` / `memoria_busqueda.py`**: Memoria permanente con fechas, categorías y anti-invención.
@@ -44,22 +44,22 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 5. **Configuración y claves:** Exclusivamente en `config.py` (ignorado en git). Plantilla pública en `config.example.py`.
 
 ## 4. Estado actual (lo que ya funciona)
-- Rostro animado reactivo con mirada suave (`camara.py`), microexpresiones (inclinación curiosa, asentimiento) y parpadeo natural.
-- Interrupción por voz (barge-in): corte instantáneo (<500ms) al decir "espera", "ya", "para", "silencio" o hablarle, con filtro de eco.
-- Síntesis en streaming por oraciones completas (`cerebro_parser.py`, `calidad_respuesta.py`) sin cortes en conectores ni `..` espurios.
-- Filtro estricto de alucinaciones de Whisper ("haha", "okay, okay") y descarte con log explícito (`oido.py`).
-- Saludo inicial contextual en el arranque (hora y tiempo transcurrido) seguro para el hilo Qt (`nacimiento.py`, `eventos.py`).
-- Prompt compacto (<1350 tokens) con inyección selectiva precisa (`cerebro_categorias.py`, `cerebro_prompt.py`) que cubre 100% de las 132 acciones reales del sistema (HUD, casa inteligente, diario, etc.) con cero huérfanas y validación automática en `prueba_humo.py`.
-- Voz panameña natural modulada emocionalmente con respaldo SAPI local.
+- Rostro animado reactivo con mirada suave (`camara.py`), microexpresiones y parpadeo natural.
+- Interrupción por voz (barge-in): corte instantáneo (<500ms) al decir "espera", "ya", "para", con filtro de eco.
+- Síntesis en streaming por oraciones completas (`cerebro_parser.py`) sin cortes en conectores.
+- Filtro estricto de alucinaciones de Whisper y descarte con log explícito (`oido.py`).
+- Saludo inicial contextual en el arranque seguro para el hilo Qt (`nacimiento.py`, `eventos.py`).
+- Prompt compacto (<1350 tokens) con inyección selectiva precisa (`cerebro_categorias.py`) y suite en `prueba_humo.py`.
+- Voz panameña natural con `voz_reproductor.py` thread-safe (RLock, buffers vivos, RMS labial y barge-in <500ms).
 - Reconocimiento con Whisper (VAD adaptativo 0.45s con caída de energía, prompt contextual) y respaldo Vosk.
-- Latencia: caché de perfil en RAM (<1ms), Groq ultra-rápido (qwen3 1ra frase ~30-200ms) y muletillas inactivas por defecto.
-- Aro facial reactivo sincronizado: celeste en reposo/sin escuchar y amarillo al escuchar.
-- Audio thread-safe (PortAudio/sounddevice): exclusión mutua estricta de streams entre oido y palabra_clave sin colisión de memoria (0xc0000374).
-- Bucle de falsos disparos erradicado (`PALABRAS_EXCLUIDAS` en `palabra_clave.py` y log de motivo en `alternar_conversacion`).
+- Latencia: caché de perfil en RAM (<1ms), Groq ultra-rápido y muletillas inactivas por defecto.
+- Aro facial reactivo: celeste en reposo y amarillo al escuchar.
+- Audio thread-safe: exclusión mutua estricta de streams entre oido y palabra_clave (sin 0xc0000374).
+- Bucle de falsos disparos erradicado (`PALABRAS_EXCLUIDAS` en `palabra_clave.py`).
 - Enrutamiento inteligente a múltiples LLM con fallback, pool Keep-Alive y enfriamiento 429 exacto.
 - Memoria duradera con fechas, categorías y filtro de privacidad.
-- Acciones por voz: recuerdos, recordatorios persistentes, estado de proveedores, silencio y control de escucha.
-- Control de laptop por niveles: libre (apps/sitios, volumen, multimedia, música con habla inmediata y ducking ~25%), peligroso exclusivo por Telegram (apagar, reiniciar con código local `CODIGO_SEGURIDAD` y verificación `ID_TELEGRAM_DUENO`) y prohibido con log de auditoría.
+- Acciones por voz: recuerdos, recordatorios persistentes, proveedores y control de escucha.
+- Control de laptop por niveles: libre (apps/sitios, volumen, música inmediata y ducking), peligroso exclusivo por Telegram (apagar, reiniciar con código local y verificación `ID_TELEGRAM_DUENO`) y prohibido con auditoría.
 - Modo reposo y panel para tablet vía navegador web.
 - Suite de prueba de humo (`prueba_humo.py`) y arquitectura modular (todos los archivos <= 15 KB).
 

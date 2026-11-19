@@ -7,6 +7,8 @@ import subprocess
 import threading
 import time
 
+from voz_reproductor import ReproductorAudio, calcular_envolvente_rms
+
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 
 # Voz natural de Microsoft Edge (gratis, necesita internet).
@@ -92,36 +94,13 @@ def dividir_frases(texto):
     return frases or [texto]
 
 
-def calcular_envolvente_rms(audio_bytes, fps=30):
-    """Calcula la envolvente RMS en hilo secundario para sincronía labial no bloqueante."""
-    try:
-        import numpy as np
-        import pygame
-        snd = pygame.mixer.Sound(io.BytesIO(audio_bytes))
-        arr = pygame.sndarray.array(snd)
-        if arr is None or len(arr) == 0:
-            return None, snd
-        mono = arr.mean(axis=1) if arr.ndim > 1 else arr
-        mono = mono.astype(np.float32) / 32768.0
-        frec, _, _ = pygame.mixer.get_init()
-        muestras_por_cuadro = max(1, int(frec / fps))
-        num_cuadros = len(mono) // muestras_por_cuadro
-        if num_cuadros == 0:
-            return None, snd
-        recortado = mono[:num_cuadros * muestras_por_cuadro].reshape(num_cuadros, muestras_por_cuadro)
-        rms = np.sqrt(np.mean(recortado**2, axis=1))
-        rms_norm = np.clip(rms * 4.2, 0.0, 1.0).tolist()
-        return rms_norm, snd
-    except Exception:
-        return None, None
-
-
 class Voz:
     def __init__(self):
         self.version = 0
         self._activos = 0
         self.proceso = None
         self.pg = None
+        self.reproductor = None
         self.nivel_volumen = 0.0
         self.ult_primera_palabra = None
         try:
@@ -129,30 +108,29 @@ class Voz:
 
             pygame.mixer.init()
             self.pg = pygame
+            self.reproductor = ReproductorAudio(self.pg)
             import voz_cache
+
             voz_cache.precargar_audios_frecuentes(self._audio)
         except Exception:
             self.pg = None
+            self.reproductor = None
 
     def ocupada(self):
         """Devuelve True si hay un flujo de voz activo o el mixer está reproduciendo."""
         if self._activos > 0:
             return True
-        if self.pg is not None:
-            try:
-                if self.pg.mixer.music.get_busy() or self.pg.mixer.get_busy():
-                    return True
-            except Exception:
-                pass
+        if self.reproductor is not None:
+            return self.reproductor.esta_ocupado()
         return False
 
     def detener(self, motivo="detener()"):
         """Detiene de inmediato cualquier reproducción o síntesis de voz en curso (barge-in)."""
         print(f"[voz] cancelada motivo={motivo}", flush=True)
         self.version += 1
-        self._parar()
         self._activos = 0
         self.nivel_volumen = 0.0
+        self._parar()
 
     def hablar(self, texto, al_terminar=None, emocion=None):
         """Dice el texto completo frase por frase con la emoción indicada o deducida."""
@@ -174,18 +152,18 @@ class Voz:
 
     def _parar(self):
         self.nivel_volumen = 0.0
-        if self.pg is not None:
+        if self.reproductor is not None:
+            self.reproductor.detener()
+        if self.proceso is not None and self.proceso.poll() is None:
             try:
-                self.pg.mixer.music.stop()
-                self.pg.mixer.stop()
+                self.proceso.terminate()
             except Exception:
                 pass
-        if self.proceso is not None and self.proceso.poll() is None:
-            self.proceso.terminate()
 
     @staticmethod
     def _audio(frase, emocion="neutral"):
         import voz_cache
+
         en_cache = voz_cache.obtener_audio_cache(frase, emocion)
         if en_cache:
             return en_cache
@@ -214,11 +192,13 @@ class Voz:
     def soltar_espera(self):
         """Reproduce inmediatamente una muletilla o sonido natural en caché si la respuesta demora."""
         import config
+
         if not getattr(config, "MULETILLAS_ACTIVAS", False):
             return
         if self.ocupada() or self.pg is None:
             return
         import voz_cache
+
         muletilla = voz_cache.obtener_siguiente_muletilla()
         audio = voz_cache.obtener_audio_cache(muletilla, "neutral")
         if not audio:
@@ -226,17 +206,14 @@ class Voz:
                 audio = self._audio(muletilla, "neutral")
             except Exception:
                 return
-        if audio and self.pg is not None:
-            try:
-                snd = self.pg.mixer.Sound(io.BytesIO(audio))
-                snd.set_volume(0.65)
-                snd.play()
-                print(f"[voz] muletilla_espera='{muletilla}'", flush=True)
-            except Exception:
-                pass
+        if audio and self.reproductor is not None:
+            self.reproductor.reproducir_corto(audio, volumen=0.65)
+            print(f"[voz] muletilla_espera='{muletilla}'", flush=True)
 
     def _voz_windows(self, texto, version, emocion="neutral"):
         """Voz de respaldo local (Windows SAPI). Ignora la emoción limpiamente sin dar error."""
+        if version != self.version:
+            return
         entorno = os.environ.copy()
         entorno["SILVESTRA_TEXTO"] = texto
         try:
@@ -250,6 +227,11 @@ class Voz:
         self.proceso = proc
         while proc.poll() is None and version == self.version:
             time.sleep(0.05)
+        if version != self.version and proc.poll() is None:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
 
     def _hablar(self, flujo, al_terminar, version, emocion_defecto="neutral", t_fin_habla=None, metricas=None):
         try:
@@ -287,11 +269,7 @@ class Voz:
                     item = flujo.entrada.get()
                     if item is None or version != self.version:
                         break
-                    if isinstance(item, tuple):
-                        frase, emo = item
-                    else:
-                        frase = item
-                        emo = getattr(flujo, "emocion", emocion_defecto)
+                    frase, emo = item if isinstance(item, tuple) else (item, getattr(flujo, "emocion", emocion_defecto))
                     try:
                         audio = self._audio(frase, emo)
                         buzon.put((frase, audio, emo))
@@ -301,7 +279,13 @@ class Voz:
 
             threading.Thread(target=productor, daemon=True).start()
 
+            def _set_nivel(val):
+                self.nivel_volumen = float(val)
+
             while True:
+                if version != self.version:
+                    print(f"[voz] cancelada motivo=version_obsoleta ({version}!={self.version})", flush=True)
+                    return
                 item = buzon.get()
                 if item is None:
                     break
@@ -309,36 +293,26 @@ class Voz:
                     print(f"[voz] cancelada motivo=version_obsoleta ({version}!={self.version})", flush=True)
                     return
                 frase, audio, emo = item
-                if audio and self.pg is not None:
+                if audio and self.reproductor is not None:
                     try:
-                        rms_norm, snd = calcular_envolvente_rms(audio)
-                        canal = snd.play() if snd is not None else None
                         print(f"[voz] reproduciendo='{frase}'", flush=True)
-                        _reportar_primera_palabra()
-                        if canal is not None:
-                            t_inicio = time.time()
-                            while canal.get_busy() and version == self.version:
-                                if rms_norm:
-                                    dt = time.time() - t_inicio
-                                    idx = int(dt * 30)
-                                    self.nivel_volumen = rms_norm[idx] if idx < len(rms_norm) else 0.0
-                                else:
-                                    self.nivel_volumen = -1.0
-                                time.sleep(0.025)
-                        else:
-                            self.pg.mixer.music.load(io.BytesIO(audio))
-                            self.pg.mixer.music.play()
-                            self.nivel_volumen = -1.0
-                            while self.pg.mixer.music.get_busy() and version == self.version:
-                                time.sleep(0.04)
-                        self.nivel_volumen = 0.0
+                        exito = self.reproductor.reproducir(
+                            audio,
+                            version_check_fn=lambda: version == self.version,
+                            on_nivel_fn=_set_nivel,
+                            on_inicio_fn=_reportar_primera_palabra,
+                        )
                         if version != self.version:
                             print(f"[voz] cancelada motivo=interrupcion_en_reproduccion frase='{frase}'", flush=True)
                             return
-                        print(f"[voz] terminó='{frase}'", flush=True)
-                        continue
+                        if exito:
+                            print(f"[voz] terminó='{frase}'", flush=True)
+                            continue
                     except Exception as e:
                         print(f"[voz] fallo en reproductor ({e}), usando respaldo...", flush=True)
+
+                if version != self.version:
+                    return
                 self.nivel_volumen = -1.0
                 _reportar_primera_palabra()
                 print(f"[voz] reproduciendo='{frase}'", flush=True)
