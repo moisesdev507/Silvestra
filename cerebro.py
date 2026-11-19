@@ -75,6 +75,16 @@ class Cerebro:
             aprendizaje.registrar_interaccion(texto, respuesta, emocion)
         except Exception as e:
             print(f"[aprendizaje] Error al registrar interacción: {e}", flush=True)
+
+        turnos_u = sum(1 for m in self.historial if m.get("role") == "user")
+        if turnos_u > 0 and turnos_u % 3 == 0:
+            import threading
+            threading.Thread(
+                target=self.memoria.extraer_hechos_conversacion,
+                args=(list(self.historial[-6:]), self._pedir),
+                daemon=True,
+            ).start()
+
         return respuesta, accion, emocion
 
     def reflexionar(self, modulo_hilos):
@@ -112,5 +122,12 @@ class Cerebro:
                     preg = re.sub(r"^PREGUNTA\s*:\s*", "", s, flags=re.I).strip(" *\"'")
                     if preg and preg.lower() not in ("ninguno", "ninguna", "nada"):
                         modulo_hilos.anotar_pendiente(preg)
+
+            import threading
+            threading.Thread(
+                target=self.memoria.extraer_hechos_conversacion,
+                args=(list(ultimos), self._pedir),
+                daemon=True,
+            ).start()
         except Exception:
             pass

@@ -6,6 +6,7 @@ import re
 import acciones
 import hilos
 import ideas
+import memoria_busqueda as mb
 
 DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 MESES = [
@@ -59,32 +60,18 @@ def cargar_alma():
 
 
 def recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5):
-    """Selecciona hasta max_recuerdos relevantes al tema actual por palabras clave."""
-    hechos_unicos = list(dict.fromkeys(h.strip() for h in memoria.hechos if h and h.strip()))
-    if not hechos_unicos:
+    """Selecciona hasta max_recuerdos relevantes al tema actual por categorías y palabras clave."""
+    resumenes = getattr(memoria, "datos", {}).get("resumenes_tematicos")
+    elegidos, n_rec = mb.buscar_recuerdos(
+        memoria.hechos, texto_actual, max_recuerdos=max_recuerdos, resumenes_tematicos=resumenes
+    )
+    if not elegidos:
+        hechos_unicos = list(dict.fromkeys(h.strip() for h in memoria.hechos if h and h.strip()))
+        elegidos = hechos_unicos[-max_recuerdos:]
+        n_rec = len(elegidos)
+    if not elegidos:
         return "- (todavía nada)", 0
-    if not texto_actual:
-        elegidos = hechos_unicos[-max_recuerdos:]
-        return "\n".join(f"- {h}" for h in elegidos), len(elegidos)
-
-    palabras = set(re.findall(r"\b[a-zA-ZáéíóúÁÉÍÓÚñÑ]{4,}\b", texto_actual.lower()))
-    palabras -= {
-        "hola", "silvestra", "quiero", "puedes", "favor", "dime", "como", "esta",
-        "para", "buenos", "dias", "tengo", "sabes", "sobre", "esto", "hacer"
-    }
-    coincidencias = []
-    for h in hechos_unicos:
-        h_palabras = set(re.findall(r"\b[a-zA-ZáéíóúÁÉÍÓÚñÑ]{4,}\b", h.lower()))
-        score = len(palabras & h_palabras)
-        if score > 0:
-            coincidencias.append((score, h))
-
-    if coincidencias:
-        coincidencias.sort(key=lambda x: x[0], reverse=True)
-        elegidos = [h for _, h in coincidencias[:max_recuerdos]]
-    else:
-        elegidos = hechos_unicos[-max_recuerdos:]
-    return "\n".join(f"- {h}" for h in elegidos), len(elegidos)
+    return "\n".join(f"- {h}" for h in elegidos), n_rec
 
 
 def describir_acciones_compactas():
@@ -109,7 +96,8 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None):
     tok_alma = max(1, int(len(alma_texto) / 3.6))
 
     hechos_str, n_recuerdos = recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5)
-    print(f"[memoria] recuerdos={n_recuerdos}", flush=True)
+    total_m = len(memoria.hechos)
+    print(f"[memoria] guardados=0 relevantes={n_recuerdos} total={total_m}", flush=True)
 
     ideas_res = ideas.resumen()
     if len(ideas_res) > 100:

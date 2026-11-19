@@ -929,12 +929,21 @@ Para mantener todos los archivos bajo el límite de 15 KB, `cerebro.py` se divid
 - Regla estricta en el prompt: Silvestra nunca inventa la hora; si el usuario pregunta qué hora es o qué día es hoy, utiliza exactamente este dato oficial.
 - Registro en log: `[hora] inyectada='...'`
 
-### 3. Memoria permanente con fechas y filtro de privacidad
-- **Registro duradero y con fecha (`memoria.py`)**: Cada nuevo recuerdo o hecho importante sobre Moisés (gustos, personas, planes, proyectos) se registra con su fecha en `memoria.json` (ej: `[2026-11-18] hecho`).
+### 3. Memoria permanente con fechas, categorías semánticas y extracción continua
+- **Estructura modular (`memoria.py` ~14.0 KB y `memoria_busqueda.py` ~7.8 KB)**:
+  - `memoria.py`: API principal (`recordar`, `olvidar`, `consultar`, `extraer_hechos_conversacion`), registro de acciones y persistencia en `memoria.json`.
+  - `memoria_busqueda.py`: Motor de búsqueda semántica con normalización NFD, eliminación de stopwords, ponderación por recencia, mapeo categórico y resumen temático de recuerdos antiguos.
+- **Registro duradero y con fecha**: Cada nuevo recuerdo o hecho importante sobre Moisés (gustos, personas, planes, proyectos) se registra con su fecha en `memoria.json` (ej: `[2026-11-19] hecho`).
 - **Filtro de privacidad estricto**: Rechaza y nunca guarda contraseñas, tokens, claves, secretos, API keys o datos financieros sensibles (`PALABRAS_PRIVADAS`).
-- **Inyección semántica de recuerdos**: En cada mensaje se inyectan únicamente los **5 recuerdos más relevantes** al tema tratado usando coincidencia de palabras clave ponderada (o los más recientes si no hay relación), manteniendo el prompt por debajo de 2000 tokens (habitualmente ~1,150 a 1,350 tokens).
-- **Acción `olvidar`**: Permite al usuario borrar recuerdos por voz (*"olvida lo de X"*, *"olvida que tengo examen"*). Elimina las coincidencias de `memoria.json` y confirma por voz.
-- **Registro en log**: `[memoria] recuerdos=N`
+- **Extracción más completa en segundo plano (`extraer_hechos_conversacion`)**: Al terminar una sesión o cada 3 turnos de conversación, se lanza un hilo daemon secundario que analiza el diálogo reciente con el proveedor de charla para extraer automáticamente hechos duraderos, desduplicarlos y persistirlos con fecha y filtro de privacidad.
+- **Búsqueda semántica por categorías y sinónimos**: Mapeo inteligente en categorías (`familia`, `trabajo`, `comida`, `planes`, `proyectos`) y sinónimos para recuperar recuerdos relevantes aunque la pregunta use palabras distintas (ej. *"cenar"* encuentra recuerdos de *"pizza"*).
+- **Memoria antigua resumida**: Al superar ~200 recuerdos, los hechos más antiguos se compactan en párrafos temáticos (`resumenes_tematicos`) sin perder conocimiento histórico ni sobrecargar el almacenamiento.
+- **Comandos y acciones por voz**:
+  - `guardar_recuerdo` (alias: `recuerda_esto`): Guarda hechos inmediatamente al decir *"recuerda esto: ..."*.
+  - `consultar_memoria` (alias: `que_sabes`): Responde con honestidad estricta qué sabe de Moisés en general (*"qué sabes de mí"*) o sobre un tema específico (*"qué sabes de mi comida favorita"*). Si no hay recuerdos, admite honestamente que no sabe (sin inventar).
+  - `olvidar`: Elimina recuerdos específicos o temas por voz (*"olvida lo de X"*).
+- **Log unificado**: `[memoria] guardados=N relevantes=N total=N`.
+- **Inyección semántica en el prompt**: Máximo 5 recuerdos más relevantes al mensaje actual, manteniendo el prompt total por debajo de 2,000 tokens (habitualmente entre 1,150 y 1,350 tokens).
 
 ### 4. Recordatorios y alarmas por voz (`recordatorios.py`)
 - **Acciones registradas**:
