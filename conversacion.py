@@ -158,5 +158,7 @@ def instalar(app):
             app.voz.detener()
         return True, "Silencio activado."
 
-    acciones.registrar("silencio", _accion_silencio, "Detiene la voz de Silvestra de inmediato.", alias=["para", "callate", "callar"])
+    desc = "Detiene la voz de Silvestra de inmediato."
+    for nom in ("silencio", "para", "callate", "callar"):
+        acciones.registrar(nom, _accion_silencio, desc)
 
