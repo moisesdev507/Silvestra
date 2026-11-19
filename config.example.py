@@ -66,6 +66,8 @@ ARCHIVO_RECORDATORIOS = "recordatorios.json"
 ESPERA_SILENCIO_SEGUNDOS = 0.55   # Espera de silencio para detectar fin de habla (en s)
 GANANCIA_MICROFONO = 1.2          # Ganancia aplicada al audio del micrófono
 UMBRAL_MULETILLA_SEGUNDOS = 0.70  # Tiempo sin respuesta antes de soltar sonido natural ("mm", "a ver")
+BARGE_IN_ACTIVO = False           # Interrupción al hablar desactivada para evitar eco
+MULETILLAS_ACTIVAS = False        # Muletillas de espera desactivadas para evitar pisar audio
 
 # Proveedores compatibles con OpenAI con modelos organizados por tarea
 PROVEEDORES = [
@@ -115,29 +117,23 @@ PROVEEDORES = [
         "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
         "clave": CLAVE_GOOGLE,
         "modelos": [
-            "gemini-flash-lite-latest",
-            "gemini-2.5-flash",
             "gemini-flash-latest",
-            "gemini-2.0-flash",
-            "gemini-3-flash-preview",
+            "gemini-flash-lite-latest",
+            "gemini-pro-latest",
         ],
         "modelos_charla": [
-            "gemini-flash-lite-latest",
-            "gemini-2.5-flash",
             "gemini-flash-latest",
-            "gemini-2.0-flash",
-            "gemini-3-flash-preview",
+            "gemini-flash-lite-latest",
+            "gemini-pro-latest",
         ],
         "modelos_razonamiento": [
-            "gemini-2.5-flash",
+            "gemini-pro-latest",
             "gemini-flash-latest",
-            "gemini-3-flash-preview",
             "gemini-flash-lite-latest",
         ],
         "modelos_vision": [
-            "gemini-flash-lite-latest",
-            "gemini-2.5-flash",
             "gemini-flash-latest",
+            "gemini-flash-lite-latest",
         ],
     },
     {

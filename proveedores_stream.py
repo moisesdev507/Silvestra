@@ -9,7 +9,7 @@ from cerebro_parser import _cortar, _respuesta_parcial, separar
 import calidad_respuesta as cr
 import proveedores_cadenas as pc
 from sesion_http import obtener_sesion
-from proveedores_validador import extraer_motivo
+from proveedores_validador import extraer_motivo, desactivar_modelo, esta_desactivado
 
 
 def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_cancelar, cola_salida, marcar_enfriamiento_fn, registrar_fn):
@@ -22,6 +22,8 @@ def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_ca
     for modelo in lista_modelos:
         if evento_cancelar.is_set():
             return
+        if esta_desactivado(nombre, modelo):
+            continue
         try:
             sesion = obtener_sesion()
             r = sesion.post(
@@ -40,7 +42,8 @@ def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_ca
             if r.status_code == 404:
                 mot = extraer_motivo(r, 404)
                 marcar_enfriamiento_fn(nombre, modelo, r.headers, motivo=mot)
-                registrar_fn(f"cerebro HTTP 404 en {nombre} ({modelo}): {mot}")
+                desactivar_modelo(nombre, modelo)
+                registrar_fn(f"cerebro HTTP 404 en {nombre} ({modelo}): {mot} (desactivado)")
                 continue
             if r.status_code != 200:
                 registrar_fn(f"cerebro HTTP {r.status_code} en {nombre} ({modelo})")
@@ -102,7 +105,7 @@ def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_ca
     cola_salida.put(("error", nombre, RuntimeError(f"Todos los modelos de {nombre} fallaron")))
 
 
-def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marcar_enfriamiento_fn, registrar_fn, lanzar_reintento_fn, timeout_espera=5.0, on_primer_token=None):
+def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marcar_enfriamiento_fn, registrar_fn, lanzar_reintento_fn, timeout_espera=2.5, on_primer_token=None):
     """Ejecuta el streaming asegurando 1 sola llamada principal, sin carreras descontroladas y con control de calidad."""
     if not candidatos:
         registrar_fn("cerebro sin proveedores para streaming: modo emergencia con voz")
@@ -112,6 +115,7 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
         return pc.respuesta_emergencia_local(), "Local", "emergencia"
 
     idx = 0
+    tiempo_perdido_fallos = 0.0
     while idx < len(candidatos):
         p = candidatos[idx]
         nombre_p = p["nombre"]
@@ -158,6 +162,8 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
         if not primer_token_recibido:
             # Si el proveedor superó el tiempo de espera sin tokens, cancelar y pasar al siguiente
             cancelar.set()
+            dt_perdido = time.time() - t_inicio
+            tiempo_perdido_fallos += dt_perdido
             registrar_fn(f"cerebro {nombre_p} superó tiempo de espera ({timeout_espera:.1f}s) sin responder, pasando al siguiente")
             idx += 1
             continue
@@ -253,6 +259,8 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
             continue
 
         # Registro explícito del proveedor y modelo final
+        if tiempo_perdido_fallos > 0:
+            registrar_fn(f"tiempo_perdido_fallos={tiempo_perdido_fallos:.2f}s")
         if tarea == "fondo":
             registrar_fn(f"tarea_fondo proveedor={nombre_p} modelo={mod_activo}")
         else:

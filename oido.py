@@ -118,9 +118,18 @@ class Oido:
                 while True:
                     datos, _ = flujo.read(bloque)
                     nivel = float(np.abs(datos).mean())
+                    barge_in_habilitado = getattr(config, "BARGE_IN_ACTIVO", False)
                     hablando_ella = bool(app and hasattr(app, "voz") and app.voz.ocupada())
 
                     if hablando_ella:
+                        if not barge_in_habilitado:
+                            previo.clear()
+                            trozos.clear()
+                            hablo = False
+                            silencio = 0
+                            time.sleep(0.01)
+                            continue
+
                         if rec_vosk is None:
                             try:
                                 rec_vosk = self._obtener_reconocedor_vosk()
@@ -137,9 +146,8 @@ class Oido:
                                     palabras = m.group(1).strip().lower()
                                     if palabras:
                                         es_cmd = any(c in palabras.split() for c in comandos_corte)
-                                        es_eco = bool(app and hasattr(app, "_es_eco") and app._es_eco(palabras))
-                                        if es_cmd or (not es_eco and len(palabras.split()) >= 1):
-                                            motivo = "comando" if es_cmd else "habla_dueno"
+                                        if es_cmd:
+                                            motivo = "comando"
                                             t0_corte = time.time()
                                             if hasattr(app.voz, "detener"):
                                                 app.voz.detener()

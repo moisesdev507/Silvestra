@@ -145,17 +145,21 @@ def pensar(app, texto):
         app.oido.debe_avisar_respaldo = False
         app.cola.put(("frase", "Te escucho con mi oído de respaldo."))
     import config
-    umbral_espera = getattr(config, "UMBRAL_MULETILLA_SEGUNDOS", 0.70)
-    timer_espera = threading.Timer(
-        umbral_espera,
-        lambda: getattr(app, "voz", None) and hasattr(app.voz, "soltar_espera") and app.voz.soltar_espera()
-    )
-    timer_espera.daemon = True
-    timer_espera.start()
+    muletillas_activas = getattr(config, "MULETILLAS_ACTIVAS", False)
+    timer_espera = None
+    if muletillas_activas:
+        umbral_espera = getattr(config, "UMBRAL_MULETILLA_SEGUNDOS", 0.70)
+        timer_espera = threading.Timer(
+            umbral_espera,
+            lambda: getattr(app, "voz", None) and hasattr(app.voz, "soltar_espera") and app.voz.soltar_espera()
+        )
+        timer_espera.daemon = True
+        timer_espera.start()
 
     try:
         def _on_token():
-            timer_espera.cancel()
+            if timer_espera:
+                timer_espera.cancel()
             if hasattr(app, "metricas_turno") and isinstance(app.metricas_turno, dict):
                 if app.metricas_turno.get("t_primer_token") is None:
                     app.metricas_turno["t_primer_token"] = time.time()
@@ -163,10 +167,12 @@ def pensar(app, texto):
         resultado = respuesta_flujo.responder_flujo(
             app.cerebro, texto, lambda f: app.cola.put(("frase", f)), on_primer_token=_on_token
         )
-        timer_espera.cancel()
+        if timer_espera:
+            timer_espera.cancel()
         app.cola.put(("respuesta", resultado))
     except Exception as e:
-        timer_espera.cancel()
+        if timer_espera:
+            timer_espera.cancel()
         app.cola.put(("error", str(e)[:200]))
 
 

@@ -78,7 +78,6 @@ def atender_evento(app, tipo, texto):
 
         if app.flujo is not None:
             app.flujo.cerrar()
-            app.flujo = None
             app.ultimo_dicho = respuesta
             if hasattr(app, "cara") and app.cara:
                 app.cara.fijar_emocion(emocion)
@@ -182,6 +181,7 @@ def atender_evento(app, tipo, texto):
         app.ultimo_clima = texto
 
     elif tipo == "fin_voz":
+        app.flujo = None
         if hasattr(app, "cara") and app.cara:
             app.cara.programar_retorno_neutral(2500)
         if app.pendiente_descanso:

@@ -160,7 +160,7 @@ class Silvestra:
         if con_voz:
             self.ultimo_dicho = texto
             self.voz.hablar(texto, lambda: self.cola.put(("fin_voz", None)), emocion=emo)
-            if self.conversacion and not self.escuchando:
+            if getattr(config, "BARGE_IN_ACTIVO", False) and self.conversacion and not self.escuchando:
                 self.cara.root.after(300, self.escuchar)
 
     def ejecutar(self, linea):

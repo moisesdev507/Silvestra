@@ -140,14 +140,15 @@ class Voz:
             return True
         if self.pg is not None:
             try:
-                if self.pg.mixer.music.get_busy():
+                if self.pg.mixer.music.get_busy() or self.pg.mixer.get_busy():
                     return True
             except Exception:
                 pass
         return False
 
-    def detener(self):
+    def detener(self, motivo="detener()"):
         """Detiene de inmediato cualquier reproducción o síntesis de voz en curso (barge-in)."""
+        print(f"[voz] cancelada motivo={motivo}", flush=True)
         self.version += 1
         self._parar()
         self._activos = 0
@@ -212,6 +213,9 @@ class Voz:
 
     def soltar_espera(self):
         """Reproduce inmediatamente una muletilla o sonido natural en caché si la respuesta demora."""
+        import config
+        if not getattr(config, "MULETILLAS_ACTIVAS", False):
+            return
         if self.ocupada() or self.pg is None:
             return
         import voz_cache
@@ -302,14 +306,17 @@ class Voz:
                 if item is None:
                     break
                 if version != self.version:
+                    print(f"[voz] cancelada motivo=version_obsoleta ({version}!={self.version})", flush=True)
                     return
                 frase, audio, emo = item
+                abrev = (frase[:38] + "..") if len(frase) > 40 else frase
                 if audio and self.pg is not None:
                     try:
                         rms_norm, snd = calcular_envolvente_rms(audio)
-                        if snd is not None:
-                            canal = snd.play()
-                            _reportar_primera_palabra()
+                        canal = snd.play() if snd is not None else None
+                        print(f"[voz] reproduciendo='{abrev}'", flush=True)
+                        _reportar_primera_palabra()
+                        if canal is not None:
                             t_inicio = time.time()
                             while canal.get_busy() and version == self.version:
                                 if rms_norm:
@@ -319,23 +326,27 @@ class Voz:
                                 else:
                                     self.nivel_volumen = -1.0
                                 time.sleep(0.025)
-                            self.nivel_volumen = 0.0
-                            continue
                         else:
                             self.pg.mixer.music.load(io.BytesIO(audio))
                             self.pg.mixer.music.play()
-                            _reportar_primera_palabra()
                             self.nivel_volumen = -1.0
                             while self.pg.mixer.music.get_busy() and version == self.version:
                                 time.sleep(0.04)
-                            self.nivel_volumen = 0.0
-                            continue
-                    except Exception:
-                        pass
+                        self.nivel_volumen = 0.0
+                        if version != self.version:
+                            print(f"[voz] cancelada motivo=interrupcion_en_reproduccion frase='{abrev}'", flush=True)
+                            return
+                        print(f"[voz] terminó='{abrev}'", flush=True)
+                        continue
+                    except Exception as e:
+                        print(f"[voz] fallo en reproductor ({e}), usando respaldo...", flush=True)
                 self.nivel_volumen = -1.0
                 _reportar_primera_palabra()
+                print(f"[voz] reproduciendo='{abrev}'", flush=True)
                 self._voz_windows(frase, version, emocion=emo)
                 self.nivel_volumen = 0.0
+                if version == self.version:
+                    print(f"[voz] terminó='{abrev}'", flush=True)
 
             if version == self.version and al_terminar:
                 al_terminar()

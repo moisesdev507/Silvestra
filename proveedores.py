@@ -8,7 +8,7 @@ import calidad_respuesta as cr
 import proveedores_cadenas as pc
 import proveedores_stream as ps
 from sesion_http import obtener_sesion
-from proveedores_validador import extraer_motivo, iniciar_validacion_segundo_plano
+from proveedores_validador import extraer_motivo, iniciar_validacion_segundo_plano, desactivar_modelo, esta_desactivado
 
 _enfriamientos = {}
 enfriamientos = _enfriamientos
@@ -62,6 +62,8 @@ def completar(mensajes, tarea="charla", timeout=20):
         modelos = prov.get("modelos_activos") or prov.get("modelos", [])
 
         for modelo in list(modelos):
+            if esta_desactivado(nombre, modelo):
+                continue
             try:
                 sesion = obtener_sesion()
                 r = sesion.post(
@@ -79,7 +81,8 @@ def completar(mensajes, tarea="charla", timeout=20):
                 if r.status_code == 404:
                     mot = extraer_motivo(r, 404)
                     marcar_enfriamiento(nombre, modelo, r.headers, motivo=mot)
-                    _registrar(f"cerebro HTTP 404 en {nombre} ({modelo}): {mot}")
+                    desactivar_modelo(nombre, modelo)
+                    _registrar(f"cerebro HTTP 404 en {nombre} ({modelo}): {mot} (desactivado)")
                     continue
                 if r.status_code != 200:
                     _registrar(f"cerebro HTTP {r.status_code} en {nombre} ({modelo}): {r.text[:80]}")
