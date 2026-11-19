@@ -9,7 +9,13 @@ import config
 from config import MODELO_VOZ
 
 # Frases que Whisper inventa a veces cuando solo hay ruido.
-FALSAS = ("conversación informal", "conversacion informal", "gracias por ver", "subtítulos", "subtitulos", "suscríbete", "amara.org")
+FALSAS = (
+    "conversacion informal", "conversación informal", "gracias por ver",
+    "subtítulos", "subtitulos", "suscríbete", "suscribete", "amara.org",
+    "haha", "jaja", "okay, okay", "ok, ok", "ya entendí", "ya entendi",
+    "reproducción automática", "descarga gratuita", "todos los derechos",
+    "muchas gracias", "hasta la próxima", "transcripción por",
+)
 
 
 class Oido:
@@ -248,9 +254,16 @@ class Oido:
 
         self.t_texto = time.time()
         texto = (r.text or "").strip()
-        if len(texto) < 2 or any(f in texto.lower() for f in FALSAS):
+        if len(texto) < 3:
+            print(f"[oido] transcripcion='{texto}' descartada motivo=demasiado_corta", flush=True)
             return None
+        t_low = texto.lower()
+        for f in FALSAS:
+            if f in t_low:
+                print(f"[oido] transcripcion='{texto}' descartada motivo=alucinacion_whisper('{f}')", flush=True)
+                return None
         if self._dudoso(r):
+            print(f"[oido] transcripcion='{texto}' descartada motivo=dudoso_alta_probabilidad_sin_voz", flush=True)
             return None
         return texto
 

@@ -102,8 +102,13 @@ def enviar(app, texto):
 
     if t_norm in ("espera", "un momento", "aguanta"):
         if hasattr(app, "voz") and hasattr(app.voz, "detener"):
-            app.voz.detener()
+            app.voz.detener("comando_espera")
         app.decir("Te escucho, dime.", 2500)
+        return
+
+    if t_norm in ("deja de escuchar", "dejar de escuchar", "apaga el microfono", "deja de oir"):
+        if app.conversacion:
+            app.alternar_conversacion()
         return
 
     if "cancelar" in t_norm:

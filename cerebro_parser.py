@@ -101,20 +101,52 @@ def _respuesta_parcial(crudo):
     return resto.strip()
 
 
+_CONECTORES_COLGANTES = {
+    "de", "del", "en", "que", "y", "e", "o", "u", "a", "al", "con", "por",
+    "para", "el", "la", "los", "las", "un", "una", "su", "sus", "mi", "mis",
+    "tu", "tus", "sin", "sobre", "como", "pero", "sino", "aunque"
+}
+
+
+_PATRON_CORTE = re.compile(
+    r"(?<!\b[ap]\. m)(?<!\b[ap]\.m)(?<!\b[ap])(?<!\b[0-9])[.!?]+(?:\s+(?=[A-ZÁÉÍÓÚ¡¿0-9])|\n+|$)",
+    re.I,
+)
+
+
+def _es_oracion_completa(texto):
+    """Verifica que el fragmento sea una oración completa y no termine en conector o abreviatura."""
+    t = (texto or "").strip()
+    if not t or len(t) < 5:
+        return False
+    if re.search(r"\b[ap]\.$", t, re.I):
+        return False
+    palabras = [w.lower() for w in re.findall(r"[a-záéíóúñ0-9]+", t)]
+    if palabras and palabras[-1] in _CONECTORES_COLGANTES:
+        return False
+    return t[-1] in ".!?…"
+
+
 def _cortar(parcial, emitido, final=False):
-    """Saca las frases completas nuevas de forma ágil para sintetizar la primera palabra de inmediato."""
+    """Saca las oraciones completas nuevas sin cortar en conectores ni abreviaturas."""
     pendiente = parcial[emitido:]
     frases, inicio = [], 0
-    # Cortar por signos de puntuación seguidos de espacio o salto de línea
-    for m in re.finditer(r"[.!?…]+(?:\s+|\n+)", pendiente):
-        frag = pendiente[inicio:m.end()].strip()
-        # Umbral bajo (6 caracteres) para emitir la primera frase ("¡Hola!", "De acuerdo.") sin demora
-        if len(frag) >= 6:
-            frases.append(frag.replace("*", ""))
+    # Cortar por signos de puntuación evitando romper 'a. m.', números o conectores
+    for m in _PATRON_CORTE.finditer(pendiente):
+        frag = pendiente[inicio:m.end()].strip().replace("*", "")
+        if _es_oracion_completa(frag):
+            frases.append(frag)
             inicio = m.end()
+
     if final:
-        resto = pendiente[inicio:].strip()
+        resto = pendiente[inicio:].strip().replace("*", "")
         if resto:
-            frases.append(resto.replace("*", ""))
+            palabras = [w.lower() for w in re.findall(r"[a-záéíóúñ0-9]+", resto)]
+            if palabras and palabras[-1] in _CONECTORES_COLGANTES:
+                pass
+            else:
+                if resto[-1] not in ".!?…":
+                    resto += "."
+                frases.append(resto)
         inicio = len(pendiente)
     return frases, emitido + inicio

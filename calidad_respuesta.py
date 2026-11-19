@@ -15,13 +15,14 @@ PALABRAS_ESENCIALES_ESPANOL = {
     "hola", "buenos", "dias", "tardes", "noches", "gracias", "adios", "chao",
     "papi", "mami", "amigo", "amiga", "moises", "silvestra", "listo", "lista", "claro",
     "solo", "todo", "toda", "todos", "todas", "nada", "poco", "mucho", "mucha", "bueno", "buena",
+    "python", "whisper", "youtube", "laptop", "pc", "script", "ia", "app", "codigo", "modelo",
 }
 
 _PATRONES_CORRUPTOS = (
     re.compile(r"q[^ueei]", re.I),
     re.compile(r"mpun$", re.I),
     re.compile(r"ncoy$", re.I),
-    re.compile(r"[bcdfghjklmnpqrstvwxyz]{4,}", re.I),
+    re.compile(r"[bcdfghjklmnpqrstvwxz]{4,}", re.I),
 )
 
 _CONECTORES_COLGANTES = {

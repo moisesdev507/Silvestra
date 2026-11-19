@@ -17,9 +17,8 @@ MESES = [
 SOBRE_MI = (
     "SOBRE TI: Silvestra, prototipo hecho en Python por tu dueño Moisés en Panamá (estudiante de programación). "
     "Escuchas con Whisper, piensas con LLMs y hablas con voz panameña. Tu meta a futuro es vivir en un anillo inteligente. "
-    "Honesta con tus límites: di con sencillez lo que no sabes, sin inventar ni presumir. "
-    "Privacidad: cámara y pantalla solo cuando te lo pidan; jamás guardes ni repitas contraseñas o tokens. "
-    "Solo obedeces a tu dueño Moisés. Responde siempre con humor, calidez y naturalidad."
+    "Moisés es tu creador y amigo; sé leal, honesta, curiosa, ingeniosa y afectuosa con él. "
+    "Si te pide que te presentes, saludes o expliques quién eres, hazlo con orgullo, personalidad, chispa panameña y calidez."
 )
 
 
@@ -93,7 +92,7 @@ CATEGORIAS_ACCIONES = {
                 {"registrar_salida", "cancelar_salida"}),
     "diagnostico": ({"proveedor", "modelo", "error", "log", "falla"},
                     {"estado_proveedores", "explicar_error"}),
-    "escenario": ({"presentate", "presentacion", "escenario"},
+    "escenario": ({"presentate", "presentacion", "escenario", "presentar", "quien eres", "demo"},
                   {"presentarse", "cerrar_escenario"}),
 }
 
@@ -106,6 +105,7 @@ ACCIONES_BASE = {
 
 def describir_acciones_compactas(texto_actual=None):
     """Genera lista compacta de sólo las acciones relevantes al mensaje actual."""
+    import unicodedata
     todas = {}
     for n, (_, _, d) in acciones.ACCIONES.items():
         todas[n] = d
@@ -114,10 +114,10 @@ def describir_acciones_compactas(texto_actual=None):
     for n, (_, d) in acciones.VIVAS.items():
         todas[n] = d
 
-    texto_norm = (texto_actual or "").lower()
+    texto_norm = "".join(c for c in unicodedata.normalize("NFD", (texto_actual or "").lower()) if unicodedata.category(c) != "Mn")
     elegidas = set(ACCIONES_BASE)
 
-    palabras = set(re.findall(r"[a-záéíóúñ]+", texto_norm))
+    palabras = set(re.findall(r"[a-z0-9]+", texto_norm))
     for _, (kw, act_names) in CATEGORIAS_ACCIONES.items():
         if palabras & kw or any(k in texto_norm for k in kw):
             elegidas.update(act_names)
@@ -184,18 +184,19 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None):
     desc_acciones = describir_acciones_compactas(texto_actual)
     instrucciones_texto = (
         f"Te llamas {m.nombre}. Vives en la laptop de {m.creador}, quien te dio vida. Propósito: {m.proposito}.\n"
-        "Regla obligatoria de idioma: Habla siempre en español de Panamá. Solo cambia si piden practicar otro idioma explícitamente.\n"
-        f"FECHA Y HORA REAL: {hora_panama}. Silvestra NUNCA inventa la hora ni la fecha: si te preguntan la hora, dila usando exactamente este dato.\n\n"
+        "Personalidad: Habla siempre en español de Panamá con calidez, ingenio y chispa natural. "
+        "Reacciona primero a lo que te dicen antes de responder. Si te piden presentarte, hazlo con orgullo y personalidad.\n"
+        f"FECHA Y HORA REAL: {hora_panama}. Silvestra NUNCA inventa la hora ni la fecha: usa exactamente este dato.\n\n"
         "ACCIONES DISPONIBLES en la laptop (SOLO estas; no inventes que algo ya está hecho):\n"
         f"{desc_acciones}\n\n"
-        "Regla anti-invención estricta: jamás inventes datos ni actividades que no ocurrieron. "
+        "Regla anti-invención estricta: jamás inventes vivencias ni datos falsos. "
         f"Si no recuerdas algo o {m.creador} no te lo ha contado, di honestamente que no lo recuerdas sin inventar.\n"
         "Privacidad: captura y cámara solo cuando lo pidan. Jamás repitas ni guardes claves, contraseñas o tokens.\n"
         "Para las acciones con texto usa: ACCION: nombre | detalle (ej: ACCION: poner_recordatorio | en 2 minutos | sacar comida; ACCION: buscar | tema).\n"
         "EMOCIONES DISPONIBLES: neutral, alegre, calida, seria, preocupada, animada.\n\n"
         "FORMATO OBLIGATORIO:\n"
         "EMOCION: <neutral | alegre | calida | seria | preocupada | animada>\n"
-        "RESPUESTA: <lo que dices en voz alta, breve de 1 a 3 frases>\n"
+        "RESPUESTA: <lo que dices en voz alta, breve y con personalidad de 1 a 3 frases>\n"
         "ACCION: <acción de la lista, o ninguna>\n"
         f"RECUERDO: <nuevo dato duradero de {m.creador}, o ninguno>"
     )

@@ -77,13 +77,13 @@ def generar_saludo(app):
         estado.guardar(est)
         hora_actual = time.localtime().tm_hour
         emocion_saludo = "alegre" if 5 <= hora_actual < 12 else "calida"
-        app.decir(limpio, emocion=emocion_saludo)
+        app.cola.put(("saludo_inicial", (limpio, emocion_saludo)))
     except Exception:
         est["ultima_vez"] = time.time()
         estado.guardar(est)
         hora_actual = time.localtime().tm_hour
         emocion_saludo = "alegre" if 5 <= hora_actual < 12 else "calida"
-        app.decir(frase_fija, 3000, emocion=emocion_saludo)
+        app.cola.put(("saludo_inicial", (frase_fija, emocion_saludo)))
 
 
 def renacer(app):

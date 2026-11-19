@@ -309,12 +309,11 @@ class Voz:
                     print(f"[voz] cancelada motivo=version_obsoleta ({version}!={self.version})", flush=True)
                     return
                 frase, audio, emo = item
-                abrev = (frase[:38] + "..") if len(frase) > 40 else frase
                 if audio and self.pg is not None:
                     try:
                         rms_norm, snd = calcular_envolvente_rms(audio)
                         canal = snd.play() if snd is not None else None
-                        print(f"[voz] reproduciendo='{abrev}'", flush=True)
+                        print(f"[voz] reproduciendo='{frase}'", flush=True)
                         _reportar_primera_palabra()
                         if canal is not None:
                             t_inicio = time.time()
@@ -334,19 +333,19 @@ class Voz:
                                 time.sleep(0.04)
                         self.nivel_volumen = 0.0
                         if version != self.version:
-                            print(f"[voz] cancelada motivo=interrupcion_en_reproduccion frase='{abrev}'", flush=True)
+                            print(f"[voz] cancelada motivo=interrupcion_en_reproduccion frase='{frase}'", flush=True)
                             return
-                        print(f"[voz] terminó='{abrev}'", flush=True)
+                        print(f"[voz] terminó='{frase}'", flush=True)
                         continue
                     except Exception as e:
                         print(f"[voz] fallo en reproductor ({e}), usando respaldo...", flush=True)
                 self.nivel_volumen = -1.0
                 _reportar_primera_palabra()
-                print(f"[voz] reproduciendo='{abrev}'", flush=True)
+                print(f"[voz] reproduciendo='{frase}'", flush=True)
                 self._voz_windows(frase, version, emocion=emo)
                 self.nivel_volumen = 0.0
                 if version == self.version:
-                    print(f"[voz] terminó='{abrev}'", flush=True)
+                    print(f"[voz] terminó='{frase}'", flush=True)
 
             if version == self.version and al_terminar:
                 al_terminar()

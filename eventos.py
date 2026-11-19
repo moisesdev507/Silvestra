@@ -40,6 +40,10 @@ def atender_evento(app, tipo, texto):
             app.escenario.actualizar_subtitulo(texto)
         app.decir(texto, 4500)
 
+    elif tipo == "saludo_inicial":
+        txt_s, emo_s = texto if isinstance(texto, tuple) else (str(texto), "calida")
+        app.decir(txt_s, emocion=emo_s)
+
     elif tipo == "interrupcion":
         if app.flujo is not None:
             try:

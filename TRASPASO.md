@@ -43,24 +43,19 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 5. **Configuración y claves:** Exclusivamente en `config.py` (ignorado en git). Plantilla pública en `config.example.py`.
 
 ## 4. Estado actual (lo que ya funciona)
-- Rostro animado reactivo con mirada suave que sigue al dueño vía cámara (`camara.py`), microexpresiones (inclinación curiosa al escuchar, asentimiento al terminar frase), parpadeo variable y contraste emocional vivo.
-- Interrupción por voz (barge-in): corte instantáneo de audio (< 500 ms) al decir "espera", "ya", "para", "silencio" o hablarle, con filtro de eco.
-- Respuestas más rápidas: síntesis en streaming frase por frase en segundo plano y medición de primera palabra (`[tiempo] primera_palabra=...s`).
-- Regulación dinámica de FPS en reposo y registro de CPU estimada (`[cara] fps=..., cpu_estimada=...`).
+- Rostro animado reactivo con mirada suave (`camara.py`), microexpresiones (inclinación curiosa, asentimiento) y parpadeo natural.
+- Interrupción por voz (barge-in): corte instantáneo (<500ms) al decir "espera", "ya", "para", "silencio" o hablarle, con filtro de eco.
+- Síntesis en streaming por oraciones completas (`cerebro_parser.py`, `calidad_respuesta.py`) sin cortes en conectores ni `..` espurios.
+- Filtro estricto de alucinaciones de Whisper ("haha", "okay, okay") y descarte con log explícito (`oido.py`).
+- Saludo inicial contextual en el arranque (hora y tiempo transcurrido) seguro para el hilo Qt (`nacimiento.py`, `eventos.py`).
+- Prompt compacto (<1100 tokens) con inyección selectiva de acciones y personalidad panameña viva.
 - Voz panameña natural modulada emocionalmente con respaldo SAPI local.
-- Reconocimiento de voz con Whisper y respaldo Vosk.
-- Enrutamiento inteligente a múltiples proveedores de IA gratis con fallback y cooldown por modelo.
-- Memoria duradera con fechas, búsqueda semántica por categorías y filtro de privacidad.
-- Acciones por voz: `guardar_recuerdo`, `consultar_memoria`, `olvidar`, `poner_recordatorio`, `listar_recordatorios`, `cancelar_recordatorio`, `estado_proveedores`, `silencio`.
+- Reconocimiento de voz con Whisper (VAD ágil 0.55s, acondicionamiento de audio, prompt contextual) y respaldo Vosk.
+- Enrutamiento inteligente a múltiples LLM con fallback, pool Keep-Alive y enfriamiento 429 exacto.
+- Memoria duradera con fechas, categorías y filtro de privacidad.
+- Acciones por voz: recuerdos, recordatorios persistentes, estado de proveedores, silencio y control de escucha.
 - Modo reposo y panel para tablet vía navegador web.
-- Detección de presencia básica por cámara.
-- Control de versiones local en Git con archivos sensibles ignorados.
-- Control de calidad lingüística (`calidad_respuesta.py`) con descarte automático de alucinaciones y frases truncadas.
-- Cadena aislada `fondo` para tareas asíncronas internas, protegiendo al 100% la cuota de Groq para la charla en tiempo real.
-- Enfriamiento 429 inteligente (distingue TPM de 60s vs TPD de varias horas con cálculo exacto de headers).
-- Latencia optimizada y escucha natural: VAD ágil con espera de silencio recortada a 0.55s, acondicionamiento de audio (-3dBFS, ganancia 1.2, prompt Whisper contextual de Panamá), pool de conexiones HTTP Keep-Alive (ahorro de 200-350ms TLS), muletilla reactiva inmediata a los 0.70s y caché de frases frecuentes a 0.00s (`voz_cache.py`).
-- Suite de prueba de humo (`prueba_humo.py`) para verificación automatizada del sistema.
-- Modularización limpia: todos los archivos estrictamente por debajo de 15 KB.
+- Suite de prueba de humo (`prueba_humo.py`) y arquitectura modular (todos los archivos <= 15 KB).
 
 ## 5. Tareas pendientes y pospuestas
 - [ ] **Rotar clave de Groq:** La clave actual se expuso accidentalmente en el pasado; cambiarla en `config.py` y consola de Groq.
