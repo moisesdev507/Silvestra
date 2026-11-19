@@ -34,11 +34,8 @@ def dejar_de_escuchar(app):
 
 
 def escuchar(app):
-    """Comienza a escuchar por el micrófono si la conversación está activa y la voz libre."""
+    """Comienza a escuchar por el micrófono si la conversación está activa (soporta barge-in)."""
     if app.escuchando or not app.conversacion:
-        return
-    if app.voz.ocupada():
-        app.cara.root.after(400, lambda: escuchar(app))
         return
     app.escuchando = True
     app.cara.poner_escuchando(True)
@@ -48,7 +45,7 @@ def escuchar(app):
 def grabar(app):
     """Captura el audio con Whisper y encola el resultado (se ejecuta en hilo aparte)."""
     try:
-        texto = app.oido.escuchar()
+        texto = app.oido.escuchar(app=app)
     except Exception as e:
         app.cola.put(("fallo", str(e)))
         return
@@ -91,7 +88,19 @@ def enviar(app, texto):
             pass
     app.cara.decir(f"«{texto}»", 60000)
 
-    t_norm = normalizar(texto)
+    t_norm = normalizar(texto).strip()
+    if t_norm in ("para", "silencio", "callate", "alto", "stop", "ya"):
+        if hasattr(app, "voz") and hasattr(app.voz, "detener"):
+            app.voz.detener()
+        app.decir("Listo, me callo.", 2000)
+        return
+
+    if t_norm in ("espera", "un momento", "aguanta"):
+        if hasattr(app, "voz") and hasattr(app.voz, "detener"):
+            app.voz.detener()
+        app.decir("Te escucho, dime.", 2500)
+        return
+
     if "cancelar" in t_norm:
         try:
             import voz_dueno_registro
@@ -137,3 +146,16 @@ def pensar(app, texto):
         app.cola.put(("respuesta", resultado))
     except Exception as e:
         app.cola.put(("error", str(e)[:200]))
+
+
+def instalar(app):
+    """Registra acciones de conversación y control de voz."""
+    import acciones
+
+    def _accion_silencio(arg=None):
+        if hasattr(app, "voz") and hasattr(app.voz, "detener"):
+            app.voz.detener()
+        return True, "Silencio activado."
+
+    acciones.registrar("silencio", _accion_silencio, "Detiene la voz de Silvestra de inmediato.", alias=["para", "callate", "callar"])
+

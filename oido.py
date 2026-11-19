@@ -1,4 +1,5 @@
 import io
+import re
 import time
 import threading
 import wave
@@ -64,7 +65,7 @@ class Oido:
             print(f"[oido] Fallo en Vosk de respaldo: {err}", flush=True)
             return None
 
-    def escuchar(self, corto=False):
+    def escuchar(self, corto=False, app=None):
         for intento in range(2):
             adquirido = self.bloqueo.acquire(timeout=4.0)
             if not adquirido:
@@ -72,14 +73,14 @@ class Oido:
                 time.sleep(0.2)
                 continue
             try:
-                return self._escuchar(corto)
+                return self._escuchar(corto, app=app)
             finally:
                 self.bloqueo.release()
         print("[oido] Aviso: micrófono ocupado tras reintentar. Continuando sin colgar.", flush=True)
         return None
 
-    def _escuchar(self, corto=False):
-        """Devuelve el texto, o None si nadie habló. Lanza RuntimeError si falla."""
+    def _escuchar(self, corto=False, app=None):
+        """Devuelve el texto, o None si nadie habló. Soporta barge-in si Silvestra está hablando."""
         try:
             import numpy as np
             import sounddevice as sd
@@ -93,6 +94,9 @@ class Oido:
         hablo = False
         silencio = 0
         espera = 0
+        rec_vosk = None
+        comandos_corte = ("espera", "ya", "para", "silencio", "callate", "alto", "stop")
+
         try:
             with sd.InputStream(samplerate=rate, channels=1, dtype="int16", blocksize=bloque) as flujo:
                 ambiente = []
@@ -103,7 +107,43 @@ class Oido:
                 while True:
                     datos, _ = flujo.read(bloque)
                     nivel = float(np.abs(datos).mean())
-                    if nivel > umbral:
+                    hablando_ella = bool(app and hasattr(app, "voz") and app.voz.ocupada())
+
+                    if hablando_ella:
+                        # Si Silvestra está hablando, filtramos su propia voz (eco) y buscamos interrupción
+                        if rec_vosk is None:
+                            try:
+                                rec_vosk = self._obtener_reconocedor_vosk()
+                                rec_vosk.Reset()
+                            except Exception:
+                                rec_vosk = None
+
+                        if rec_vosk is not None:
+                            try:
+                                rec_vosk.AcceptWaveform(datos.tobytes())
+                                parcial_raw = rec_vosk.PartialResult()
+                                m = re.search(r'"partial"\s*:\s*"([^"]+)"', parcial_raw)
+                                if m:
+                                    palabras = m.group(1).strip().lower()
+                                    if palabras:
+                                        es_cmd = any(c in palabras.split() for c in comandos_corte)
+                                        es_eco = bool(app and hasattr(app, "_es_eco") and app._es_eco(palabras))
+                                        if es_cmd or (not es_eco and len(palabras.split()) >= 1):
+                                            motivo = "comando" if es_cmd else "habla_dueno"
+                                            t0_corte = time.time()
+                                            if hasattr(app.voz, "detener"):
+                                                app.voz.detener()
+                                            dt_corte_ms = (time.time() - t0_corte) * 1000
+                                            print(f"[interrupcion] motivo={motivo} tiempo_corte={dt_corte_ms:.1f}ms", flush=True)
+                                            if hasattr(app, "cola"):
+                                                app.cola.put(("interrupcion", motivo))
+                                            if not hablo:
+                                                trozos.extend(previo)
+                                            hablo = True
+                                            silencio = 0
+                            except Exception:
+                                pass
+                    elif nivel > umbral:
                         if not hablo:
                             trozos.extend(previo)
                         hablo = True
@@ -113,6 +153,7 @@ class Oido:
                     else:
                         espera += 1
                         previo.append(datos.copy())
+
                     if hablo:
                         trozos.append(datos.copy())
                         if silencio >= 10 or len(trozos) > (40 if corto else 150):

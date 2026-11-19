@@ -143,6 +143,13 @@ class Voz:
                 pass
         return False
 
+    def detener(self):
+        """Detiene de inmediato cualquier reproducción o síntesis de voz en curso (barge-in)."""
+        self.version += 1
+        self._parar()
+        self._activos = 0
+        self.nivel_volumen = 0.0
+
     def hablar(self, texto, al_terminar=None, emocion=None):
         """Dice el texto completo frase por frase con la emoción indicada o deducida."""
         emo_base = normalizar_emocion(emocion) if emocion else deducir_emocion(texto)

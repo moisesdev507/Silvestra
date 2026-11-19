@@ -38,6 +38,17 @@ def atender_evento(app, tipo, texto):
             app.escenario.actualizar_subtitulo(texto)
         app.decir(texto, 4500)
 
+    elif tipo == "interrupcion":
+        if app.flujo is not None:
+            try:
+                app.flujo.cerrar()
+            except Exception:
+                pass
+            app.flujo = None
+        app.ultimo_dicho = ""
+        if hasattr(app, "cara") and app.cara:
+            app.cara.poner_escuchando(True)
+
     elif tipo == "respuesta":
         if isinstance(texto, (list, tuple)):
             if len(texto) >= 3:
@@ -192,7 +203,9 @@ def atender_evento(app, tipo, texto):
 
     elif tipo == "silencio":
         app._dejar_de_escuchar()
-        app.silencios += 1
+        hablando = bool(hasattr(app, "voz") and app.voz.ocupada())
+        if not hablando:
+            app.silencios += 1
         if app.conversacion:
             en_demo = bool(
                 (hasattr(app, "escenario") and app.escenario and app.escenario.isVisible())

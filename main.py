@@ -135,6 +135,7 @@ class Silvestra:
         self.pantalla_remota = pantalla_remota.instalar(self)
         self.presencia = presencia.instalar(self)
         proveedores.instalar(self)
+        conversacion.instalar(self)
 
         self.cara.root.after(100, self.revisar_cola)
 
@@ -156,6 +157,8 @@ class Silvestra:
         if con_voz:
             self.ultimo_dicho = texto
             self.voz.hablar(texto, lambda: self.cola.put(("fin_voz", None)), emocion=emo)
+            if self.conversacion and not self.escuchando:
+                self.cara.root.after(300, self.escuchar)
 
     def ejecutar(self, linea):
         if not self.puede_hablar_sola():
