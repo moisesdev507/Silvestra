@@ -12,9 +12,9 @@ import time
 import config
 
 CADENAS_ORDEN = {
-    "charla": ["Groq", "Cerebras", "Google", "Mistral", "NVIDIA", "OpenRouter"],
-    "razonamiento": ["Groq", "Mistral", "Google", "NVIDIA", "Cerebras", "OpenRouter"],
-    "vision": ["Groq", "Google", "Mistral", "NVIDIA", "OpenRouter"],
+    "charla": ["Groq", "Cerebras", "Cloudflare", "Google", "Mistral", "NVIDIA", "OpenRouter", "Cohere"],
+    "razonamiento": ["Groq", "Mistral", "Cloudflare", "Google", "NVIDIA", "Cerebras", "OpenRouter", "Cohere"],
+    "vision": ["Groq", "Cloudflare", "Google", "Mistral", "NVIDIA", "OpenRouter"],
     "voz": ["Groq"],
 }
 
@@ -62,8 +62,62 @@ def clasificar_dificultad(texto):
     return "charla"
 
 
+def marcar_enfriamiento(enfriamientos, nombre, modelo=None, headers=None):
+    """Pone a un modelo o proveedor en pausa durante 60 s o según Retry-After (máx 60 s)."""
+    duracion = 60.0
+    if headers:
+        ra = headers.get("retry-after") or headers.get("Retry-After")
+        if ra:
+            try:
+                duracion = min(60.0, max(5.0, float(ra)))
+            except ValueError:
+                duracion = 60.0
+    ahora = time.time()
+    if modelo:
+        clave = f"{nombre}::{modelo}"
+        enfriamientos[clave] = ahora + duracion
+        print(f"[tiempo] enfriamiento modelo={clave} duracion={duracion:.0f}s", flush=True)
+    else:
+        enfriamientos[nombre] = ahora + duracion
+        print(f"[tiempo] enfriamiento proveedor={nombre} duracion={duracion:.0f}s", flush=True)
+
+
+def proveedores_disponibles(tarea, enfriamientos, claves_anteriores):
+    """Devuelve la lista de candidatos disponibles reseteando enfriamientos al cambiar claves."""
+    ahora = time.time()
+    mapa_claves = {
+        "Groq": getattr(config, "CLAVE", ""),
+        "Cloudflare": getattr(config, "CLAVE_CLOUDFLARE", "") + getattr(config, "ID_CUENTA_CLOUDFLARE", ""),
+        "Google": getattr(config, "CLAVE_GOOGLE", ""),
+        "Mistral": getattr(config, "CLAVE_MISTRAL", ""),
+        "NVIDIA": getattr(config, "CLAVE_NVIDIA", ""),
+        "Cerebras": getattr(config, "CLAVE_CEREBRAS", ""),
+        "OpenRouter": getattr(config, "CLAVE_OPENROUTER", ""),
+        "Cohere": getattr(config, "CLAVE_COHERE", ""),
+    }
+    for n, clv in mapa_claves.items():
+        if clv != claves_anteriores.get(n):
+            claves_anteriores[n] = clv
+            claves_a_borrar = [k for k in enfriamientos if k == n or k.startswith(f"{n}::")]
+            for k in claves_a_borrar:
+                enfriamientos.pop(k, None)
+            if claves_a_borrar:
+                print(f"[tiempo] {n}: detectada nueva clave en config.py, reiniciando enfriamiento", flush=True)
+
+    orden = CADENAS_ORDEN.get(tarea, CADENAS_ORDEN["charla"])
+    for n in orden:
+        clv = (mapa_claves.get(n) or "").strip()
+        if not clv:
+            print(f"[tiempo] cerebro saltando proveedor={n} motivo=clave_vacia", flush=True)
+        elif ahora < enfriamientos.get(n, 0):
+            restan = int(enfriamientos[n] - ahora)
+            print(f"[tiempo] cerebro saltando proveedor={n} motivo=en_enfriamiento_por_cuota_faltan_{restan}s", flush=True)
+
+    return obtener_candidatos_tarea(tarea, enfriamientos)
+
+
 def refrescar_clave_proveedor(prov_dict):
-    """Actualiza la clave dinámica del proveedor desde config.py."""
+    """Actualiza la clave dinámica y base_url del proveedor desde config.py."""
     nombre = prov_dict.get("nombre", "")
     if nombre == "Groq":
         prov_dict["clave"] = getattr(config, "CLAVE", "")
@@ -77,6 +131,16 @@ def refrescar_clave_proveedor(prov_dict):
         prov_dict["clave"] = getattr(config, "CLAVE_CEREBRAS", "")
     elif nombre == "OpenRouter":
         prov_dict["clave"] = getattr(config, "CLAVE_OPENROUTER", "")
+    elif nombre == "Cloudflare":
+        clv = getattr(config, "CLAVE_CLOUDFLARE", "")
+        acc_id = getattr(config, "ID_CUENTA_CLOUDFLARE", "")
+        if not clv or not acc_id:
+            prov_dict["clave"] = ""
+        else:
+            prov_dict["clave"] = clv
+            prov_dict["base_url"] = f"https://api.cloudflare.com/client/v4/accounts/{acc_id}/ai/v1"
+    elif nombre == "Cohere":
+        prov_dict["clave"] = getattr(config, "CLAVE_COHERE", "")
     return prov_dict
 
 
@@ -90,7 +154,7 @@ def obtener_modelos_tarea(prov_dict, tarea):
 
 
 def obtener_candidatos_tarea(tarea, enfriamientos):
-    """Devuelve la lista ordenada de proveedores aptos y disponibles para una tarea."""
+    """Devuelve la lista ordenada de proveedores aptos con sus modelos disponibles (no enfriados)."""
     ahora = time.time()
     orden_nombres = CADENAS_ORDEN.get(tarea, CADENAS_ORDEN["charla"])
 
@@ -111,18 +175,24 @@ def obtener_candidatos_tarea(tarea, enfriamientos):
         if not clave:
             continue
 
-        modelos = obtener_modelos_tarea(p, tarea)
-        if not modelos:
-            # Si el proveedor no tiene modelos para esta tarea (ej. visión en Cerebras), se salta
+        # Verificar enfriamiento general del proveedor
+        t_enfriar_prov = enfriamientos.get(nombre, 0)
+        if ahora < t_enfriar_prov:
             continue
 
-        # Verificar enfriamiento por 429
-        t_enfriar = enfriamientos.get(nombre, 0)
-        if ahora < t_enfriar:
+        modelos = obtener_modelos_tarea(p, tarea)
+        if not modelos:
+            # Si el proveedor no tiene modelos para esta tarea (ej. visión en Cerebras/Cohere)
+            continue
+
+        # Filtrar modelos que tengan su propio enfriamiento 429 activo
+        modelos_disponibles = [m for m in modelos if ahora >= enfriamientos.get(f"{nombre}::{m}", 0)]
+        if not modelos_disponibles:
+            # Todos los modelos de este proveedor están agotados por cuota
             continue
 
         p_candidato = dict(p)
-        p_candidato["modelos_activos"] = modelos
+        p_candidato["modelos_activos"] = modelos_disponibles
         candidatos.append(p_candidato)
 
     return candidatos
@@ -138,7 +208,7 @@ def reporte_estado_proveedores(enfriamientos):
         prov_map[copia["nombre"]] = copia
 
     estados = {}
-    todos = ["Groq", "Google", "Mistral", "NVIDIA", "Cerebras", "OpenRouter"]
+    todos = ["Groq", "Cloudflare", "Google", "Mistral", "NVIDIA", "Cerebras", "OpenRouter", "Cohere"]
     activos_nombres = []
     enfriando_nombres = []
     sin_clave_nombres = []
@@ -154,11 +224,29 @@ def reporte_estado_proveedores(enfriamientos):
             estados[n] = "Sin clave"
             sin_clave_nombres.append(n)
             continue
-        t_fin = enfriamientos.get(n, 0)
-        if ahora < t_fin:
-            seg = int(t_fin - ahora)
+
+        # Evaluar enfriamiento general o de modelos
+        t_fin_prov = enfriamientos.get(n, 0)
+        prov_modelos = list(p.get("modelos", []))
+        modelos_enfriados = []
+        for m in prov_modelos:
+            t_m = enfriamientos.get(f"{n}::{m}", 0)
+            if ahora < t_m:
+                modelos_enfriados.append((m, int(t_m - ahora)))
+
+        if ahora < t_fin_prov:
+            seg = int(t_fin_prov - ahora)
             estados[n] = f"Enfriamiento ({seg}s restan)"
             enfriando_nombres.append(f"{n} ({seg}s)")
+        elif prov_modelos and len(modelos_enfriados) == len(prov_modelos):
+            max_seg = max(s for _, s in modelos_enfriados)
+            estados[n] = f"Enfriamiento ({max_seg}s restan)"
+            enfriando_nombres.append(f"{n} ({max_seg}s)")
+        elif modelos_enfriados:
+            n_act = len(prov_modelos) - len(modelos_enfriados)
+            estados[n] = f"Activo ({n_act}/{len(prov_modelos)} modelos)"
+            activos_nombres.append(f"{n} ({n_act} mod)")
+            enfriando_nombres.append(f"{n} ({len(modelos_enfriados)} mod en pausa)")
         else:
             estados[n] = "Activo"
             activos_nombres.append(n)
@@ -177,8 +265,9 @@ def reporte_estado_proveedores(enfriamientos):
     lineas = ["🌐 ESTADO DE PROVEEDORES LLM:"]
     for n in todos:
         st = estados.get(n, "Desconocido")
+        extra_tag = " [Emergencia]" if n == "Cohere" else ""
         icono = "✅" if "Activo" in st else ("⏳" if "Enfriamiento" in st else "⚪")
-        lineas.append(f"{icono} {n}: {st}")
+        lineas.append(f"{icono} {n}{extra_tag}: {st}")
 
     lineas.append("\n📋 CADENAS ACTIVAS:")
     for t_nom, t_desc in [
@@ -191,6 +280,7 @@ def reporte_estado_proveedores(enfriamientos):
         lineas.append(f"• {t_desc}: {ruta}")
 
     lineas.append("• Voz a texto: Groq (Whisper) con respaldo local Vosk")
+    lineas.append("• Respaldo de emergencia: Cohere (Trial 1,000 llamadas/mes)")
 
     texto_burbuja = "\n".join(lineas)
     return texto_voz, texto_burbuja

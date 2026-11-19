@@ -38,52 +38,14 @@ def _registrar(mensaje):
     print(f"[tiempo] {mensaje}", flush=True)
 
 
-def marcar_enfriamiento(nombre, headers=None):
-    """Pone a un proveedor en pausa durante 60 s o lo que indique Retry-After (máx 60 s)."""
-    duracion = 60.0
-    if headers:
-        ra = headers.get("retry-after") or headers.get("Retry-After")
-        if ra:
-            try:
-                duracion = min(60.0, max(5.0, float(ra)))
-            except ValueError:
-                duracion = 60.0
-    _enfriamientos[nombre] = time.time() + duracion
-    _registrar(f"enfriamiento proveedor={nombre} duracion={duracion:.0f}s")
+def marcar_enfriamiento(nombre, modelo=None, headers=None):
+    """Pone a un modelo o proveedor en pausa durante 60 s o según Retry-After (máx 60 s)."""
+    pc.marcar_enfriamiento(_enfriamientos, nombre, modelo, headers)
 
 
 def proveedores_disponibles(tarea="charla"):
     """Devuelve la lista de proveedores configurados y disponibles para la tarea."""
-    global _claves_anteriores
-    ahora = time.time()
-
-    # Si el usuario cambió alguna clave en config.py, reiniciar enfriamiento de ese proveedor
-    mapa_claves = {
-        "Groq": getattr(config, "CLAVE", ""),
-        "Google": getattr(config, "CLAVE_GOOGLE", ""),
-        "Mistral": getattr(config, "CLAVE_MISTRAL", ""),
-        "NVIDIA": getattr(config, "CLAVE_NVIDIA", ""),
-        "Cerebras": getattr(config, "CLAVE_CEREBRAS", ""),
-        "OpenRouter": getattr(config, "CLAVE_OPENROUTER", ""),
-    }
-    for n, clv in mapa_claves.items():
-        if clv != _claves_anteriores.get(n):
-            _claves_anteriores[n] = clv
-            if n in _enfriamientos:
-                _registrar(f"{n}: detectada nueva clave en config.py, reiniciando enfriamiento")
-                _enfriamientos.pop(n, None)
-
-    # Registrar saltos por clave vacía o enfriamiento para observabilidad
-    orden = pc.CADENAS_ORDEN.get(tarea, pc.CADENAS_ORDEN["charla"])
-    for n in orden:
-        clv = (mapa_claves.get(n) or "").strip()
-        if not clv:
-            _registrar(f"cerebro saltando proveedor={n} motivo=clave_vacia")
-        elif ahora < _enfriamientos.get(n, 0):
-            restan = int(_enfriamientos[n] - ahora)
-            _registrar(f"cerebro saltando proveedor={n} motivo=en_enfriamiento_por_cuota_faltan_{restan}s")
-
-    return pc.obtener_candidatos_tarea(tarea, _enfriamientos)
+    return pc.proveedores_disponibles(tarea, _enfriamientos, _claves_anteriores)
 
 
 def completar(mensajes, tarea="charla", timeout=20):
@@ -105,10 +67,12 @@ def completar(mensajes, tarea="charla", timeout=20):
                 r = requests.post(url, headers=headers, json={"model": modelo, "messages": mensajes}, timeout=timeout)
                 r.encoding = "utf-8"
                 if r.status_code == 429:
-                    marcar_enfriamiento(nombre, r.headers)
-                    raise RuntimeError(f"Cuota excedida (429) en {nombre}")
+                    marcar_enfriamiento(nombre, modelo, r.headers)
+                    _registrar(f"cerebro 429 en {nombre} ({modelo}), pasando al siguiente modelo de la misma cuenta...")
+                    continue
                 if r.status_code != 200:
-                    raise RuntimeError(f"HTTP {r.status_code} en {nombre}: {r.text[:100]}")
+                    _registrar(f"cerebro HTTP {r.status_code} en {nombre} ({modelo}): {r.text[:80]}")
+                    continue
                 try:
                     datos = r.json()
                 except Exception:
@@ -120,83 +84,94 @@ def completar(mensajes, tarea="charla", timeout=20):
                 return contenido
             except Exception as e:
                 ultimo_error = e
-                _registrar(f"cerebro cambio proveedor anterior={nombre} motivo={e}")
-                if nombre == "Groq" and _ultimo_proveedor == "Groq":
-                    _aviso_respaldo_pendiente = True
+                _registrar(f"cerebro error en {nombre} ({modelo}): {e}")
+
+        # Si agotó todos los modelos de este proveedor, registrar cambio de proveedor
+        _registrar(f"cerebro agotados modelos en {nombre}, cambiando de proveedor")
+        if nombre == "Groq" and _ultimo_proveedor == "Groq":
+            _aviso_respaldo_pendiente = True
 
     raise ultimo_error or RuntimeError("Todos los proveedores fallaron")
 
 
-def _intentar_stream_proveedor(prov, modelo, mensajes, timeout_token, evento_cancelar, cola_salida):
-    """Ejecuta el streaming de un proveedor específico en su propio hilo."""
+def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_cancelar, cola_salida):
+    """Ejecuta el streaming de un proveedor probando sus modelos disponibles si hay 429."""
     nombre = prov["nombre"]
     url = f"{prov['base_url'].rstrip('/')}/chat/completions"
     headers = {"Authorization": f"Bearer {prov['clave']}", "Content-Type": "application/json"}
     t0 = time.time()
+    lista_modelos = modelos if isinstance(modelos, list) else [modelos]
 
-    try:
-        r = requests.post(
-            url,
-            headers=headers,
-            json={"model": modelo, "messages": mensajes, "stream": True},
-            stream=True,
-            timeout=(timeout_token, 6.0),
-        )
-        r.encoding = "utf-8"
-        if r.status_code == 429:
-            marcar_enfriamiento(nombre, r.headers)
-            cola_salida.put(("error", nombre, RuntimeError(f"429 en {nombre}")))
+    for modelo in lista_modelos:
+        if evento_cancelar.is_set():
             return
-        if r.status_code != 200:
-            cola_salida.put(("error", nombre, RuntimeError(f"HTTP {r.status_code} en {nombre}")))
-            return
+        try:
+            r = requests.post(
+                url,
+                headers=headers,
+                json={"model": modelo, "messages": mensajes, "stream": True},
+                stream=True,
+                timeout=(timeout_token, 6.0),
+            )
+            r.encoding = "utf-8"
+            if r.status_code == 429:
+                marcar_enfriamiento(nombre, modelo, r.headers)
+                _registrar(f"cerebro 429 en {nombre} ({modelo}), pasando al siguiente modelo de la misma cuenta...")
+                continue
+            if r.status_code != 200:
+                _registrar(f"cerebro HTTP {r.status_code} en {nombre} ({modelo})")
+                continue
 
-        primer_token = False
-        for linea_raw in r.iter_lines(decode_unicode=False):
-            if evento_cancelar.is_set():
+            primer_token = False
+            for linea_raw in r.iter_lines(decode_unicode=False):
+                if evento_cancelar.is_set():
+                    try:
+                        r.close()
+                    except Exception:
+                        pass
+                    return
+
+                if not linea_raw:
+                    continue
                 try:
-                    r.close()
+                    linea = linea_raw.decode("utf-8")
+                except UnicodeDecodeError:
+                    linea = linea_raw.decode("latin-1", errors="replace")
+                linea = linea.strip()
+                if not linea.startswith("data:"):
+                    continue
+                contenido = linea[5:].strip()
+                if contenido == "[DONE]":
+                    break
+                try:
+                    obj = json.loads(contenido)
                 except Exception:
-                    pass
-                return
+                    continue
+                choices = obj.get("choices", [])
+                if not choices:
+                    continue
+                delta = choices[0].get("delta", {}).get("content") or ""
+                if not delta:
+                    continue
 
-            if not linea_raw:
-                continue
-            try:
-                linea = linea_raw.decode("utf-8")
-            except UnicodeDecodeError:
-                linea = linea_raw.decode("latin-1", errors="replace")
-            linea = linea.strip()
-            if not linea.startswith("data:"):
-                continue
-            contenido = linea[5:].strip()
-            if contenido == "[DONE]":
-                break
-            try:
-                obj = json.loads(contenido)
-            except Exception:
-                continue
-            choices = obj.get("choices", [])
-            if not choices:
-                continue
-            delta = choices[0].get("delta", {}).get("content") or ""
-            if not delta:
-                continue
+                delta = forzar_utf8(delta)
+                if not primer_token:
+                    primer_token = True
+                    t_token = time.time() - t0
+                    cola_salida.put(("primer_token", nombre, modelo, t_token))
 
-            delta = forzar_utf8(delta)
+                cola_salida.put(("chunk", nombre, delta))
+
             if not primer_token:
-                primer_token = True
-                t_token = time.time() - t0
-                cola_salida.put(("primer_token", nombre, modelo, t_token))
+                continue
 
-            cola_salida.put(("chunk", nombre, delta))
-
-        if not primer_token:
-            cola_salida.put(("error", nombre, TimeoutError(f"Sin tokens en {nombre}")))
-        else:
             cola_salida.put(("fin", nombre, None))
-    except Exception as ex:
-        cola_salida.put(("error", nombre, ex))
+            return
+        except Exception as ex:
+            _registrar(f"cerebro fallo en {nombre} ({modelo}): {ex}")
+            continue
+
+    cola_salida.put(("error", nombre, RuntimeError(f"Todos los modelos de {nombre} fallaron")))
 
 
 def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=4.0):
@@ -211,9 +186,9 @@ def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=4.0):
     idx = 0
     while idx < len(candidatos):
         p1 = candidatos[idx]
-        m1 = (p1.get("modelos_activos") or p1.get("modelos", []))[0]
+        m1 = p1.get("modelos_activos") or p1.get("modelos", [])
         p2 = candidatos[idx + 1] if (idx + 1 < len(candidatos)) else None
-        m2 = (p2.get("modelos_activos") or p2.get("modelos", []))[0] if p2 else None
+        m2 = (p2.get("modelos_activos") or p2.get("modelos", [])) if p2 else []
 
         cola = queue.Queue()
         cancelar_p1 = threading.Event()

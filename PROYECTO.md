@@ -92,24 +92,33 @@ El modo escenario se activa automáticamente al pedirle a Silvestra que se prese
 
 ## Cadena de proveedores LLM, tareas especializadas y optimización de latencia
 
-La gestión multillm está modularizada en `proveedores.py` y `proveedores_cadenas.py`. Soporta 6 proveedores compatibles con la API de OpenAI:
-1. **Groq** (`CLAVE`): Ultrarrápido (`llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `llama-3.2-11b-vision-preview`).
-2. **Cerebras** (`CLAVE_CEREBRAS`): Inferencia acelerada en chip CS-3 (`llama3.1-8b`, `llama-3.3-70b`). No soporta visión multimodal (se excluye automáticamente de la cadena de visión).
-3. **Google Gemini** (`CLAVE_GOOGLE`): Endpoint compatible OpenAI `v1beta/openai` (`gemini-flash-lite-latest`, `gemini-2.5-flash`, `gemini-2.5-pro`).
+La gestión multillm está modularizada en `proveedores.py` y `proveedores_cadenas.py`. Soporta 8 proveedores compatibles con la API de OpenAI:
+1. **Groq** (`CLAVE`): Ultrarrápido con múltiples modelos independientes (`llama-3.1-8b-instant`, `llama-3.3-70b-versatile`, `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `llama-3.2-11b-vision-preview`).
+2. **Cloudflare Workers AI** (`CLAVE_CLOUDFLARE`, `ID_CUENTA_CLOUDFLARE`): Endpoint compatible OpenAI `https://api.cloudflare.com/client/v4/accounts/{id}/ai/v1`. Modelos Llama gratuitos (10,000 Neurons/día gratis): `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (más potente), `@cf/meta/llama-3.1-8b-instruct` (liviano) y `@cf/meta/llama-3.2-11b-vision-instruct` (visión).
+3. **Google Gemini** (`CLAVE_GOOGLE`): Endpoint compatible OpenAI `v1beta/openai` con cupos independientes por modelo (`gemini-flash-lite-latest`, `gemini-2.5-flash`, `gemini-flash-latest`, `gemini-3-flash-preview`).
 4. **Mistral AI** (`CLAVE_MISTRAL`): Endpoint `https://api.mistral.ai/v1` (`mistral-small-latest` liviano para charla, `codestral-latest` / `mistral-large-latest` potentes para código/razonamiento, `pixtral-12b-2409` para visión).
 5. **NVIDIA NIM** (`CLAVE_NVIDIA`): Endpoint `https://integrate.api.nvidia.com/v1` (`meta/llama-3.1-8b-instruct` liviano para charla, `meta/llama-3.3-70b-instruct` / `deepseek-ai/deepseek-r1` potentes, `meta/llama-3.2-11b-vision-instruct` para visión).
-6. **OpenRouter** (`CLAVE_OPENROUTER`): Enrutador universal (`openrouter/free`, `nvidia/nemotron-3.5-super-vl:free`).
+6. **Cerebras** (`CLAVE_CEREBRAS`): Inferencia acelerada en chip CS-3 (`llama3.1-8b`, `llama-3.3-70b`). No soporta visión multimodal (se excluye automáticamente de la cadena de visión).
+7. **OpenRouter** (`CLAVE_OPENROUTER`): Enrutador con múltiples modelos `:free` independientes (`openrouter/free`, `meta-llama/llama-3.1-8b-instruct:free`, `meta-llama/llama-3.3-70b-instruct:free`, `google/gemini-2.0-flash-exp:free`, `qwen/qwen-2.5-72b-instruct:free`, `deepseek/deepseek-r1:free`, `nvidia/nemotron-3.5-super-vl:free`).
+8. **Cohere** (`CLAVE_COHERE`): Respaldo de emergencia al final de las cadenas (`command-r-08-2024`, `command-r-plus-08-2024`, `command-r`). Su plan de prueba permite 1,000 llamadas al mes (20 RPM, no comercial). Excluido de visión.
 
-Si una clave de API está vacía en `config.py`, ese proveedor se omite limpiamente con motivo `clave_vacia` sin generar errores ni consumir tiempo.
+Si una clave de API está vacía en `config.py` (o falta el Account ID en Cloudflare), ese proveedor se omite limpiamente con motivo `clave_vacia` sin generar errores ni consumir tiempo.
 
 ### Cadenas separadas por tarea (ordenadas de más rápido o potente a menos)
 - **`charla`** (conversación casual, saludos, órdenes directas): modelos livianos primero para máxima velocidad y menor consumo de tokens.
-  `Groq` ➔ `Cerebras` ➔ `Google` ➔ `Mistral` ➔ `NVIDIA` ➔ `OpenRouter`
+  `Groq` ➔ `Cerebras` ➔ `Cloudflare` ➔ `Google` ➔ `Mistral` ➔ `NVIDIA` ➔ `OpenRouter` ➔ `Cohere` (emergencia)
 - **`razonamiento`** (preguntas analíticas, código, explicaciones profundas, URLs o textos extensos): modelos de alta capacidad primero.
-  `Groq` ➔ `Mistral` ➔ `Google` ➔ `NVIDIA` ➔ `Cerebras` ➔ `OpenRouter`
-- **`vision`** (análisis de pantalla y fotos): exclusivamente proveedores con visión multimodal. Cerebras queda excluido.
-  `Groq` ➔ `Google` ➔ `Mistral` ➔ `NVIDIA` ➔ `OpenRouter`
+  `Groq` ➔ `Mistral` ➔ `Cloudflare` ➔ `Google` ➔ `NVIDIA` ➔ `Cerebras` ➔ `OpenRouter` ➔ `Cohere` (emergencia)
+- **`vision`** (análisis de pantalla y fotos): exclusivamente proveedores con visión multimodal. Cerebras y Cohere quedan excluidos.
+  `Groq` ➔ `Cloudflare` ➔ `Google` ➔ `Mistral` ➔ `NVIDIA` ➔ `OpenRouter`
 - **`voz`** (transcripción de audio a texto): `Groq` con Whisper (`whisper-large-v3-turbo`) y respaldo local offline inmediato con Vosk.
+
+### Cupos independientes por modelo y conmutación dentro de la misma cuenta
+Cada modelo de cada proveedor se gestiona como un cupo independiente:
+1. **Enfriamiento por modelo**: cuando una petición devuelve error HTTP 429, se pone en enfriamiento el modelo específico (`f"{proveedor}::{modelo}"`) durante 60 segundos (o lo indicado por `Retry-After`), sin bloquear los demás modelos de la misma cuenta.
+2. **Conmutación intra-cuenta inmediata**: si un modelo agota su cuota (429), Silvestra pasa de inmediato al siguiente modelo disponible de esa misma cuenta antes de saltar a otro proveedor (por ejemplo: si en Groq se agota `llama-3.1-8b-instant`, intenta `openai/gpt-oss-20b` en Groq).
+3. **Salto de proveedor**: solo cuando todos los modelos disponibles de ese proveedor están en enfriamiento o fallan, se conmuta al siguiente proveedor de la cadena.
+4. **Visibilidad en el estado**: la acción `estado_proveedores` indica cuántos modelos están activos para cada proveedor (por ejemplo: `✅ Groq: Activo (3/4 modelos)`). Si el usuario actualiza una clave en `config.py`, se restablece el enfriamiento del proveedor y de todos sus modelos.
 
 ### Clasificador local de dificultad (sin llamadas extra a la red)
 La función `proveedores_cadenas.clasificar_dificultad(texto)` clasifica cada entrada sin gastar red ni tokens:

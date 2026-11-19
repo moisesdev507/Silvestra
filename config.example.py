@@ -26,12 +26,26 @@ CLAVE_MISTRAL = ""
 # Consigue tu clave y 1000 créditos gratis en: https://build.nvidia.com/
 CLAVE_NVIDIA = ""
 
-# 7. Telegram Bot (Para hablar con Silvestra desde el celular - Opcional)
+# 7. Cloudflare Workers AI (10,000 Neurons/día gratis, inferencia serverless global - Opcional)
+# Consigue tu token y Account ID en: https://dash.cloudflare.com/ (Workers & AI -> API Tokens)
+CLAVE_CLOUDFLARE = ""
+ID_CUENTA_CLOUDFLARE = ""
+
+# 8. Cohere (Solo como respaldo de emergencia - Plan de prueba de 1,000 llamadas al mes, no comercial)
+# Consigue tu Trial API Key en: https://dashboard.cohere.com/api-keys
+CLAVE_COHERE = ""
+
+# 9. Telegram Bot (Para hablar con Silvestra desde el celular - Opcional)
 # Crea tu bot gratis con @BotFather en Telegram y copia el token aquí
 TOKEN_TELEGRAM = ""
 
 # Modelos en Groq (se prueban en orden; si uno falla o supera cuota, pasa al siguiente)
-MODELOS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+MODELOS = [
+    "llama-3.1-8b-instant",
+    "llama-3.3-70b-versatile",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+]
 MODELO_VOZ = "whisper-large-v3-turbo"
 MODELO_VISION = "qwen/qwen3.8-27b"
 MODELOS_VISION = [
@@ -50,9 +64,39 @@ PROVEEDORES = [
         "base_url": "https://api.groq.com/openai/v1",
         "clave": CLAVE,
         "modelos": MODELOS,
-        "modelos_charla": ["openai/gpt-oss-20b", "llama-3.1-8b-instant"],
-        "modelos_razonamiento": ["openai/gpt-oss-120b", "llama-3.3-70b-versatile"],
+        "modelos_charla": [
+            "llama-3.1-8b-instant",
+            "openai/gpt-oss-20b",
+            "llama-3.3-70b-versatile",
+            "openai/gpt-oss-120b",
+        ],
+        "modelos_razonamiento": [
+            "llama-3.3-70b-versatile",
+            "openai/gpt-oss-120b",
+            "llama-3.1-8b-instant",
+            "openai/gpt-oss-20b",
+        ],
         "modelos_vision": MODELOS_VISION,
+    },
+    {
+        "nombre": "Cloudflare",
+        "base_url": f"https://api.cloudflare.com/client/v4/accounts/{ID_CUENTA_CLOUDFLARE}/ai/v1",
+        "clave": CLAVE_CLOUDFLARE,
+        "modelos": [
+            "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+            "@cf/meta/llama-3.1-8b-instruct",
+        ],
+        "modelos_charla": [
+            "@cf/meta/llama-3.1-8b-instruct",
+            "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        ],
+        "modelos_razonamiento": [
+            "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+            "@cf/meta/llama-3.1-8b-instruct",
+        ],
+        "modelos_vision": [
+            "@cf/meta/llama-3.2-11b-vision-instruct",
+        ],
     },
     {
         "nombre": "Google",
@@ -60,12 +104,26 @@ PROVEEDORES = [
         "clave": CLAVE_GOOGLE,
         "modelos": [
             "gemini-flash-lite-latest",
+            "gemini-2.5-flash",
+            "gemini-flash-latest",
             "gemini-3-flash-preview",
+        ],
+        "modelos_charla": [
+            "gemini-flash-lite-latest",
+            "gemini-2.5-flash",
             "gemini-flash-latest",
         ],
-        "modelos_charla": ["gemini-flash-lite-latest", "gemini-flash-latest"],
-        "modelos_razonamiento": ["gemini-3-flash-preview", "gemini-flash-latest"],
-        "modelos_vision": ["gemini-flash-lite-latest", "gemini-flash-latest"],
+        "modelos_razonamiento": [
+            "gemini-2.5-flash",
+            "gemini-flash-latest",
+            "gemini-3-flash-preview",
+            "gemini-flash-lite-latest",
+        ],
+        "modelos_vision": [
+            "gemini-flash-lite-latest",
+            "gemini-2.5-flash",
+            "gemini-flash-latest",
+        ],
     },
     {
         "nombre": "Mistral",
@@ -107,11 +165,47 @@ PROVEEDORES = [
         "clave": CLAVE_OPENROUTER,
         "modelos": [
             "openrouter/free",
+            "meta-llama/llama-3.1-8b-instruct:free",
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "google/gemini-2.0-flash-exp:free",
             "nvidia/nemotron-3.5-super-vl:free",
         ],
-        "modelos_charla": ["openrouter/free"],
-        "modelos_razonamiento": ["nvidia/nemotron-3.5-super-vl:free", "openrouter/free"],
-        "modelos_vision": ["nvidia/nemotron-3.5-super-vl:free"],
+        "modelos_charla": [
+            "openrouter/free",
+            "meta-llama/llama-3.1-8b-instruct:free",
+            "google/gemini-2.0-flash-exp:free",
+            "meta-llama/llama-3.3-70b-instruct:free",
+        ],
+        "modelos_razonamiento": [
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "qwen/qwen-2.5-72b-instruct:free",
+            "deepseek/deepseek-r1:free",
+            "openrouter/free",
+        ],
+        "modelos_vision": [
+            "nvidia/nemotron-3.5-super-vl:free",
+            "google/gemini-2.0-flash-exp:free",
+            "openrouter/free",
+        ],
+    },
+    {
+        "nombre": "Cohere",
+        "base_url": "https://api.cohere.ai/compatibility/v1",
+        "clave": CLAVE_COHERE,
+        "modelos": [
+            "command-r-08-2024",
+            "command-r-plus-08-2024",
+            "command-r",
+        ],
+        "modelos_charla": [
+            "command-r-08-2024",
+            "command-r",
+        ],
+        "modelos_razonamiento": [
+            "command-r-plus-08-2024",
+            "command-r-08-2024",
+        ],
+        "modelos_vision": [],
     },
 ]
 
