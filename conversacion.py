@@ -63,6 +63,8 @@ def grabar(app):
     except Exception as e:
         app.cola.put(("fallo", str(e)))
         return
+    if not getattr(app, "conversacion", False) and not getattr(app, "escuchando", False):
+        return
     app.cola.put(("silencio", None) if texto is None else ("oido", texto))
 
 

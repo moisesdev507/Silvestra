@@ -54,6 +54,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - Reconocimiento con Whisper (VAD adaptativo 0.30s con caída de energía, prompt contextual) y respaldo Vosk.
 - Latencia y respuesta rápida: muletillas en RAM (<0.3s), caché de perfil en RAM (<1ms) y Groq ultra-rápido (`qwen/qwen3.8-27b`).
 - Aro facial reactivo sincronizado: celeste en reposo/sin escuchar y amarillo al escuchar.
+- Audio thread-safe (PortAudio/sounddevice): exclusión mutua estricta de streams entre oido y palabra_clave sin colisión de memoria (0xc0000374).
 - Bucle de falsos disparos erradicado (`PALABRAS_EXCLUIDAS` en `palabra_clave.py` y log de motivo en `alternar_conversacion`).
 - Enrutamiento inteligente a múltiples LLM con fallback, pool Keep-Alive y enfriamiento 429 exacto.
 - Memoria duradera con fechas, categorías y filtro de privacidad.

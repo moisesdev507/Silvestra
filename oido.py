@@ -24,7 +24,7 @@ class Oido:
     def __init__(self, cliente, vocabulario):
         self.cliente = cliente
         self.vocabulario = vocabulario
-        self.bloqueo = threading.Lock()
+        self.bloqueo = threading.RLock()
         self.debe_avisar_respaldo = False
         self.aviso_respaldo_dicho = False
         self._modelo_vosk = None
@@ -84,6 +84,7 @@ class Oido:
                 return self._escuchar(corto, app=app)
             finally:
                 self.bloqueo.release()
+                time.sleep(0.05)
         print("[oido] Aviso: micrófono ocupado tras reintentar. Continuando sin colgar.", flush=True)
         return None
 
@@ -124,6 +125,8 @@ class Oido:
                 idx_ultimo_habla = 0
 
                 while True:
+                    if app is not None and (not getattr(app, "escuchando", True) or not getattr(app, "conversacion", True)):
+                        break
                     datos, _ = flujo.read(bloque)
                     nivel = float(np.abs(datos).mean())
                     barge_in_habilitado = getattr(config, "BARGE_IN_ACTIVO", False)

@@ -168,7 +168,16 @@ class PalabraClave:
                 time.sleep(0.2)
                 continue
 
+            # Adquirir el candado del micrófono ANTES de abrir cualquier stream en PortAudio
+            adquirido = self.app.oido.bloqueo.acquire(timeout=0.3)
+            if not adquirido:
+                time.sleep(0.1)
+                continue
+
             try:
+                if not self.vivo or not self.debe_escuchar():
+                    continue
+
                 # kaldiRecognizer con gramática restringida
                 if self.gramatica:
                     rec = vosk.KaldiRecognizer(self.modelo, rate, self.gramatica)
@@ -179,16 +188,7 @@ class PalabraClave:
                     samplerate=rate, blocksize=bloque, dtype="int16", channels=1
                 ) as flujo:
                     while self.vivo and self.debe_escuchar():
-                        # Compartir micrófono con oido.py sin bloqueos
-                        adquirido = self.app.oido.bloqueo.acquire(blocking=False)
-                        if not adquirido:
-                            time.sleep(0.05)
-                            continue
-                        try:
-                            datos, _ = flujo.read(bloque)
-                        finally:
-                            self.app.oido.bloqueo.release()
-
+                        datos, _ = flujo.read(bloque)
                         if not datos:
                             continue
 
@@ -215,10 +215,13 @@ class PalabraClave:
                             rec.Reset()
                             ultimo_log = ""
                             self._disparar()
-                            time.sleep(1.2)
+                            time.sleep(0.5)
                             break
             except Exception as e:
-                time.sleep(1.0)
+                time.sleep(0.2)
+            finally:
+                self.app.oido.bloqueo.release()
+                time.sleep(0.05)
 
     def _coincide(self, texto):
         if not texto:
