@@ -13,7 +13,8 @@ def atender_evento(app, tipo, texto):
         if app.flujo is None:
             app.texto_flujo = ""
             t_fin = getattr(app, "t_fin_habla", None)
-            app.flujo = app.voz.flujo(lambda: app.cola.put(("fin_voz", None)), t_fin_habla=t_fin)
+            metricas = getattr(app, "metricas_turno", None)
+            app.flujo = app.voz.flujo(lambda: app.cola.put(("fin_voz", None)), t_fin_habla=t_fin, metricas=metricas)
         app.texto_flujo = (app.texto_flujo + " " + texto).strip()
         app.flujo.agregar(texto)
         app.cara.decir(app.texto_flujo, None)

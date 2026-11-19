@@ -23,16 +23,17 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 
 ### Módulos principales
 - **`main.py`**: Punto de entrada, ciclo principal y orquestación con PyQt5.
-- **`cara_qt.py` / `cara_dibujo.py` / `cara_movimiento.py` / `burbuja.py`**: Interfaz visual (rostro animado, mirada, paseo, boca sincronizada y burbuja).
-- **`oido.py`**: Captura de micrófono (`sounddevice`), VAD, detección de barge-in e interrupción, y transcripción Whisper/Vosk.
-- **`voz.py`**: Síntesis de voz (`edge-tts` con modulación emocional, respaldo Windows SAPI, detención instantánea y medición de primera palabra).
-- **`cerebro.py` / `cerebro_prompt.py` / `cerebro_parser.py`**: Prompt (< 2000 tokens), streaming ágil por frases y parseo de emociones/acciones.
-- **`proveedores.py` / `proveedores_cadenas.py`**: Multi-LLM en cascada con cooldown independiente por modelo (Groq, Cerebras, Gemini, Mistral, NVIDIA, OpenRouter, SambaNova, GitHub Models, Cohere) y conmutación automática.
-- **`memoria.py` / `memoria_busqueda.py`**: Memoria permanente con fechas, categorías semánticas, resumen de recuerdos viejos (>200) y regla anti-invención.
-- **`acciones.py`**: Registro central de acciones (`acciones.registrar`) invocadas por el cerebro.
-- **`recordatorios.py`**: Alarmas y recordatorios por voz que sobreviven al reinicio (`recordatorios.json`).
-- **`pantalla_remota.py`**: Servidor local para visualizar el rostro o panel en tablet/móvil vía navegador.
-- **`presencia.py` / `camara.py`**: Detección de presencia y seguimiento facial para mirada natural.
+- **`cara_qt.py` / `cara_dibujo.py` / `cara_movimiento.py` / `burbuja.py`**: Interfaz visual (rostro animado, mirada suave, paseo y boca sincronizada).
+- **`oido.py`**: Micrófono (`sounddevice`), VAD ágil (0.55s), barge-in, normalización y Whisper/Vosk.
+- **`voz.py` / `voz_cache.py`**: Síntesis `edge-tts` modulada, caché en memoria (0.00s), muletillas (<0.7s) y corte rápido.
+- **`cerebro.py` / `cerebro_prompt.py` / `cerebro_parser.py`**: Prompt (<2000 tokens), streaming y emociones/acciones.
+- **`proveedores.py` / `proveedores_cadenas.py` / `sesion_http.py`**: Multi-LLM en cascada con pool HTTP Keep-Alive persistente y cooldown por modelo.
+- **`memoria.py` / `memoria_busqueda.py`**: Memoria permanente con fechas, categorías y anti-invención.
+- **`acciones.py`**: Registro central de acciones (`acciones.registrar`).
+- **`recordatorios.py`**: Recordatorios por voz persistentes en disco (`recordatorios.json`).
+- **`pantalla_remota.py`**: Servidor local para visualizar panel en navegador móvil.
+- **`presencia.py` / `camara.py`**: Presencia y seguimiento facial con MediaPipe.
+- **`prueba_humo.py`**: Suite de validación rápida de sintaxis, reglas de 15 KB y módulos clave.
 
 ### Reglas de oro de desarrollo
 1. **Tamaño máximo:** Ningún archivo de código debe superar los **15 KB** (~15,360 bytes). Si crece, dividir en módulos especializados.
@@ -57,6 +58,8 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - Control de calidad lingüística (`calidad_respuesta.py`) con descarte automático de alucinaciones y frases truncadas.
 - Cadena aislada `fondo` para tareas asíncronas internas, protegiendo al 100% la cuota de Groq para la charla en tiempo real.
 - Enfriamiento 429 inteligente (distingue TPM de 60s vs TPD de varias horas con cálculo exacto de headers).
+- Latencia optimizada y escucha natural: VAD ágil con espera de silencio recortada a 0.55s, acondicionamiento de audio (-3dBFS, ganancia 1.2, prompt Whisper contextual de Panamá), pool de conexiones HTTP Keep-Alive (ahorro de 200-350ms TLS), muletilla reactiva inmediata a los 0.70s y caché de frases frecuentes a 0.00s (`voz_cache.py`).
+- Suite de prueba de humo (`prueba_humo.py`) para verificación automatizada del sistema.
 - Modularización limpia: todos los archivos estrictamente por debajo de 15 KB.
 
 ## 5. Tareas pendientes y pospuestas

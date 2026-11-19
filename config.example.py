@@ -62,6 +62,11 @@ MODELOS_VISION = [
 ARCHIVO_MEMORIA = "memoria.json"
 ARCHIVO_RECORDATORIOS = "recordatorios.json"
 
+# Ajustes de escucha y respuesta rápida
+ESPERA_SILENCIO_SEGUNDOS = 0.55   # Espera de silencio para detectar fin de habla (en s)
+GANANCIA_MICROFONO = 1.2          # Ganancia aplicada al audio del micrófono
+UMBRAL_MULETILLA_SEGUNDOS = 0.70  # Tiempo sin respuesta antes de soltar sonido natural ("mm", "a ver")
+
 # Proveedores compatibles con OpenAI con modelos organizados por tarea
 PROVEEDORES = [
     {

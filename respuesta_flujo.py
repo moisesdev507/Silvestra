@@ -4,7 +4,7 @@ import proveedores
 import proveedores_cadenas as pc
 
 
-def responder_flujo(cerebro, texto, al_frase):
+def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     """Genera la respuesta con streaming y conmutación automática de proveedores si hay fallos."""
     cerebro.historial.append({"role": "user", "content": texto})
     # Limitar historial a los 8 turnos más recientes para ahorrar tokens y latencia
@@ -12,7 +12,7 @@ def responder_flujo(cerebro, texto, al_frase):
 
     tarea = pc.clasificar_dificultad(texto)
     try:
-        crudo = proveedores.completar_flujo(mensajes, al_frase, tarea=tarea)
+        crudo = proveedores.completar_flujo(mensajes, al_frase, tarea=tarea, on_primer_token=on_primer_token)
     except Exception as e:
         print(f"[respuesta_flujo] Excepción en streaming: {e}. Usando respuesta local.", flush=True)
         try:

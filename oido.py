@@ -5,6 +5,7 @@ import threading
 import wave
 from collections import deque
 
+import config
 from config import MODELO_VOZ
 
 # Frases que Whisper inventa a veces cuando solo hay ruido.
@@ -12,21 +13,23 @@ FALSAS = ("conversación informal", "conversacion informal", "gracias por ver", 
 
 
 class Oido:
-    """Escucha el micrófono hasta que hables, y lo convierte en texto."""
+    """Escucha el micrófono con VAD adaptativo y transcribe a texto con Whisper y Vosk."""
 
     def __init__(self, cliente, vocabulario):
         self.cliente = cliente
-        self.vocabulario = vocabulario  # función que devuelve nombres propios
-        self.bloqueo = threading.Lock()  # un solo uso del micrófono a la vez
+        self.vocabulario = vocabulario
+        self.bloqueo = threading.Lock()
         self.debe_avisar_respaldo = False
         self.aviso_respaldo_dicho = False
         self._modelo_vosk = None
         self._reconocedor_vosk = None
         self.ultimo_audio = None
         self.duracion_ultimo_audio = 0.0
+        self.t_fin_habla = time.time()
+        self.t_texto = time.time()
 
     def _obtener_reconocedor_vosk(self):
-        """Carga perezosa del modelo Vosk sin gramática restringida para no subir el arranque ni la RAM."""
+        """Carga perezosa del modelo Vosk sin gramática restringida."""
         if self._reconocedor_vosk is None:
             import os
             import vosk
@@ -39,7 +42,6 @@ class Oido:
                 raise RuntimeError(f"No se encontró el modelo Vosk en {ruta_modelo}")
             if self._modelo_vosk is None:
                 self._modelo_vosk = vosk.Model(ruta_modelo)
-            # KaldiRecognizer libre sin gramática restringida
             self._reconocedor_vosk = vosk.KaldiRecognizer(self._modelo_vosk, 16000)
         return self._reconocedor_vosk
 
@@ -80,7 +82,7 @@ class Oido:
         return None
 
     def _escuchar(self, corto=False, app=None):
-        """Devuelve el texto, o None si nadie habló. Soporta barge-in si Silvestra está hablando."""
+        """Devuelve el texto, o None si nadie habló. VAD ágil con corte optimizado y normalización."""
         try:
             import numpy as np
             import sounddevice as sd
@@ -88,29 +90,37 @@ class Oido:
             raise RuntimeError("Me falta instalar sounddevice y numpy.")
 
         rate = 16000
-        bloque = int(rate * 0.1)
+        # Bloques de 50 ms (800 muestras) para mayor precisión temporal
+        bloque = int(rate * 0.05)
         trozos = []
-        previo = deque(maxlen=3)
+        previo = deque(maxlen=4)
         hablo = False
         silencio = 0
         espera = 0
         rec_vosk = None
         comandos_corte = ("espera", "ya", "para", "silencio", "callate", "alto", "stop")
 
+        espera_silencio = float(getattr(config, "ESPERA_SILENCIO_SEGUNDOS", 0.55))
+        max_silencio = max(7, int(espera_silencio / 0.05))
+        ganancia = float(getattr(config, "GANANCIA_MICROFONO", 1.2))
+
         try:
             with sd.InputStream(samplerate=rate, channels=1, dtype="int16", blocksize=bloque) as flujo:
                 ambiente = []
-                for _ in range(5):
+                for _ in range(6):
                     datos, _ = flujo.read(bloque)
                     ambiente.append(float(np.abs(datos).mean()))
-                umbral = max(200.0, (sum(ambiente) / len(ambiente)) * 3)
+                piso_ruido = sum(ambiente) / len(ambiente)
+                umbral = max(180.0, piso_ruido * 2.6)
+
+                idx_ultimo_habla = 0
+
                 while True:
                     datos, _ = flujo.read(bloque)
                     nivel = float(np.abs(datos).mean())
                     hablando_ella = bool(app and hasattr(app, "voz") and app.voz.ocupada())
 
                     if hablando_ella:
-                        # Si Silvestra está hablando, filtramos su propia voz (eco) y buscamos interrupción
                         if rec_vosk is None:
                             try:
                                 rec_vosk = self._obtener_reconocedor_vosk()
@@ -141,6 +151,8 @@ class Oido:
                                                 trozos.extend(previo)
                                             hablo = True
                                             silencio = 0
+                                            self.t_fin_habla = time.time()
+                                            idx_ultimo_habla = len(trozos)
                             except Exception:
                                 pass
                     elif nivel > umbral:
@@ -148,37 +160,64 @@ class Oido:
                             trozos.extend(previo)
                         hablo = True
                         silencio = 0
+                        self.t_fin_habla = time.time()
+                        idx_ultimo_habla = len(trozos)
                     elif hablo:
                         silencio += 1
                     else:
                         espera += 1
                         previo.append(datos.copy())
+                        # Actualización adaptativa suave del piso de ruido en reposo
+                        piso_ruido = piso_ruido * 0.95 + nivel * 0.05
+                        umbral = max(180.0, piso_ruido * 2.6)
 
                     if hablo:
                         trozos.append(datos.copy())
-                        if silencio >= 10 or len(trozos) > (40 if corto else 150):
+                        # Detección de fin de habla optimizada con parámetro configurable
+                        if silencio >= max_silencio or len(trozos) > (80 if corto else 300):
                             break
-                    elif espera >= 80:
+                    elif espera >= 160:
                         break
         except Exception as e:
             raise RuntimeError("No pude usar el micrófono: " + str(e)[:120])
 
         self.t_fin_escucha = time.time()
 
-        if not hablo or len(trozos) < 5:
+        if not hablo or len(trozos) < 8:
             self.ultimo_audio = None
             self.duracion_ultimo_audio = 0.0
             return None
 
-        audio = np.concatenate(trozos)
+        # Recortar silencios sobrantes finales para no enviar audio muerto a Whisper
+        trozos_utiles = trozos[: min(len(trozos), idx_ultimo_habla + 4)]
+        audio_raw = np.concatenate(trozos_utiles)
+
+        # Ganancia, supresión de offset DC y normalización de volumen a -3dBFS
+        audio_f = audio_raw.astype(np.float32) * ganancia
+        audio_f = audio_f - np.mean(audio_f)
+        max_v = float(np.max(np.abs(audio_f)))
+        if max_v > 50.0:
+            escala = min(3.5, 24000.0 / max_v)
+            audio_f = audio_f * escala
+        audio = np.clip(audio_f, -32767, 32767).astype(np.int16)
+
         self.ultimo_audio = audio
         self.duracion_ultimo_audio = len(audio) / float(rate)
+
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as w:
             w.setnchannels(1)
             w.setsampwidth(2)
             w.setframerate(rate)
             w.writeframes(audio.tobytes())
+
+        vocab_nombres = self.vocabulario() if callable(self.vocabulario) else ""
+        prompt_whisper = (
+            f"Conversación en español de Panamá con Silvestra y Moisés. {vocab_nombres}. "
+            "Comandos y acciones: silencio, para, cancelar, recordar, recordatorio, "
+            "resumen, pantalla, cámara, hora, fecha, Telegram, YouTube, PC, laptop, código, Python, tareas."
+        )
+
         r = None
         t0 = time.time()
         try:
@@ -187,7 +226,7 @@ class Oido:
                 model=MODELO_VOZ,
                 language="es",
                 response_format="verbose_json",
-                prompt=f"Conversación en español. Nombres: {self.vocabulario()}.",
+                prompt=prompt_whisper,
                 timeout=10.0,
             )
             print(f"[tiempo] whisper={time.time() - t0:.2f}s", flush=True)
@@ -195,8 +234,11 @@ class Oido:
             print(f"[oido] Whisper falló ({str(e)[:80]}). Conmutando a Vosk...", flush=True)
             texto_vosk = self._transcribir_vosk(audio.tobytes())
             if texto_vosk is not None:
+                self.t_texto = time.time()
                 return texto_vosk
             raise RuntimeError("No pude entender el audio: " + str(e)[:120])
+
+        self.t_texto = time.time()
         texto = (r.text or "").strip()
         if len(texto) < 2 or any(f in texto.lower() for f in FALSAS):
             return None

@@ -8,6 +8,7 @@ import requests
 from cerebro_parser import _cortar, _respuesta_parcial, separar
 import calidad_respuesta as cr
 import proveedores_cadenas as pc
+from sesion_http import obtener_sesion
 from proveedores_validador import extraer_motivo
 
 
@@ -22,7 +23,8 @@ def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_ca
         if evento_cancelar.is_set():
             return
         try:
-            r = requests.post(
+            sesion = obtener_sesion()
+            r = sesion.post(
                 url,
                 headers=headers,
                 json={"model": modelo, "messages": mensajes, "stream": True, "max_tokens": 500},
@@ -100,7 +102,7 @@ def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_ca
     cola_salida.put(("error", nombre, RuntimeError(f"Todos los modelos de {nombre} fallaron")))
 
 
-def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marcar_enfriamiento_fn, registrar_fn, lanzar_reintento_fn, timeout_espera=5.0):
+def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marcar_enfriamiento_fn, registrar_fn, lanzar_reintento_fn, timeout_espera=5.0, on_primer_token=None):
     """Ejecuta el streaming asegurando 1 sola llamada principal, sin carreras descontroladas y con control de calidad."""
     if not candidatos:
         registrar_fn("cerebro sin proveedores para streaming: modo emergencia con voz")
@@ -140,6 +142,11 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
                     mod_activo = msg[2]
                     t_tok = msg[3]
                     primer_token_recibido = True
+                    if callable(on_primer_token):
+                        try:
+                            on_primer_token()
+                        except Exception:
+                            pass
                     registrar_fn(f"cerebro ganador={nombre_p} modelo={mod_activo} primer_token={t_tok:.2f}s")
                     break
                 elif tipo == "error":

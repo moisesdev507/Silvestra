@@ -129,6 +129,8 @@ class Voz:
 
             pygame.mixer.init()
             self.pg = pygame
+            import voz_cache
+            voz_cache.precargar_audios_frecuentes(self._audio)
         except Exception:
             self.pg = None
 
@@ -160,13 +162,13 @@ class Voz:
             flujo.agregar(frase, emocion=frase_emo)
         flujo.cerrar()
 
-    def flujo(self, al_terminar=None, emocion="neutral", t_fin_habla=None):
+    def flujo(self, al_terminar=None, emocion="neutral", t_fin_habla=None, metricas=None):
         """Empieza a hablar frase por frase conforme van llegando. Usa .agregar(frase) y al final .cerrar()."""
         self.version += 1
         self._activos += 1
         emo = normalizar_emocion(emocion)
         flujo = Flujo(emocion=emo)
-        threading.Thread(target=self._hablar, args=(flujo, al_terminar, self.version, emo, t_fin_habla), daemon=True).start()
+        threading.Thread(target=self._hablar, args=(flujo, al_terminar, self.version, emo, t_fin_habla, metricas), daemon=True).start()
         return flujo
 
     def _parar(self):
@@ -182,6 +184,11 @@ class Voz:
 
     @staticmethod
     def _audio(frase, emocion="neutral"):
+        import voz_cache
+        en_cache = voz_cache.obtener_audio_cache(frase, emocion)
+        if en_cache:
+            return en_cache
+
         import edge_tts
 
         emo = normalizar_emocion(emocion)
@@ -199,7 +206,30 @@ class Voz:
                     datos += trozo["data"]
             return bytes(datos)
 
-        return asyncio.run(asyncio.wait_for(crear(), 10))
+        audio_generado = asyncio.run(asyncio.wait_for(crear(), 10))
+        voz_cache.guardar_audio_cache(frase, audio_generado, emocion)
+        return audio_generado
+
+    def soltar_espera(self):
+        """Reproduce inmediatamente una muletilla o sonido natural en caché si la respuesta demora."""
+        if self.ocupada() or self.pg is None:
+            return
+        import voz_cache
+        muletilla = voz_cache.obtener_siguiente_muletilla()
+        audio = voz_cache.obtener_audio_cache(muletilla, "neutral")
+        if not audio:
+            try:
+                audio = self._audio(muletilla, "neutral")
+            except Exception:
+                return
+        if audio and self.pg is not None:
+            try:
+                snd = self.pg.mixer.Sound(io.BytesIO(audio))
+                snd.set_volume(0.65)
+                snd.play()
+                print(f"[voz] muletilla_espera='{muletilla}'", flush=True)
+            except Exception:
+                pass
 
     def _voz_windows(self, texto, version, emocion="neutral"):
         """Voz de respaldo local (Windows SAPI). Ignora la emoción limpiamente sin dar error."""
@@ -217,7 +247,7 @@ class Voz:
         while proc.poll() is None and version == self.version:
             time.sleep(0.05)
 
-    def _hablar(self, flujo, al_terminar, version, emocion_defecto="neutral", t_fin_habla=None):
+    def _hablar(self, flujo, al_terminar, version, emocion_defecto="neutral", t_fin_habla=None, metricas=None):
         try:
             self._parar()
             buzon = queue.Queue()
@@ -225,16 +255,28 @@ class Voz:
 
             def _reportar_primera_palabra():
                 nonlocal primera_reportada
-                if not primera_reportada and t_fin_habla is not None:
+                if not primera_reportada:
                     primera_reportada = True
-                    dt = time.time() - t_fin_habla
-                    ant = getattr(self, "ult_primera_palabra", None)
-                    if ant is not None:
-                        diff = dt - ant
-                        print(f"[tiempo] primera_palabra={dt:.2f}s desde que terminé de hablar (anterior={ant:.2f}s, diff={diff:+.2f}s)", flush=True)
-                    else:
-                        print(f"[tiempo] primera_palabra={dt:.2f}s desde que terminé de hablar", flush=True)
-                    self.ult_primera_palabra = dt
+                    t_audio = time.time()
+                    if metricas and isinstance(metricas, dict):
+                        t_fin = metricas.get("t_fin_habla")
+                        t_txt = metricas.get("t_texto")
+                        t_tok = metricas.get("t_primer_token")
+                        if t_fin and t_txt and t_tok:
+                            d_trans = max(0.0, t_txt - t_fin)
+                            d_token = max(0.0, t_tok - t_txt)
+                            d_audio = max(0.0, t_audio - t_tok)
+                            d_total = max(0.0, t_audio - t_fin)
+                            print(f"[latencia] fin_habla->texto={d_trans:.2f}s, texto->primer_token={d_token:.2f}s, primer_token->audio={d_audio:.2f}s, total={d_total:.2f}s", flush=True)
+                    if t_fin_habla is not None:
+                        dt = t_audio - t_fin_habla
+                        ant = getattr(self, "ult_primera_palabra", None)
+                        if ant is not None:
+                            diff = dt - ant
+                            print(f"[tiempo] primera_palabra={dt:.2f}s desde que terminé de hablar (anterior={ant:.2f}s, diff={diff:+.2f}s)", flush=True)
+                        else:
+                            print(f"[tiempo] primera_palabra={dt:.2f}s desde que terminé de hablar", flush=True)
+                        self.ult_primera_palabra = dt
 
             def productor():
                 while True:

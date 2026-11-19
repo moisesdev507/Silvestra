@@ -41,7 +41,8 @@ def lanzar_reintento_segundo_plano(obtener_cands_fn, tarea):
                 m = (p.get("modelos_activos") or p.get("modelos", []))[0]
                 url = f"{p['base_url'].rstrip('/')}/chat/completions"
                 headers = {"Authorization": f"Bearer {p['clave']}", "Content-Type": "application/json"}
-                r = requests.post(
+                from sesion_http import obtener_sesion
+                r = obtener_sesion().post(
                     url,
                     headers=headers,
                     json={"model": m, "messages": [{"role": "user", "content": "ping"}]},

@@ -7,6 +7,7 @@ import acciones
 import calidad_respuesta as cr
 import proveedores_cadenas as pc
 import proveedores_stream as ps
+from sesion_http import obtener_sesion
 from proveedores_validador import extraer_motivo, iniciar_validacion_segundo_plano
 
 _enfriamientos = {}
@@ -62,7 +63,8 @@ def completar(mensajes, tarea="charla", timeout=20):
 
         for modelo in list(modelos):
             try:
-                r = requests.post(
+                sesion = obtener_sesion()
+                r = sesion.post(
                     url,
                     headers=headers,
                     json={"model": modelo, "messages": mensajes, "max_tokens": 500},
@@ -120,7 +122,7 @@ def completar(mensajes, tarea="charla", timeout=20):
     return pc.respuesta_emergencia_local()
 
 
-def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=5.0):
+def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=5.0, on_primer_token=None):
     """Interfaz unificada para streaming con conmutación limpia y control de calidad."""
     candidatos = proveedores_disponibles(tarea)
     texto, prov_g, mod_g = ps.completar_flujo(
@@ -133,6 +135,7 @@ def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=5.0):
         registrar_fn=_registrar,
         lanzar_reintento_fn=_lanzar_reintento,
         timeout_espera=timeout_paralelo,
+        on_primer_token=on_primer_token,
     )
     global _ultimo_proveedor
     _ultimo_proveedor = prov_g

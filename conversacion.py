@@ -80,7 +80,10 @@ def abrir_chat(app):
 
 def enviar(app, texto):
     """Procesa un texto enviado por el usuario (por voz o por teclado)."""
-    app.t_fin_habla = getattr(getattr(app, "oido", None), "t_fin_escucha", time.time())
+    t_habla = getattr(getattr(app, "oido", None), "t_fin_habla", getattr(getattr(app, "oido", None), "t_fin_escucha", time.time()))
+    t_txt = getattr(getattr(app, "oido", None), "t_texto", time.time())
+    app.t_fin_habla = t_habla
+    app.metricas_turno = {"t_fin_habla": t_habla, "t_texto": t_txt, "t_primer_token": None}
     if hasattr(app, "iniciativa"):
         app.iniciativa.interaccion()
     if hasattr(app, "cuidado") and app.cuidado:
@@ -141,12 +144,29 @@ def pensar(app, texto):
     if getattr(app.oido, "debe_avisar_respaldo", False):
         app.oido.debe_avisar_respaldo = False
         app.cola.put(("frase", "Te escucho con mi oído de respaldo."))
+    import config
+    umbral_espera = getattr(config, "UMBRAL_MULETILLA_SEGUNDOS", 0.70)
+    timer_espera = threading.Timer(
+        umbral_espera,
+        lambda: getattr(app, "voz", None) and hasattr(app.voz, "soltar_espera") and app.voz.soltar_espera()
+    )
+    timer_espera.daemon = True
+    timer_espera.start()
+
     try:
+        def _on_token():
+            timer_espera.cancel()
+            if hasattr(app, "metricas_turno") and isinstance(app.metricas_turno, dict):
+                if app.metricas_turno.get("t_primer_token") is None:
+                    app.metricas_turno["t_primer_token"] = time.time()
+
         resultado = respuesta_flujo.responder_flujo(
-            app.cerebro, texto, lambda f: app.cola.put(("frase", f))
+            app.cerebro, texto, lambda f: app.cola.put(("frase", f)), on_primer_token=_on_token
         )
+        timer_espera.cancel()
         app.cola.put(("respuesta", resultado))
     except Exception as e:
+        timer_espera.cancel()
         app.cola.put(("error", str(e)[:200]))
 
 

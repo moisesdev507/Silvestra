@@ -20,7 +20,7 @@ PALABRAS_ESENCIALES_ESPANOL = {
 _PATRONES_CORRUPTOS = (
     re.compile(r"q[^ueei]", re.I),
     re.compile(r"mpun$", re.I),
-    re.compile(r"[bcdfghjklmnpqrstvwxz]{2,}oy$", re.I),
+    re.compile(r"ncoy$", re.I),
     re.compile(r"[bcdfghjklmnpqrstvwxyz]{4,}", re.I),
 )
 
@@ -42,6 +42,8 @@ def es_token_corrupto(token):
     """Detecta tokens con secuencias alfabéticas que violan la fonotáctica del español."""
     norm = _normalizar_token(token)
     if not norm or norm.isdigit() or len(norm) <= 2:
+        return False
+    if norm in PALABRAS_ESENCIALES_ESPANOL:
         return False
     # Una palabra de más de 2 letras en español debe contener al menos una vocal
     if not any(c in "aeiouy" for c in norm):

@@ -42,6 +42,7 @@ sys.excepthook = _excepthook_sys
 threading.excepthook = _excepthook_thread
 
 from groq import Groq
+import httpx
 
 import acciones
 import aprendizaje
@@ -86,7 +87,8 @@ class Silvestra:
 
     def __init__(self):
         self.memoria = Memoria()
-        self.cliente = Groq(api_key=config.CLAVE)
+        http_client = httpx.Client(limits=httpx.Limits(max_keepalive_connections=10, max_connections=20))
+        self.cliente = Groq(api_key=config.CLAVE, http_client=http_client)
         self.cerebro = Cerebro(self.cliente, self.memoria)
         self.voz = Voz()
         self.oido = Oido(self.cliente, self.memoria.vocabulario)
