@@ -168,9 +168,21 @@ En `completar_flujo`:
 
 ### Enfriamiento por límite de tasa (HTTP 429)
 Cuando una API devuelve error 429:
-- Se lee la cabecera `Retry-After` (si está presente) o se aplica un enfriamiento fijo de 60 segundos (máximo 60 s).
-- El proveedor se marca como no disponible en `_enfriamientos` y se salta en las siguientes peticiones sin intentar la llamada.
+- Se analiza si el límite es por minuto (TPM/RPM, 60 segundos por defecto o según Retry-After) o por día (TPD/RPD/daily, enfriamiento de varias horas o según headers `x-ratelimit-reset-tokens`/`x-ratelimit-reset-requests`).
+- Se registra explícitamente en el log: `[tiempo] enfriamiento modelo=... tipo=TPM|TPD duracion=...s motivo='...'`.
+- El proveedor se marca como no disponible en `_enfriamientos` y se salta en las siguientes peticiones sin quemar intentos.
 - Si el usuario actualiza o cambia la clave de API en `config.py` en caliente, el enfriamiento se restablece de inmediato.
+
+### Control de calidad lingüística (`calidad_respuesta.py`)
+- Valida cada fragmento durante el streaming y la respuesta completa final antes de hablar o enviar.
+- Descarta respuestas truncadas en conectores o artículos colgantes (`de`, `en`, `que`, `a`), respuestas con secuencias alfabéticas corruptas o con alta proporción de palabras inexistentes en español.
+- Si una respuesta no supera el control de calidad, el streaming del modelo se cancela de inmediato y Silvestra conmuta automáticamente al siguiente proveedor de la cadena sin emitir palabras mutiladas o inventadas.
+
+### Cadena aislada para tareas de fondo (`fondo`)
+- Las tareas asíncronas internas (extracción de hechos en `memoria.py`, reflexiones periódicas en `cerebro.py` y `aprendizaje.py`, entradas del `diario.py`, mensajes de chequeo de `cuidado.py`) utilizan la cadena dedicada `fondo`.
+- La cadena `fondo` excluye a Groq (utiliza Cloudflare, NVIDIA, GitHub, SambaNova, Google, Mistral, Cerebras, Cohere) para reservar el 100% de la cuota y tokens de Groq a la interacción en tiempo real con el dueño.
+- Se registra en el log: `[tiempo] tarea_fondo proveedor=... modelo=...` para diferenciarlo de `[tiempo] respuesta proveedor=... modelo=...`.
+- Se evita la duplicación de cuota en charla eliminando carreras especulativas innecesarias: exactamente 1 llamada a Groq por mensaje de usuario.
 
 ### Acción `estado_proveedores`
 Silvestra cuenta con la acción `estado_proveedores` registrada en `acciones.py`:

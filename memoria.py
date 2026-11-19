@@ -240,10 +240,10 @@ class Memoria:
             ]
 
             if pedir_fn:
-                crudo = pedir_fn(mensajes, tarea="charla")
+                crudo = pedir_fn(mensajes, tarea="fondo")
             else:
                 import proveedores
-                crudo = proveedores.completar(mensajes, tarea="charla")
+                crudo = proveedores.completar(mensajes, tarea="fondo")
 
             if not crudo or "ninguno" in crudo.lower():
                 return

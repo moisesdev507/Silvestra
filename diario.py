@@ -92,7 +92,7 @@ class Diario:
             )
             prompt = f"Datos reales: Hechos: {hechos}. Hilos: {hilos_txt}. Ideas: {ideas_txt}." + (f" Charla: {charla}" if charla else "")
             try:
-                entrada = proveedores.completar([{"role": "system", "content": sistema}, {"role": "user", "content": prompt}])
+                entrada = proveedores.completar([{"role": "system", "content": sistema}, {"role": "user", "content": prompt}], tarea="fondo")
             except Exception as e:
                 print(f"[diario] Fallo en proveedores: {e}", flush=True)
                 return False
@@ -134,7 +134,7 @@ class Diario:
             )
             prompt = f"Diario: {ultima}\nTemas: {hilos.resumen() or ''}"
             try:
-                mensaje = proveedores.completar([{"role": "system", "content": sistema}, {"role": "user", "content": prompt}])
+                mensaje = proveedores.completar([{"role": "system", "content": sistema}, {"role": "user", "content": prompt}], tarea="fondo")
             except Exception as e:
                 print(f"[diario] Error mensaje matutino: {e}", flush=True)
                 return False

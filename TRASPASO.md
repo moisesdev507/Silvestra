@@ -54,6 +54,9 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - Modo reposo y panel para tablet vía navegador web.
 - Detección de presencia básica por cámara.
 - Control de versiones local en Git con archivos sensibles ignorados.
+- Control de calidad lingüística (`calidad_respuesta.py`) con descarte automático de alucinaciones y frases truncadas.
+- Cadena aislada `fondo` para tareas asíncronas internas, protegiendo al 100% la cuota de Groq para la charla en tiempo real.
+- Enfriamiento 429 inteligente (distingue TPM de 60s vs TPD de varias horas con cálculo exacto de headers).
 - Modularización limpia: todos los archivos estrictamente por debajo de 15 KB.
 
 ## 5. Tareas pendientes y pospuestas

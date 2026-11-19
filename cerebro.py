@@ -111,7 +111,7 @@ class Cerebro:
                 {"role": "system", "content": sistema},
                 {"role": "user", "content": f"Esta fue la conversación reciente:\n{charla}"},
             ]
-            crudo = self._pedir(mensajes)
+            crudo = self._pedir(mensajes, tarea="fondo")
             for linea in (crudo or "").splitlines():
                 s = linea.strip()
                 if re.match(r"^HECHO\s*:\s*", s, re.I):

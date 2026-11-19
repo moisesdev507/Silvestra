@@ -5,13 +5,15 @@ import time
 import config
 
 CADENAS_ORDEN = {
-    "charla": ["Groq", "Cerebras", "Cloudflare", "Google", "Mistral", "NVIDIA", "OpenRouter", "GitHub", "SambaNova", "Cohere"],
-    "razonamiento": ["Groq", "Mistral", "Cloudflare", "Google", "NVIDIA", "Cerebras", "OpenRouter", "GitHub", "SambaNova", "Cohere"],
+    "charla": ["Groq", "Google", "Cloudflare", "Mistral", "NVIDIA", "GitHub", "SambaNova", "OpenRouter", "Cerebras", "Cohere"],
+    "razonamiento": ["Groq", "Google", "Mistral", "Cloudflare", "NVIDIA", "GitHub", "SambaNova", "OpenRouter", "Cerebras", "Cohere"],
     "vision": ["Groq", "Cloudflare", "Google", "Mistral", "NVIDIA", "OpenRouter", "GitHub"],
     "voz": ["Groq"],
+    "fondo": ["Cloudflare", "NVIDIA", "GitHub", "SambaNova", "Google", "Mistral", "Cerebras", "OpenRouter", "Cohere"],
 }
 
 FRASE_EMERGENCIA_LOCAL = "Dame un segundito que se me fue la señal de mis cerebros, pero ya estoy reintentando reconectarme."
+_avisados_clave_vacia = set()
 
 
 def respuesta_emergencia_local():
@@ -52,6 +54,7 @@ def lanzar_reintento_segundo_plano(obtener_cands_fn, tarea):
 
     threading.Thread(target=_reintento, daemon=True).start()
 
+
 _PATRON_RAZONAMIENTO = re.compile(
     r"\b(piensa|piensa bien|razona|analiza|reflexiona|detalla|explica a fondo|paso a paso|"
     r"por qu[eé]|diferencia entre|compara|resuelve|calcula|algoritmo|complejidad|optimiza)\b",
@@ -77,48 +80,74 @@ def clasificar_dificultad(texto):
     if not t:
         return "charla"
 
-    # Enlaces o URLs requieren análisis profundo
-    if _PATRON_ENLACE.search(t):
-        return "razonamiento"
-
-    # Código, errores de terminal o sintaxis de programación
-    if _PATRON_CODIGO.search(t):
-        return "razonamiento"
-
-    # Petición explícita de pensar, comparar o analizar a fondo
-    if _PATRON_RAZONAMIENTO.search(t):
-        return "razonamiento"
-
-    # Mensajes muy extensos (> 140 caracteres) suelen requerir síntesis compleja
-    if len(t) > 140:
+    if _PATRON_ENLACE.search(t) or _PATRON_CODIGO.search(t) or _PATRON_RAZONAMIENTO.search(t) or len(t) > 140:
         return "razonamiento"
 
     return "charla"
 
 
+def _parsear_tiempo_segundos(cadena):
+    """Parsea formatos como '14h23m', '6m0s', '25s' o números a segundos flotantes."""
+    if not cadena or not isinstance(cadena, str):
+        return None
+    cad = cadena.strip().lower()
+    try:
+        return float(cad)
+    except ValueError:
+        pass
+    m = re.match(r"^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+(?:\.\d+)?)s)?$", cad)
+    if m:
+        h = float(m.group(1) or 0)
+        mins = float(m.group(2) or 0)
+        s = float(m.group(3) or 0)
+        total = h * 3600.0 + mins * 60.0 + s
+        return total if total > 0 else None
+    return None
+
+
 def marcar_enfriamiento(enfriamientos, nombre, modelo=None, headers=None, motivo=None):
-    """Pone a un modelo o proveedor en pausa durante 60 s o según Retry-After (máx 60 s)."""
-    duracion = 60.0
-    if headers:
-        ra = headers.get("retry-after") or headers.get("Retry-After")
-        if ra:
-            try:
-                duracion = min(60.0, max(5.0, float(ra)))
-            except ValueError:
-                duracion = 60.0
+    """Pone a un modelo o proveedor en pausa diferenciando límites TPM (minuto) y TPD (día)."""
+    headers = headers or {}
+    motivo_str = str(motivo or "")
+    motivo_lower = motivo_str.lower()
+
+    # Detectar si el 429 fue por día (TPD/RPD) o por minuto (TPM/RPM)
+    es_tpd = any(p in motivo_lower for p in ("tpd", "rpd", "per day", "por día", "por dia", "daily"))
+
+    header_reset = (
+        headers.get("x-ratelimit-reset-tokens")
+        or headers.get("x-ratelimit-reset-requests")
+        or headers.get("retry-after")
+        or headers.get("Retry-After")
+    )
+
+    seg_parsed = _parsear_tiempo_segundos(header_reset)
+    if seg_parsed and seg_parsed > 300:
+        es_tpd = True
+
+    tipo_limite = "TPD" if es_tpd else "TPM"
+
+    if es_tpd:
+        # Límite diario: enfriamiento de varias horas o hasta el reseteo
+        duracion = seg_parsed if seg_parsed else 14400.0  # 4 horas por defecto
+    else:
+        # Límite por minuto: enfriamiento habitual de 60s
+        duracion = min(120.0, max(5.0, seg_parsed)) if seg_parsed else 60.0
+
     ahora = time.time()
-    motivo_str = f" motivo='{motivo}'" if motivo else ""
+    tag_motivo = f" motivo='{motivo}'" if motivo else ""
     if modelo:
         clave = f"{nombre}::{modelo}"
         enfriamientos[clave] = ahora + duracion
-        print(f"[tiempo] enfriamiento modelo={clave}{motivo_str} duracion={duracion:.0f}s", flush=True)
+        print(f"[tiempo] enfriamiento modelo={clave} tipo={tipo_limite} duracion={duracion:.0f}s{tag_motivo}", flush=True)
     else:
         enfriamientos[nombre] = ahora + duracion
-        print(f"[tiempo] enfriamiento proveedor={nombre}{motivo_str} duracion={duracion:.0f}s", flush=True)
+        print(f"[tiempo] enfriamiento proveedor={nombre} tipo={tipo_limite} duracion={duracion:.0f}s{tag_motivo}", flush=True)
 
 
 def proveedores_disponibles(tarea, enfriamientos, claves_anteriores):
     """Devuelve la lista de candidatos disponibles reseteando enfriamientos al cambiar claves."""
+    global _avisados_clave_vacia
     ahora = time.time()
     mapa_claves = {
         "Groq": getattr(config, "CLAVE", ""),
@@ -135,18 +164,19 @@ def proveedores_disponibles(tarea, enfriamientos, claves_anteriores):
     for n, clv in mapa_claves.items():
         if clv != claves_anteriores.get(n):
             claves_anteriores[n] = clv
+            _avisados_clave_vacia.discard(n)
             claves_a_borrar = [k for k in enfriamientos if k == n or k.startswith(f"{n}::")]
             for k in claves_a_borrar:
                 enfriamientos.pop(k, None)
             if claves_a_borrar:
                 print(f"[tiempo] {n}: detectada nueva clave en config.py, reiniciando enfriamiento", flush=True)
 
-    # Revisar cambios de clave en PROVEEDORES_EXTRA
     for ext in getattr(config, "PROVEEDORES_EXTRA", []):
         n = ext.get("nombre")
         clv = ext.get("clave", "")
         if n and clv != claves_anteriores.get(n):
             claves_anteriores[n] = clv
+            _avisados_clave_vacia.discard(n)
             claves_a_borrar = [k for k in enfriamientos if k == n or k.startswith(f"{n}::")]
             for k in claves_a_borrar:
                 enfriamientos.pop(k, None)
@@ -157,7 +187,9 @@ def proveedores_disponibles(tarea, enfriamientos, claves_anteriores):
     for n in orden:
         clv = (mapa_claves.get(n) or "").strip()
         if not clv:
-            print(f"[tiempo] cerebro saltando proveedor={n} motivo=clave_vacia", flush=True)
+            if n not in _avisados_clave_vacia:
+                _avisados_clave_vacia.add(n)
+                print(f"[tiempo] cerebro saltando proveedor={n} motivo=clave_vacia", flush=True)
         elif ahora < enfriamientos.get(n, 0):
             restan = int(enfriamientos[n] - ahora)
             print(f"[tiempo] cerebro saltando proveedor={n} motivo=en_enfriamiento_por_cuota_faltan_{restan}s", flush=True)
@@ -198,7 +230,6 @@ def obtener_candidatos_tarea(tarea, enfriamientos):
     ahora = time.time()
     orden_nombres = CADENAS_ORDEN.get(tarea, CADENAS_ORDEN["charla"])
 
-    # Mapear proveedores configurados
     prov_map = {}
     for p in config.PROVEEDORES:
         copia = dict(p)
@@ -215,41 +246,35 @@ def obtener_candidatos_tarea(tarea, enfriamientos):
         if not clave:
             continue
 
-        # Verificar enfriamiento general del proveedor
-        t_enfriar_prov = enfriamientos.get(nombre, 0)
-        if ahora < t_enfriar_prov:
+        if ahora < enfriamientos.get(nombre, 0):
             continue
 
         modelos = obtener_modelos_tarea(p, tarea)
         if not modelos:
-            # Si el proveedor no tiene modelos para esta tarea (ej. visión en Cerebras/Cohere)
             continue
 
-        # Filtrar modelos que tengan su propio enfriamiento 429 activo o estén desactivados
         import proveedores_validador as pv
         modelos_disponibles = [
             m for m in modelos
             if ahora >= enfriamientos.get(f"{nombre}::{m}", 0) and not pv.esta_desactivado(nombre, m)
         ]
         if not modelos_disponibles:
-            # Todos los modelos de este proveedor están agotados por cuota
             continue
 
         p_candidato = dict(p)
         p_candidato["modelos_activos"] = modelos_disponibles
         candidatos.append(p_candidato)
 
-    # Cargar automáticamente PROVEEDORES_EXTRA al final de las cadenas
+    # Añadir PROVEEDORES_EXTRA al final de las cadenas
     extras = getattr(config, "PROVEEDORES_EXTRA", [])
     extras_cands = []
+    import proveedores_validador as pv
     for ext in extras:
         n = ext.get("nombre") or "Extra"
         url = ext.get("url") or ext.get("base_url") or ""
         clv = (ext.get("clave") or "").strip()
         mods = ext.get("modelos") or []
-        if not url or not clv or not mods:
-            continue
-        if ahora < enfriamientos.get(n, 0):
+        if not url or not clv or not mods or ahora < enfriamientos.get(n, 0):
             continue
         mods_act = [
             m for m in mods
@@ -276,107 +301,7 @@ def obtener_candidatos_tarea(tarea, enfriamientos):
 
 
 def reporte_estado_proveedores(enfriamientos):
-    """Genera el reporte de estado por tarea para voz y burbuja."""
-    ahora = time.time()
-    prov_map = {}
-    for p in config.PROVEEDORES:
-        copia = dict(p)
-        refrescar_clave_proveedor(copia)
-        prov_map[copia["nombre"]] = copia
-
-    estados = {}
-    todos = [
-        "Groq", "Cloudflare", "Google", "Mistral", "NVIDIA",
-        "Cerebras", "OpenRouter", "GitHub", "SambaNova", "Cohere"
-    ]
-    extras = getattr(config, "PROVEEDORES_EXTRA", [])
-    for ext in extras:
-        n = ext.get("nombre")
-        if n and n not in todos:
-            if "Cohere" in todos:
-                todos.insert(todos.index("Cohere"), n)
-            else:
-                todos.append(n)
-            prov_map[n] = {
-                "nombre": n,
-                "base_url": ext.get("url") or ext.get("base_url"),
-                "clave": ext.get("clave", ""),
-                "modelos": ext.get("modelos", []),
-            }
-
-    activos_nombres = []
-    enfriando_nombres = []
-    sin_clave_nombres = []
-
-    for n in todos:
-        p = prov_map.get(n)
-        if not p:
-            estados[n] = "No configurado"
-            sin_clave_nombres.append(n)
-            continue
-        clave = (p.get("clave") or "").strip()
-        if not clave:
-            estados[n] = "Sin clave"
-            sin_clave_nombres.append(n)
-            continue
-
-        # Evaluar enfriamiento general o de modelos
-        t_fin_prov = enfriamientos.get(n, 0)
-        prov_modelos = list(p.get("modelos", []))
-        modelos_enfriados = []
-        for m in prov_modelos:
-            t_m = enfriamientos.get(f"{n}::{m}", 0)
-            if ahora < t_m:
-                modelos_enfriados.append((m, int(t_m - ahora)))
-
-        if ahora < t_fin_prov:
-            seg = int(t_fin_prov - ahora)
-            estados[n] = f"Enfriamiento ({seg}s restan)"
-            enfriando_nombres.append(f"{n} ({seg}s)")
-        elif prov_modelos and len(modelos_enfriados) == len(prov_modelos):
-            max_seg = max(s for _, s in modelos_enfriados)
-            estados[n] = f"Enfriamiento ({max_seg}s restan)"
-            enfriando_nombres.append(f"{n} ({max_seg}s)")
-        elif modelos_enfriados:
-            n_act = len(prov_modelos) - len(modelos_enfriados)
-            estados[n] = f"Activo ({n_act}/{len(prov_modelos)} modelos)"
-            activos_nombres.append(f"{n} ({n_act} mod)")
-            enfriando_nombres.append(f"{n} ({len(modelos_enfriados)} mod en pausa)")
-        else:
-            estados[n] = "Activo"
-            activos_nombres.append(n)
-
-    # Resumen hablado conciso en español natural
-    partes_voz = []
-    if activos_nombres:
-        partes_voz.append(f"Activos: {', '.join(activos_nombres)}.")
-    if enfriando_nombres:
-        partes_voz.append(f"En pausa por cuota: {', '.join(enfriando_nombres)}.")
-    if sin_clave_nombres:
-        partes_voz.append(f"Sin clave: {', '.join(sin_clave_nombres)}.")
-    texto_voz = " ".join(partes_voz) if partes_voz else "No hay proveedores configurados."
-
-    # Tarjeta estructurada para la burbuja
-    lineas = ["🌐 ESTADO DE PROVEEDORES LLM:"]
-    for n in todos:
-        st = estados.get(n, "Desconocido")
-        extra_tag = " [Emergencia]" if n == "Cohere" else ""
-        icono = "✅" if "Activo" in st else ("⏳" if "Enfriamiento" in st else "⚪")
-        lineas.append(f"{icono} {n}{extra_tag}: {st}")
-
-    lineas.append("\n📋 CADENAS ACTIVAS:")
-    for t_nom, t_desc in [
-        ("charla", "Charla y órdenes"),
-        ("razonamiento", "Razonamiento y código"),
-        ("vision", "Visión artificial"),
-    ]:
-        cands = [p["nombre"] for p in obtener_candidatos_tarea(t_nom, enfriamientos)]
-        ruta = " ➔ ".join(cands) if cands else "Ninguno disponible"
-        lineas.append(f"• {t_desc}: {ruta}")
-
-    lineas.append("• Voz a texto: Groq (Whisper) con respaldo local Vosk")
-    lineas.append("• Respaldo de emergencia: Cohere (Trial 1,000 llamadas/mes)")
-    lineas.append("• Respaldo local sin red: Activo (frase natural y reintento en segundo plano)")
-
-    texto_burbuja = "\n".join(lineas)
-    return texto_voz, texto_burbuja
+    """Genera el reporte de estado por tarea para voz y burbuja delegando en proveedores_estado."""
+    import sys
+    import proveedores_estado as pe
+    return pe.reporte_estado_proveedores(enfriamientos, sys.modules[__name__])

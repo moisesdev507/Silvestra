@@ -150,7 +150,7 @@ class Cuidado:
             resp = proveedores.completar([
                 {"role": "system", "content": f"Eres Silvestra, asistente de {creador}. Dijo que volvía a las {hora_regreso} y está retrasado. Escribe 1 o 2 frases cariñosas para saber si está bien. Cero reproches ni culpas."},
                 {"role": "user", "content": f"Paso {paso}"}
-            ])
+            ], tarea="fondo")
             if resp and resp.strip():
                 return sanitizar_privacidad(resp.replace("*", "").replace("\n", " ").strip(" \"'"))
         except Exception:

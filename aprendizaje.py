@@ -113,7 +113,7 @@ class GestorAprendizaje:
                     resp_llm = proveedores.completar([
                         {"role": "system", "content": sistema},
                         {"role": "user", "content": prompt},
-                    ])
+                    ], tarea="fondo")
                 except Exception as e:
                     log(f"Proveedores no disponibles al reflexionar: {e}. Se pospone.")
                     if forzar:

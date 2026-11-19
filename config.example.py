@@ -52,7 +52,6 @@ MODELOS = [
     "openai/gpt-oss-120b",
     "openai/gpt-oss-20b",
     "qwen/qwen3.8-27b",
-    "allam-2-7b",
 ]
 MODELO_VOZ = "whisper-large-v3-turbo"
 MODELO_VISION = "qwen/qwen3.8-27b"
@@ -73,13 +72,11 @@ PROVEEDORES = [
             "openai/gpt-oss-120b",
             "openai/gpt-oss-20b",
             "qwen/qwen3.8-27b",
-            "allam-2-7b",
         ],
         "modelos_charla": [
             "openai/gpt-oss-20b",
             "qwen/qwen3.8-27b",
             "openai/gpt-oss-120b",
-            "allam-2-7b",
         ],
         "modelos_razonamiento": [
             "openai/gpt-oss-120b",
@@ -97,8 +94,8 @@ PROVEEDORES = [
             "@cf/meta/llama-3.1-8b-instruct-fp8",
         ],
         "modelos_charla": [
-            "@cf/meta/llama-3.1-8b-instruct-fp8",
             "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+            "@cf/meta/llama-3.1-8b-instruct-fp8",
         ],
         "modelos_razonamiento": [
             "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
