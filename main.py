@@ -64,6 +64,7 @@ import iniciativa
 import nacimiento
 import palabra_clave
 import pantalla
+import pantalla_remota
 import presentacion
 import propuestas
 import recordatorios
@@ -127,6 +128,7 @@ class Silvestra:
         correcciones.instalar(self)
         self.resumen = resumen.instalar(self)
         self.aprendizaje = aprendizaje.instalar(self)
+        self.pantalla_remota = pantalla_remota.instalar(self)
 
         self.cara.root.after(100, self.revisar_cola)
 

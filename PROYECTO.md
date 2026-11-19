@@ -58,6 +58,7 @@ Silvestra es una asistente de IA de escritorio para Windows, hecha por Moisés (
 - `correcciones.py` y `correcciones.json`: sistema de lecciones aprendidas y correcciones del usuario. Detecta cuando Moisés corrige a Silvestra ("no, eso no", "así no", "te equivocaste", "mejor haz..."), almacena qué dijo ella y qué pidió el usuario (máx. 50 entradas FIFO con filtro estricto contra claves/contraseñas), e inyecta las 5 correcciones más relevantes en el prompt del sistema (`instrucciones()`) para que el cerebro aprenda y no repita errores. No duplica con `memoria.json`. Acciones: `mis_correcciones` (las lee/muestra) y `olvidar_correccion` (elimina una por número).
 - `resumen.py`: módulo de resumen inteligente de páginas web y videos de YouTube. Descarga páginas por HTTPS con `requests` (timeout 10 s, tamaño máx. 2 MB) y extrae texto limpio con `html.parser` de la biblioteca estándar (sin dependencias pesadas). Para videos de YouTube obtiene subtítulos reales sin inventar (con detección de disponibilidad). Incluye lectura directa del enlace copiado en el portapapeles (`resumir_portapapeles`), segmentación y aviso para textos extensos (~12,000 caracteres), defensas estrictas contra inyección de prompt (el contenido es tratado como dato e ignora cualquier orden interna) y bloqueo total de URLs no https o direcciones locales/internas (localhost, 192.168.x, 10.x). Todo se ejecuta en hilos secundarios y entrega el resultado a través de `app.cola`. Acciones: `resumir_pagina`, `resumir_video` y `resumir_portapapeles`.
 - `aprendizaje.py`, `aprendizaje_datos.py`, `conversaciones_dia.json` y `perfil_conversacion.json`: sistema de aprendizaje continuo y perfil conversacional. Registra las conversaciones del día (hasta 7 días) con hora y emoción, con filtro estricto contra contraseñas o tokens. Realiza una reflexión nocturna (9 PM o al cerrar la app) en hilo secundario enviando las charlas a la cadena multillm para extraer: estilo de Moisés (palabras, apodos, muletillas, formalidad, largo), costumbres y rutinas, hilos con fecha para seguimiento y bromas/referencias internas. Solo analiza lo que Moisés dijo expresamente (sin conjeturas sobre salud ni emociones). Inyecta un resumen compacto (máx. ~600 caracteres) en el prompt del cerebro junto a las correcciones. Si un hilo venció su fecha, le pregunta cómo le fue una sola vez en horario diurno y lo cierra cuando conteste. Acciones: `que_has_aprendido`, `olvidar_aprendizaje`, `borrar_perfil` y `reflexionar_aprendizaje`.
+- `pantalla_remota.py` y `pantalla_remota_web.py`: servidor HTTP local y Server-Sent Events (SSE) para proyectar la cara animada de Silvestra en otra pantalla de la red local (como una tablet Android con Google Chrome) en modo de solo visualización. No requiere librerías externas (usa `http.server` estándar y OpenCV para el código QR). Renderiza en HTML5 `<canvas>` a pantalla completa con diseño fiel a `cara_dibujo.py`: resplandor, cabeza, lacito, ojos con brillo, cejas expresivas, rubor, boca con sincronía labial RMS y anillos giratorios. Soporta Screen Wake Lock API para mantener la pantalla de la tablet encendida y botón de pantalla completa. Máxima seguridad con token aleatorio persistido en `estado.json` y cero endpoints de control. Acciones: `mostrar_en_tablet` y `ocultar_en_tablet`.
 - `estado.py` y `estado.json`: persistencia del estado (última interacción, último saludo generado, iniciativa, palabra clave, hud y verificación de voz).
 - `bajar_modelos.py`: descarga los modelos de visión y el modelo pequeño de Vosk en español a `modelos/`.
 - `App.py` y `silvestra.db`: una demo aparte con Streamlit. No tocar.
@@ -657,6 +658,64 @@ Permite a Silvestra aprender de la forma de hablar de Moisés, sus rutinas e int
 5. **Olvidar un dato o borrar el perfil**:
    - Para olvidar un dato: *"olvida lo que aprendiste sobre [dato]"* (acción `olvidar_aprendizaje | examen`).
    - Para borrar todo: acción `borrar_perfil` (te pedirá confirmación) y luego `borrar_perfil | confirmar`.
+
+## Módulo de Pantalla Remota para Tablet (`pantalla_remota.py`, `pantalla_remota_web.py`)
+Permite proyectar el rostro animado y los subtítulos de Silvestra en una segunda pantalla de la red local (por ejemplo, una tablet Android de 8.7" con Google Chrome) en modo de visualización pasiva (solo ver, sin control):
+- **Servidor ligero sin dependencias**:
+  - Utiliza exclusivamente la librería estándar `http.server.ThreadingHTTPServer` en un hilo secundario daemon.
+  - Actualizaciones en tiempo real a ~25 Hz mediante Server-Sent Events (SSE) en `/eventos?token=...`.
+  - Si el puerto está ocupado o falla la apertura de red, se registra en `silvestra.log` y Silvestra continúa funcionando normalmente.
+- **Renderizado fiel con HTML5 `<canvas>`**:
+  - Reproduce en JavaScript y canvas 2D el diseño visual exacto de [cara_dibujo.py](file:///c:/Proyecto_Silvestra/cara_dibujo.py):
+    - Cabeza con degradado radial y contorno reactivo.
+    - Lacito rosa estilizado en la parte superior izquierda.
+    - Anillos de halo giratorios con pulsaciones de luz y velocidad reactiva al estado (pensando, hablando o reposo).
+    - Ojos con destellos especulares, seguimiento ocular y parpadeo orgánico (con 18% de probabilidad de parpadeo doble).
+    - Cejas expresivas con inclinación y elevación emocional.
+    - Sincronía labial por volumen RMS (`nivel_volumen`) o animación silábica suave.
+    - Vida en reposo con respiración y microgestos continuos.
+    - Caja de subtítulos translúcida en la parte inferior con tipografía nítida y desvanecimiento suave.
+  - Diseño responsivo adaptado tanto a orientación horizontal (landscape) como vertical (portrait) para tablets de 8.7".
+- **Pantalla siempre encendida y pantalla completa**:
+  - Integra la **Screen Wake Lock API** del navegador para evitar que la tablet apague la pantalla mientras muestra a Silvestra.
+  - Botón discreto (`⛶`) en la esquina superior derecha para alternar pantalla completa.
+- **Seguridad estricta y privacidad**:
+  - Solo escucha en la red local (`0.0.0.0`, no en internet).
+  - Exige un token largo aleatorio generado criptográficamente (`secrets.token_urlsafe(24)`) y persistido en `estado.json` (`remota_token`, `remota_puerto`, `remota_activa`).
+  - Cualquier petición sin el token o con token erróneo recibe un `403 Forbidden` inmediato.
+  - 100% de solo lectura: no existen endpoints de control, comandos ni ejecución remota.
+  - Solo expone: `{estado, emocion, volumen, subtitulo}`.
+- **Código QR y acciones**:
+  - `mostrar_en_tablet`: inicia el servidor si estaba detenido, copia la URL con el token al portapapeles, muestra la URL en la burbuja y abre una ventana en la laptop con un código QR de alta resolución generado con OpenCV (`cv2.QRCodeEncoder`) para escanear con la cámara de la tablet.
+  - `ocultar_en_tablet`: detiene el servidor y cierra la ventana QR.
+  - Ambas acciones respetan la verificación de voz del dueño (`voz_dueno`).
+
+> [!WARNING] Advertencia del Firewall de Windows:
+> Al ejecutar por primera vez la pantalla remota, Windows Defender Firewall puede mostrar una ventana emergente preguntando si deseas permitir que Python se comunique en redes privadas. Debes marcar la casilla **"Redes privadas"** (tu red WiFi doméstica) y hacer clic en **"Permitir acceso"**. Si la tablet no carga la página, comprueba que:
+> 1. Tanto la laptop como la tablet estén conectadas a la misma red WiFi.
+> 2. El tipo de red en Windows esté configurado como "Red privada" (en Configuración de Windows > Red e Internet > Propiedades de WiFi).
+> 3. El puerto 8765 esté permitido en el Firewall de Windows para conexiones entrantes de Python.
+
+### Cómo probar la pantalla remota:
+1. **Activar la pantalla remota**:
+   - Di o escribe a Silvestra:
+     ```text
+     muestra la pantalla en mi tablet
+     ```
+     o ejecuta la acción directa `mostrar_en_tablet`.
+   - Silvestra copiará automáticamente la URL completa al portapapeles y abrirá una ventana emergente en tu laptop con el código QR.
+2. **Conectar la tablet**:
+   - Abre la app de Cámara o Google Chrome en tu tablet Android y escanea el código QR en la pantalla de tu laptop.
+   - O bien, abre Chrome en la tablet y pega la URL (ej: `http://192.168.1.50:8765/?token=...`).
+3. **Observar la sincronización en vivo**:
+   - Presiona el botón `⛶` en la esquina superior derecha de la tablet para entrar a pantalla completa.
+   - Habla con Silvestra en la laptop: notarás cómo la cara en la tablet reacciona en tiempo real, modula sus emociones (cian, verde, rosa, azul, amarillo), abre la boca al compás de la voz y muestra lo que dice como subtítulo abajo.
+4. **Desactivar el servidor**:
+   - Di o escribe:
+     ```text
+     ocultar_en_tablet
+     ```
+   - Silvestra apagará el servidor local y cerrará el puerto.
 
 ## Límites conocidos
 - El temporizador de estudio Pomodoro se pierde si se cierra la app (los recordatorios ya sobreviven al cierre de forma persistente en `recordatorios.json`).
