@@ -44,13 +44,13 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 5. **Configuración y claves:** Exclusivamente en `config.py` (ignorado en git). Plantilla pública en `config.example.py`.
 
 ## 4. Estado actual (lo que ya funciona)
-- Rostro animado reactivo con mirada suave (`camara.py`), microexpresiones y parpadeo natural.
-- Interrupción por voz (barge-in): corte instantáneo (<500ms) al decir "espera", "ya", "para", con filtro de eco.
-- Síntesis en streaming por oraciones completas (`cerebro_parser.py`) sin cortes en conectores.
-- Filtro estricto de alucinaciones de Whisper y descarte con log explícito (`oido.py`).
-- Saludo inicial contextual en el arranque seguro para el hilo Qt (`nacimiento.py`, `eventos.py`).
-- Prompt compacto (<1350 tokens) con inyección selectiva precisa (`cerebro_categorias.py`) y suite en `prueba_humo.py`.
-- Voz panameña natural con `voz.py` thread-safe (Lock en mixer/music, buffers vivos contra access violation 0xc0000005) y SAPI.
+- Rostro animado reactivo con mirada suave (`camara.py`), microexpresiones (inclinación curiosa, asentimiento) y parpadeo natural.
+- Interrupción por voz (barge-in): corte instantáneo (<500ms) al decir "espera", "ya", "para", "silencio" o hablarle, con filtro de eco.
+- Síntesis en streaming por oraciones completas (`cerebro_parser.py`, `calidad_respuesta.py`) sin cortes en conectores ni `..` espurios.
+- Filtro estricto de alucinaciones de Whisper ("haha", "okay, okay") y descarte con log explícito (`oido.py`).
+- Saludo inicial contextual en el arranque (hora y tiempo transcurrido) seguro para el hilo Qt (`nacimiento.py`, `eventos.py`).
+- Prompt compacto (<1350 tokens) con inyección selectiva precisa (`cerebro_categorias.py`, `cerebro_prompt.py`) que cubre 100% de las 132 acciones reales del sistema (HUD, casa inteligente, diario, etc.) con cero huérfanas y validación automática en `prueba_humo.py`.
+- Voz panameña natural modulada emocionalmente con respaldo SAPI local.
 - Reconocimiento con Whisper (VAD adaptativo 0.45s con caída de energía, prompt contextual) y respaldo Vosk.
 - Latencia: caché de perfil en RAM (<1ms), Groq ultra-rápido (qwen3 1ra frase ~30-200ms) y muletillas inactivas por defecto.
 - Aro facial reactivo sincronizado: celeste en reposo/sin escuchar y amarillo al escuchar.
