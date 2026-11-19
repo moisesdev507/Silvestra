@@ -112,6 +112,7 @@ class Silvestra:
         presentacion.instalar(self)
         self.casa = casa.instalar(self)
         self.camara = camara.instalar(self)
+        self.cara._ref_camara = self.camara
         self.habilidades = habilidades.instalar(self)
         ideas.instalar(self)
         hilos.instalar(self)

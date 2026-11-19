@@ -192,6 +192,8 @@ def atender_evento(app, tipo, texto):
         if hasattr(app, "iniciativa"):
             app.iniciativa.interaccion()
         app._dejar_de_escuchar()
+        if hasattr(app, "cara") and hasattr(app.cara, "asentir"):
+            app.cara.asentir(0.55)
         if app.conversacion:
             app.silencios = 0
             if app._es_eco(texto):

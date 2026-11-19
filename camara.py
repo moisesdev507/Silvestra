@@ -58,6 +58,8 @@ class Camara:
         self.consecutivos_ajeno = 0
         self.ult_aviso_invitado = 0.0
         self.ult_rostro = 0.0
+        self.ult_pos_rostro = None
+        self.t_ult_pos_rostro = 0.0
         self._generando_saludo = False
         self._cargar_dueno()
 
@@ -169,6 +171,12 @@ class Camara:
             return
         caras = sorted(caras, key=lambda c: -c[2] * c[3])[:3]
         self.ult_rostro = ahora
+        if len(caras) > 0:
+            c0 = caras[0]
+            cx = (c0[0] + c0[2] / 2.0) / float(ancho)
+            cy = (c0[1] + c0[3] / 2.0) / float(alto)
+            self.ult_pos_rostro = (cx * 2.0 - 1.0, cy * 2.0 - 1.0)
+            self.t_ult_pos_rostro = ahora
         vio_dueno = False
         vio_ajeno = False
         for cara in caras:

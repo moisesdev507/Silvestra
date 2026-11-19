@@ -13,15 +13,15 @@ AMARILLO = QColor(255, 209, 102)
 ROSA = QColor(255, 140, 160)
 GRIS = QColor(120, 132, 160)
 
-# Perfiles de expresión por emoción
+# Perfiles de expresión con mayor contraste emocional
 # (cejas_y, cejas_ang, ojos_apertura, boca_curva, boca_ancho, rubor_alpha, color_base)
 PERFILES_EMOCION = {
     "neutral":    ( 0.0,   0.0, 1.00,  1.0, 28.0,  90.0, QColor(79, 209, 197)),
-    "alegre":     (-3.5,   2.5, 1.06,  1.5, 34.0, 140.0, QColor(52, 211, 153)),
-    "animada":    (-6.0,   3.5, 1.15,  1.8, 36.0, 160.0, QColor(251, 191, 36)),
-    "calida":     (-2.0,   1.5, 0.96,  1.2, 30.0, 140.0, QColor(244, 114, 182)),
-    "seria":      ( 2.5,  -3.5, 0.84,  0.1, 22.0,  55.0, QColor(96, 165, 250)),
-    "preocupada": (-4.5,   5.5, 1.08, -0.3, 24.0,  80.0, QColor(167, 139, 250)),
+    "alegre":     (-5.0,   3.5, 1.10,  2.0, 38.0, 170.0, QColor(16, 185, 129)),
+    "animada":    (-6.5,   4.0, 1.20,  2.2, 40.0, 180.0, QColor(245, 158, 11)),
+    "calida":     (-2.5,   2.0, 0.95,  1.4, 32.0, 160.0, QColor(244, 114, 182)),
+    "seria":      ( 3.5,  -4.5, 0.80,  0.0, 20.0,  40.0, QColor(59, 130, 246)),
+    "preocupada": (-5.5,   6.5, 1.12, -0.7, 22.0,  70.0, QColor(147, 51, 234)),
 }
 
 
@@ -60,13 +60,13 @@ def pintar(self):
     pensando = self.pensando and ahora < self.pensando_hasta
     bailando = ahora < self.baile_hasta
 
-    # Suavizado de transición emocional (~300 ms a 30 FPS: factor ~0.22 por cuadro)
+    # Suavizado de transición emocional orgánico (factor ~0.14 por cuadro para evitar cambios bruscos)
     emo_clave = getattr(self, "emocion_objetivo", "neutral") or "neutral"
     t_cejas_y, t_cejas_ang, t_ojos_ap, t_boca_curva, t_boca_ancho, t_rubor, t_color = (
         PERFILES_EMOCION.get(emo_clave, PERFILES_EMOCION["neutral"])
     )
 
-    factor = 0.22
+    factor = 0.14
     self.val_cejas_y += (t_cejas_y - self.val_cejas_y) * factor
     self.val_cejas_ang += (t_cejas_ang - self.val_cejas_ang) * factor
     self.val_ojos_apertura += (t_ojos_ap - self.val_ojos_apertura) * factor
@@ -95,23 +95,35 @@ def pintar(self):
         c = w / 2.0
         esc = (w / 280.0)
 
-        # Microgestos de reposo: respiración orgánica e inclinación leve
-        inclinacion_reposo = 0.0
-        if not self.hablando and self.viva and not bailando:
-            inclinacion_reposo = 1.2 * math.sin(t * 0.7) * math.sin(t * 0.25)
-            y_resp = 3.5 * math.sin(t * 1.2) * esc
-            resp_escala = esc * (1 + 0.012 * math.sin(t * 1.6))
-        else:
-            y_resp = 4.0 * math.sin(t * 1.1) * esc
-            resp_escala = esc * (1 + 0.015 * math.sin(t * 1.6))
+        # Microgestos de reposo, microexpresiones al escuchar y asentimiento suave
+        inclinacion = 0.0
+        y_asentir = 0.0
+        asentir_limite = getattr(self, "asentir_hasta", 0.0)
+        if asentir_limite > ahora:
+            t_asentir = ahora - (asentir_limite - 0.55)
+            y_asentir = 4.2 * math.sin(max(0.0, min(1.0, t_asentir / 0.55)) * math.pi)
 
-        p.translate(c, c + y_resp)
+        if self.escuchando and self.viva and not bailando:
+            # Leve inclinación atenta y curiosa al escuchar al dueño
+            inclinacion = 2.6 * math.sin(t * 0.9)
+            y_resp = 1.8 * math.sin(t * 1.0) * esc
+            resp_escala = esc * (1 + 0.007 * math.sin(t * 1.0))
+        elif not self.hablando and self.viva and not bailando:
+            # Respiración sutil y pausada en reposo
+            inclinacion = 1.0 * math.sin(t * 0.6) * math.sin(t * 0.25)
+            y_resp = 2.2 * math.sin(t * 0.9) * esc
+            resp_escala = esc * (1 + 0.008 * math.sin(t * 1.1))
+        else:
+            y_resp = 3.6 * math.sin(t * 1.1) * esc
+            resp_escala = esc * (1 + 0.012 * math.sin(t * 1.5))
+
+        p.translate(c, c + y_resp + y_asentir)
         p.scale(resp_escala, resp_escala)
 
         if bailando:
             p.rotate(6 * math.sin(t * 9))
-        elif inclinacion_reposo:
-            p.rotate(inclinacion_reposo)
+        elif inclinacion:
+            p.rotate(inclinacion)
 
         # Resplandor
         g = QRadialGradient(QPointF(0, 0), 135)
@@ -155,19 +167,28 @@ def pintar(self):
         p.drawEllipse(QPointF(0, 0), 6, 6)
         p.restore()
 
-        # Hacia dónde mira + micro-miradas sacádicas en reposo
-        cur = QCursor.pos()
-        ctr = self.mapToGlobal(QPointF(c, c).toPoint())
-        dx = max(-1.0, min(1.0, (cur.x() - ctr.x()) / 500.0))
-        dy = max(-1.0, min(1.0, (cur.y() - ctr.y()) / 500.0))
+        # Hacia dónde mira: seguimiento suave de rostro (cámara) o cursor con micro-sacadas
+        ref_cam = getattr(self, "_ref_camara", None)
+        rostro_pos = getattr(ref_cam, "ult_pos_rostro", None) if ref_cam else None
+        t_rostro = getattr(ref_cam, "t_ult_pos_rostro", 0.0) if ref_cam else 0.0
 
-        if self.ultimo_cursor_pos == cur and not pensando and self.viva:
-            if ahora >= self.prox_micro_sac:
-                self.micro_sac_x = random.uniform(-1.8, 1.8)
-                self.micro_sac_y = random.uniform(-1.2, 1.2)
-                self.prox_micro_sac = ahora + random.uniform(2.5, 5.0)
+        if rostro_pos and (ahora - t_rostro < 3.0) and not pensando and self.viva:
+            # Rostro detectado: movimiento pequeño y natural hacia el dueño (invertido en X por espejo de cámara)
+            rx, ry = rostro_pos
+            dx = max(-1.0, min(1.0, -rx)) * 0.8
+            dy = max(-1.0, min(1.0, ry)) * 0.7
         else:
-            self.ultimo_cursor_pos = cur
+            cur = QCursor.pos()
+            ctr = self.mapToGlobal(QPointF(c, c).toPoint())
+            dx = max(-1.0, min(1.0, (cur.x() - ctr.x()) / 500.0))
+            dy = max(-1.0, min(1.0, (cur.y() - ctr.y()) / 500.0))
+
+        if not pensando and self.viva:
+            if ahora >= self.prox_micro_sac:
+                self.micro_sac_x = random.uniform(-1.5, 1.5)
+                self.micro_sac_y = random.uniform(-1.0, 1.0)
+                self.prox_micro_sac = ahora + random.uniform(2.5, 5.5)
+        else:
             self.micro_sac_x = 0.0
             self.micro_sac_y = 0.0
 
@@ -176,23 +197,26 @@ def pintar(self):
         if pensando:
             dx, dy = 0.5 * math.sin(t * 2), -0.7
 
-        self.ojo_x += ((dx * 7 + self.micro_sac_x) - self.ojo_x) * 0.15
-        self.ojo_y += ((dy * 5 + self.micro_sac_y) - self.ojo_y) * 0.15
+        # Transición suave (factor 0.09) para mirada fluida, natural y no brusca
+        self.ojo_x += ((dx * 7.0 + self.micro_sac_x) - self.ojo_x) * 0.09
+        self.ojo_y += ((dy * 5.0 + self.micro_sac_y) - self.ojo_y) * 0.09
 
-        # Parpadeo natural cada 3 a 6 s con variación de parpadeo doble
+        # Parpadeo natural cada 2.5 a 6 s con variación de duración y parpadeo doble
         if self.parpadeo_ini is None and ahora >= self.prox_parpadeo:
             self.parpadeo_ini = ahora
+            self.dur_parpadeo = random.uniform(0.14, 0.20)
 
         cierre = 0.0
         if self.parpadeo_ini is not None:
-            f = (ahora - self.parpadeo_ini) / 0.17
+            dur = getattr(self, "dur_parpadeo", 0.17)
+            f = (ahora - self.parpadeo_ini) / dur
             if f >= 1:
                 self.parpadeo_ini = None
-                # 18% probabilidad de parpadeo doble rápido
-                if random.random() < 0.18:
-                    self.prox_parpadeo = ahora + random.uniform(0.18, 0.32)
+                # 20% probabilidad de parpadeo doble
+                if random.random() < 0.20:
+                    self.prox_parpadeo = ahora + random.uniform(0.16, 0.30)
                 else:
-                    self.prox_parpadeo = ahora + random.uniform(3.0, 6.0)
+                    self.prox_parpadeo = ahora + random.uniform(2.5, 6.0)
             else:
                 cierre = math.sin(f * math.pi)
 
