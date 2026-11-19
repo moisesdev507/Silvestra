@@ -2,7 +2,7 @@
 
 Descarga páginas con requests (timeout 10s, solo https, máx 2 MB), extrae texto
 con html.parser estándar sin librerías pesadas, y sintetiza subtítulos de YouTube
-o enlaces copiados al portapapeles mediante el cerebro en hilos secundarios.
+usando youtube-transcript-api 1.2.5 orientada a instancias.
 """
 import ipaddress
 import re
@@ -21,6 +21,52 @@ TIMEOUT_RED = 10  # 10 segundos
 def log(mensaje):
     """Registra en silvestra.log con el prefijo estandarizado [resumen]."""
     print(f"[resumen] {mensaje}", flush=True)
+
+
+def limpiar_url(texto):
+    """Extrae la primera URL https://, elimina basura envolvente/final y codifica caracteres no ASCII."""
+    if not texto or not isinstance(texto, str):
+        return ""
+
+    m = re.search(r"https://\S+", texto.strip())
+    if not m:
+        return ""
+
+    url = m.group(0)
+    envolventes = "\"'`<>«»“”‘’"
+    url = url.strip(envolventes)
+    puntuacion_final = ".,;:!?"
+
+    while True:
+        cambio = False
+        if url and url[-1] in envolventes:
+            url = url[:-1]
+            cambio = True
+        elif url and url[-1] in puntuacion_final:
+            url = url[:-1]
+            cambio = True
+        elif url and url.endswith(")"):
+            if url.count(")") > url.count("("):
+                url = url[:-1]
+                cambio = True
+        elif url and url.endswith("]"):
+            if url.count("]") > url.count("["):
+                url = url[:-1]
+                cambio = True
+        if not cambio:
+            break
+
+    partes = urllib.parse.urlsplit(url)
+    try:
+        netloc = partes.netloc.encode("idna").decode("ascii")
+    except Exception:
+        netloc = partes.netloc
+
+    path = urllib.parse.quote(urllib.parse.unquote(partes.path), safe="/()@:+&=$%,-_.!~*'")
+    query = urllib.parse.quote(urllib.parse.unquote(partes.query), safe="=&?/:@+$%,-_.!~*'")
+    fragment = urllib.parse.quote(urllib.parse.unquote(partes.fragment), safe="=&?/:@+$%,-_.!~*'")
+
+    return urllib.parse.urlunsplit((partes.scheme, netloc, path, query, fragment))
 
 
 def es_url_segura(url):
@@ -48,7 +94,7 @@ def es_url_segura(url):
             if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
                 return False, "Por seguridad no se permite acceder a direcciones IP privadas o de red local."
         except ValueError:
-            # Es un nombre de host de internet (ej. es.wikipedia.org)
+            # Es un nombre de host normal
             pass
 
         return True, None
@@ -106,9 +152,10 @@ def descargar_pagina(url):
     """Descarga el contenido de la página respetando seguridad, timeout y tope de 2 MB."""
     import requests
 
-    ok, motivo = es_url_segura(url)
+    url_limpia = limpiar_url(url)
+    ok, motivo = es_url_segura(url_limpia)
     if not ok:
-        log(f"URL rechazada por seguridad: {url} ({motivo})")
+        log(f"URL rechazada por seguridad: {url} -> {url_limpia} ({motivo})")
         return None, motivo
 
     headers = {
@@ -118,7 +165,7 @@ def descargar_pagina(url):
     }
 
     try:
-        r = requests.get(url, headers=headers, timeout=TIMEOUT_RED, stream=True)
+        r = requests.get(url_limpia, headers=headers, timeout=TIMEOUT_RED, stream=True)
         if r.status_code != 200:
             return None, f"La página respondió con error HTTP {r.status_code}."
 
@@ -145,7 +192,8 @@ def extraer_youtube_id(url):
     """Extrae el identificador de 11 caracteres de un enlace de YouTube."""
     if not url:
         return None
-    m = re.search(r"(?:v=|\/embed\/|\/shorts\/|youtu\.be\/|^)([0-9A-Za-z_-]{11})(?:[?&/#]|$)", url.strip())
+    url_str = str(url).strip()
+    m = re.search(r"(?:v=|\/embed\/|\/shorts\/|youtu\.be\/|^)([0-9A-Za-z_-]{11})(?:[?&/#]|$)", url_str)
     return m.group(1) if m else None
 
 
@@ -158,48 +206,80 @@ def es_enlace_youtube(url):
 
 
 def obtener_subtitulos_youtube(url_o_id):
-    """Obtiene los subtítulos del video en español o en el idioma disponible."""
-    vid = extraer_youtube_id(url_o_id)
+    """Obtiene los subtítulos del video en español, inglés o el disponible usando la API moderna de youtube-transcript-api."""
+    url_limpia = limpiar_url(url_o_id) if "http" in (url_o_id or "") else (url_o_id or "").strip()
+    vid = extraer_youtube_id(url_limpia) or (url_limpia if len(url_limpia) == 11 else None)
     if not vid:
-        return None, "No se encontró un enlace o ID de video de YouTube válido."
+        return None, "No se encontró un enlace o identificador de video de YouTube válido."
 
     try:
-        from youtube_transcript_api import YouTubeTranscriptApi
+        from youtube_transcript_api import (
+            YouTubeTranscriptApi,
+            TranscriptsDisabled,
+            NoTranscriptFound,
+            VideoUnavailable,
+            IpBlocked,
+            RequestBlocked,
+            InvalidVideoId,
+            AgeRestricted,
+            YouTubeRequestFailed,
+        )
     except ImportError:
         return None, "REQUIERE_LIBRERIA"
 
     try:
-        # Intenta obtener transcripción oficial o autogenerada en español, o en inglés
-        items = None
-        try:
-            items = YouTubeTranscriptApi.get_transcript(vid, languages=["es", "es-419", "es-ES", "en"])
-        except Exception:
-            try:
-                transcript_list = YouTubeTranscriptApi.list_transcripts(vid)
-                try:
-                    t = transcript_list.find_transcript(["es", "es-419", "es-ES", "en"])
-                except Exception:
-                    # Toma la primera disponible en cualquier idioma
-                    t = next(iter(transcript_list))
-                items = t.fetch()
-            except Exception as e_inner:
-                err_msg = str(e_inner).lower()
-                if "disabled" in err_msg or "not have" in err_msg or "no transcript" in err_msg:
-                    return None, "SIN_SUBTITULOS"
-                raise e_inner
+        api = YouTubeTranscriptApi()
+        # En versión 1.2.5 api.list(vid) devuelve TranscriptList con objetos Transcript
+        tl = api.list(vid)
 
-        if not items:
-            return None, "SIN_SUBTITULOS"
+        # Orden de preferencia:
+        # 1. Español (manual o autogenerado)
+        # 2. Inglés (manual o autogenerado)
+        # 3. El primero que esté disponible
+        elegido = None
+        for t in tl:
+            if t.language_code.lower().startswith("es"):
+                elegido = t
+                break
+        if not elegido:
+            for t in tl:
+                if t.language_code.lower().startswith("en"):
+                    elegido = t
+                    break
+        if not elegido:
+            for t in tl:
+                elegido = t
+                break
 
-        texto = " ".join(item.get("text", "") for item in items if item.get("text"))
-        if not texto.strip():
-            return None, "SIN_SUBTITULOS"
+        if not elegido:
+            return None, "Este video de YouTube no tiene subtítulos disponibles en ningún idioma."
 
-        return texto.strip(), None
+        log(f"Subtítulos encontrados: idioma={elegido.language} ({elegido.language_code}), generado={elegido.is_generated}")
+        fetched = elegido.fetch()
+        textos = [s.text.strip() for s in fetched if hasattr(s, "text") and s.text.strip()]
+        texto_completo = " ".join(textos)
+        if not texto_completo:
+            return None, "El video de YouTube no contiene texto en sus pistas de subtítulos."
+
+        return texto_completo, None
+    except TranscriptsDisabled:
+        return None, "Este video de YouTube tiene los subtítulos desactivados por su autor."
+    except NoTranscriptFound:
+        return None, "Este video de YouTube no tiene subtítulos disponibles en ningún idioma."
+    except VideoUnavailable:
+        return None, "El video de YouTube no está disponible o fue marcado como privado."
+    except AgeRestricted:
+        return None, "El video de YouTube tiene restricción de edad y no permite consultar sus subtítulos."
+    except (IpBlocked, RequestBlocked):
+        return None, "YouTube bloqueó temporalmente las solicitudes de subtítulos desde esta dirección IP."
+    except InvalidVideoId:
+        return None, "El enlace o identificador del video de YouTube no es válido."
+    except YouTubeRequestFailed as e:
+        return None, f"Fallo de conexión al comunicarse con los servidores de YouTube: {e}"
     except Exception as e:
-        err = str(e).lower()
-        if "disabled" in err or "no transcript" in err or "could not retrieve" in err:
-            return None, "SIN_SUBTITULOS"
+        err_str = str(e).lower()
+        if "disabled" in err_str or "no transcript" in err_str:
+            return None, "Este video de YouTube no tiene subtítulos disponibles, así que no puedo resumirlo."
         return None, f"Error al leer subtítulos de YouTube: {e}"
 
 
@@ -301,16 +381,16 @@ class GestorResumen:
 
     def resumir_pagina(self, url):
         """Descarga y resume una página web en hilo secundario."""
-        if not url:
-            self.app.cola.put(("hablar", ("No me indicaste ninguna dirección web para resumir.", "seria")))
+        url_limpia = limpiar_url(url)
+        if not url_limpia:
+            self.app.cola.put(("hablar", ("No me indicaste ninguna dirección web válida para resumir.", "seria")))
             return
 
         def tarea():
-            u = url.strip()
-            log(f"Iniciando resumen de página: {u}")
+            log(f"Iniciando resumen de página: {url_limpia}")
             self.app.cola.put(("hablar", ("Descargando y analizando la página web...", "calida")))
 
-            html, err = descargar_pagina(u)
+            html, err = descargar_pagina(url_limpia)
             if err or not html:
                 msg_err = f"No pude resumir la página: {err}"
                 log(msg_err)
@@ -324,7 +404,7 @@ class GestorResumen:
                 self.app.cola.put(("hablar", (msg_vacio, "seria")))
                 return
 
-            resumen = procesar_resumen_texto(self.app, texto_limpio, titulo_origen=u)
+            resumen = procesar_resumen_texto(self.app, texto_limpio, titulo_origen=url_limpia)
             log(f"Resumen de página completado con éxito ({len(resumen)} caracteres).")
             self.app.cola.put(("hablar", (resumen, "neutral")))
 
@@ -332,16 +412,18 @@ class GestorResumen:
 
     def resumir_video(self, url):
         """Descarga subtítulos de un video de YouTube y los resume en hilo secundario."""
-        if not url:
-            self.app.cola.put(("hablar", ("No me diste ningún enlace de video de YouTube para resumir.", "seria")))
+        url_limpia = limpiar_url(url)
+        if not url_limpia and not extraer_youtube_id(url):
+            self.app.cola.put(("hablar", ("No me diste ningún enlace de video de YouTube válido para resumir.", "seria")))
             return
 
+        target_url = url_limpia or url.strip()
+
         def tarea():
-            u = url.strip()
-            log(f"Iniciando resumen de video YouTube: {u}")
+            log(f"Iniciando resumen de video YouTube: {target_url}")
             self.app.cola.put(("hablar", ("Obteniendo los subtítulos del video de YouTube...", "calida")))
 
-            subtitulos, err = obtener_subtitulos_youtube(u)
+            subtitulos, err = obtener_subtitulos_youtube(target_url)
             if err == "REQUIERE_LIBRERIA":
                 msg_lib = (
                     "Para resumir videos de YouTube necesito la librería ligera youtube-transcript-api (pesa unos 510 KB). "
@@ -351,19 +433,13 @@ class GestorResumen:
                 self.app.cola.put(("hablar", (msg_lib, "seria")))
                 return
 
-            if err == "SIN_SUBTITULOS":
-                msg_nosub = "Este video de YouTube no tiene subtítulos disponibles, así que no puedo resumirlo."
-                log(f"Video sin subtítulos: {u}")
-                self.app.cola.put(("hablar", (msg_nosub, "seria")))
-                return
-
             if err or not subtitulos:
                 msg_err = f"No pude obtener los subtítulos del video: {err}"
                 log(msg_err)
                 self.app.cola.put(("hablar", (msg_err, "seria")))
                 return
 
-            resumen = procesar_resumen_texto(self.app, subtitulos, titulo_origen=f"Video YouTube {u}")
+            resumen = procesar_resumen_texto(self.app, subtitulos, titulo_origen=f"Video YouTube {target_url}")
             log(f"Resumen de video completado con éxito ({len(resumen)} caracteres).")
             self.app.cola.put(("hablar", (resumen, "neutral")))
 
@@ -381,16 +457,15 @@ class GestorResumen:
                 ))
                 return
 
-            m = re.search(r"https?://[^\s<>\"']+", texto)
-            if not m:
+            enlace = limpiar_url(texto)
+            if not enlace:
                 self.app.cola.put((
                     "hablar",
-                    ("El texto copiado en el portapapeles no contiene un enlace válido.", "seria")
+                    ("El texto copiado en el portapapeles no contiene un enlace seguro válido que comience con https://.", "seria")
                 ))
                 return
 
-            enlace = m.group(0)
-            log(f"Enlace detectado en el portapapeles: {enlace}")
+            log(f"Enlace limpio detectado en el portapapeles: {enlace}")
             if es_enlace_youtube(enlace):
                 self.resumir_video(enlace)
             else:

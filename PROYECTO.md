@@ -580,9 +580,16 @@ Permite a Silvestra leer páginas web y transcripciones de videos para sintetiza
     - Rechaza enlaces que no sean `https://`.
     - Bloquea accesos a `localhost` y direcciones IP privadas o internas (`127.0.0.1`, `192.168.x.x`, `10.x.x.x`, etc.).
     - El texto descargado se encapsula como dato puro entre etiquetas delimitadoras (`<<<DATOS>>>`), indicando al cerebro que ignore cualquier orden o comando inyectado dentro del contenido.
-- **Videos de YouTube**:
-  - Extrae el ID del video y consulta subtítulos oficiales o autogenerados sin inventar información. Si el video no tiene subtítulos, Silvestra lo declara con honestidad ("Este video no tiene subtítulos disponibles, así que no puedo resumirlo").
-  - Si falta la librería ligera `youtube-transcript-api` (~510 KB), avisa con claridad antes de requerirla.
+- **Sanitización y limpieza de enlaces (`limpiar_url`)**:
+  - Extrae de manera robusta la primera URL `https://` contenida en el texto o portapapeles.
+  - Elimina delimitadores circundantes (comillas simples/dobles, acentos graves/backticks ``` ` ```, `< >`).
+  - Limpia puntuación final (`. , ; : ! ?`) y paréntesis de cierre sobrantes `)` sin romper URLs que legítimamente contienen paréntesis balanceados (ej. artículos de Wikipedia como `Python_(lenguaje_de_programación)`).
+  - Codifica a porcentaje (percent-encoding) caracteres no-ASCII (ej. tildes como en `Panamá` -> `Panam%C3%A1`) evitando dobles codificaciones.
+- **Videos de YouTube (`youtube-transcript-api 1.2.5`)**:
+  - Utiliza la API moderna basada en instancias (`YouTubeTranscriptApi().list(video_id)` y `.fetch()`).
+  - Prioridad de subtítulos: español (`es`, `es-419`, etc.), luego inglés (`en`), y finalmente cualquier idioma disponible (incluyendo subtítulos autogenerados).
+  - Lee los fragmentos mediante el atributo `.text` de los objetos `FetchedTranscriptSnippet`.
+  - Captura granular y honesta de errores de la API (`TranscriptsDisabled`, `NoTranscriptFound`, `VideoUnavailable`, `AgeRestricted`, `IpBlocked`/`RequestBlocked`, `InvalidVideoId`), reportando con claridad a Moisés qué ocurrió sin inventar contenido.
 - **Manejo de textos largos**:
   - Recorta a un máximo razonable (~12,000 caracteres) y avisa si el resumen cubre solo la primera sección.
   - Para textos extensos pero manejables (hasta 24,000 caracteres), realiza un resumen por partes en hilo secundario y entrega la síntesis combinada.
