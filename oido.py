@@ -110,7 +110,7 @@ class Oido:
         espera_silencio = float(getattr(config, "ESPERA_SILENCIO_SEGUNDOS", 0.55))
         max_silencio = max(7, int(espera_silencio / 0.05))
         vad_adaptativo = getattr(config, "VAD_ADAPTATIVO", True)
-        max_silencio_adaptativo = max(6, int(0.30 / 0.05))
+        max_silencio_adaptativo = max(8, int(0.45 / 0.05))
         ganancia = float(getattr(config, "GANANCIA_MICROFONO", 1.2))
 
         try:
