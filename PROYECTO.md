@@ -915,6 +915,38 @@ Permite a Silvestra detectar la presencia física de su dueño frente a la lapto
   - **Perfil y correcciones limitados**: Fragmentos concisos de máximo 250 caracteres cada uno.
   - **Fidelidad**: Se mantiene intacta la personalidad de Silvestra, español panameño, tono cálido y la **regla anti-invención estricta**.
 
+## Modularización de Cerebro, Hora de Panamá, Memoria con Fechas y Recordatorios por Voz
+
+### 1. Modularización de `cerebro.py`
+Para mantener todos los archivos bajo el límite de 15 KB, `cerebro.py` se dividió limpiamente en tres módulos especializados manteniendo retrocompatibilidad total:
+- **[cerebro_parser.py](file:///c:/Proyecto_Silvestra/cerebro_parser.py)** (~3.1 KB): Extracción y parseo de respuestas devueltas por modelos (`separar`, `_respuesta_parcial`, `_cortar`).
+- **[cerebro_prompt.py](file:///c:/Proyecto_Silvestra/cerebro_prompt.py)** (~8.3 KB): Construcción del prompt del sistema, inyección de hora oficial de Panamá, selección semántica de recuerdos, compactación de acciones y desglose de tokens.
+- **[cerebro.py](file:///c:/Proyecto_Silvestra/cerebro.py)** (~4.8 KB): Coordinador del historial de diálogo, envío a proveedores conmutables y reflexión periódica.
+
+### 2. Hora y fecha reales de Panamá (`America/Panama`)
+- Inyección en cada turno de conversación de la hora y fecha exactas obtenidas mediante `zoneinfo.ZoneInfo("America/Panama")`.
+- Formato panameño natural de 12 horas con día de la semana en español (ej: *"Hoy es miércoles 18 de noviembre de 2026, 11:15 p. m."*).
+- Regla estricta en el prompt: Silvestra nunca inventa la hora; si el usuario pregunta qué hora es o qué día es hoy, utiliza exactamente este dato oficial.
+- Registro en log: `[hora] inyectada='...'`
+
+### 3. Memoria permanente con fechas y filtro de privacidad
+- **Registro duradero y con fecha (`memoria.py`)**: Cada nuevo recuerdo o hecho importante sobre Moisés (gustos, personas, planes, proyectos) se registra con su fecha en `memoria.json` (ej: `[2026-11-18] hecho`).
+- **Filtro de privacidad estricto**: Rechaza y nunca guarda contraseñas, tokens, claves, secretos, API keys o datos financieros sensibles (`PALABRAS_PRIVADAS`).
+- **Inyección semántica de recuerdos**: En cada mensaje se inyectan únicamente los **5 recuerdos más relevantes** al tema tratado usando coincidencia de palabras clave ponderada (o los más recientes si no hay relación), manteniendo el prompt por debajo de 2000 tokens (habitualmente ~1,150 a 1,350 tokens).
+- **Acción `olvidar`**: Permite al usuario borrar recuerdos por voz (*"olvida lo de X"*, *"olvida que tengo examen"*). Elimina las coincidencias de `memoria.json` y confirma por voz.
+- **Registro en log**: `[memoria] recuerdos=N`
+
+### 4. Recordatorios y alarmas por voz (`recordatorios.py`)
+- **Acciones registradas**:
+  - `poner_recordatorio` (y alias `recordar`): Relativo (*"en 20 minutos"*, *"en 2 horas"*, *"en 30 segundos"*) o absoluto (*"mañana a las 8"*, *"a las 5:30 pm"*).
+  - `listar_recordatorios`: Enumera los recordatorios pendientes activos con su hora exacta.
+  - `cancelar_recordatorio`: Cancela un recordatorio por texto o tema.
+- **Persistencia en `recordatorios.json`**: Los recordatorios sobreviven al reinicio de la aplicación.
+- **Hilo secundario (`RecordatoriosLoop`)**: Revisa cada **1 segundo** sin bloquear la aplicación. Al vencer, envía un evento seguro a `app.cola` (`hablar_registro`) para que Silvestra hable y muestre la burbuja en la ventana principal Qt (cero llamadas directas a Qt desde hilos).
+- **Aviso al arrancar**: Si Silvestra estuvo apagada y algún recordatorio venció mientras tanto, avisa inmediatamente al iniciar.
+- **Confirmación hablada**: Cada recordatorio creado se confirma en voz alta indicando la hora exacta programada.
+- **Registros en log**: `[recordatorio] creado='...' hora='...'`, `[recordatorio] disparado='...'`
+
 ## Límites conocidos
 - El temporizador de estudio Pomodoro se pierde si se cierra la app (los recordatorios ya sobreviven al cierre de forma persistente en `recordatorios.json`).
 - Los gestos asumen mano derecha con los dedos hacia arriba.

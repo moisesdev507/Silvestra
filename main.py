@@ -75,6 +75,7 @@ import telegram_puente
 import voz_dueno
 from cara_qt import Cara
 from cerebro import Cerebro
+import memoria
 from memoria import Memoria
 from oido import Oido
 from voz import Voz
@@ -107,6 +108,7 @@ class Silvestra:
         )
         self.cara._ref_voz = self.voz
         self.cara.poner_viva(bool(self.memoria.nombre))
+        memoria.instalar(self)
         presentacion.instalar(self)
         self.casa = casa.instalar(self)
         self.camara = camara.instalar(self)

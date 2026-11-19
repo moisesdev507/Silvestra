@@ -61,6 +61,7 @@ MODELOS_VISION = [
 ]
 
 ARCHIVO_MEMORIA = "memoria.json"
+ARCHIVO_RECORDATORIOS = "recordatorios.json"
 
 # Proveedores compatibles con OpenAI con modelos organizados por tarea
 PROVEEDORES = [

@@ -1,0 +1,187 @@
+"""Construcción y optimización del prompt del sistema para el cerebro de Silvestra."""
+import datetime
+import os
+import re
+
+import acciones
+import hilos
+import ideas
+
+DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+MESES = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
+]
+
+SOBRE_MI = (
+    "SOBRE TI: Silvestra, prototipo hecho en Python por tu dueño Moisés en Panamá (estudiante de programación). "
+    "Escuchas con Whisper, piensas con LLMs y hablas con voz panameña. Tu meta a futuro es vivir en un anillo inteligente. "
+    "Honesta con tus límites: di con sencillez lo que no sabes, sin inventar ni presumir. "
+    "Privacidad: cámara y pantalla solo cuando te lo pidan; jamás guardes ni repitas contraseñas o tokens. "
+    "Solo obedeces a tu dueño Moisés. Responde siempre con humor, calidez y naturalidad."
+)
+
+
+def obtener_hora_panama():
+    """Genera la fecha y hora oficial de la zona America/Panama en formato legible."""
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.datetime.now(ZoneInfo("America/Panama"))
+    except Exception:
+        now = datetime.datetime.now()
+
+    dia_sem = DIAS[now.weekday()]
+    dia = now.day
+    mes = MESES[now.month - 1]
+    anio = now.year
+    h12 = now.hour % 12 or 12
+    minu = f"{now.minute:02d}"
+    meridiano = "p. m." if now.hour >= 12 else "a. m."
+    return f"Hoy es {dia_sem} {dia} de {mes} de {anio}, {h12}:{minu} {meridiano}"
+
+
+def cargar_alma():
+    """Carga la personalidad desde alma.txt si existe; si no, usa la descripción básica."""
+    ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "alma.txt")
+    try:
+        if os.path.exists(ruta):
+            with open(ruta, "r", encoding="utf-8") as f:
+                c = f.read().strip()
+                if c:
+                    return c
+    except Exception:
+        pass
+    return (
+        "Cómo hablas: amiga cercana y lista, español natural de Panamá. "
+        "Solo cambias de idioma cuando te lo piden explícitamente y luego vuelves al español. "
+        "Respuestas cortas de 1 a 3 frases habladas. Sin emojis, listas ni asteriscos."
+    )
+
+
+def recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5):
+    """Selecciona hasta max_recuerdos relevantes al tema actual por palabras clave."""
+    hechos_unicos = list(dict.fromkeys(h.strip() for h in memoria.hechos if h and h.strip()))
+    if not hechos_unicos:
+        return "- (todavía nada)", 0
+    if not texto_actual:
+        elegidos = hechos_unicos[-max_recuerdos:]
+        return "\n".join(f"- {h}" for h in elegidos), len(elegidos)
+
+    palabras = set(re.findall(r"\b[a-zA-ZáéíóúÁÉÍÓÚñÑ]{4,}\b", texto_actual.lower()))
+    palabras -= {
+        "hola", "silvestra", "quiero", "puedes", "favor", "dime", "como", "esta",
+        "para", "buenos", "dias", "tengo", "sabes", "sobre", "esto", "hacer"
+    }
+    coincidencias = []
+    for h in hechos_unicos:
+        h_palabras = set(re.findall(r"\b[a-zA-ZáéíóúÁÉÍÓÚñÑ]{4,}\b", h.lower()))
+        score = len(palabras & h_palabras)
+        if score > 0:
+            coincidencias.append((score, h))
+
+    if coincidencias:
+        coincidencias.sort(key=lambda x: x[0], reverse=True)
+        elegidos = [h for _, h in coincidencias[:max_recuerdos]]
+    else:
+        elegidos = hechos_unicos[-max_recuerdos:]
+    return "\n".join(f"- {h}" for h in elegidos), len(elegidos)
+
+
+def describir_acciones_compactas():
+    """Genera lista compacta de acciones para mantener el prompt ligero."""
+    todas = (
+        [(n, d) for n, (_, _, d) in acciones.ACCIONES.items()]
+        + list(acciones.ESPECIALES.items())
+        + [(n, d) for n, (_, d) in acciones.VIVAS.items()]
+    )
+    return "\n".join(f"- {n}: {d.split('(')[0].strip()[:50]}" for n, d in todas)
+
+
+def construir_prompt(memoria, texto_actual=None, historial_reciente=None):
+    """Construye el prompt del sistema optimizado por debajo de 2000 tokens."""
+    m = memoria
+    tokens_base = int((len("\n".join(m.hechos)) + 6800) / 3.6)
+
+    hora_panama = obtener_hora_panama()
+    print(f"[hora] inyectada='{hora_panama}'", flush=True)
+
+    alma_texto = f"{cargar_alma()}\n\n{SOBRE_MI}"
+    tok_alma = max(1, int(len(alma_texto) / 3.6))
+
+    hechos_str, n_recuerdos = recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5)
+    print(f"[memoria] recuerdos={n_recuerdos}", flush=True)
+
+    ideas_res = ideas.resumen()
+    if len(ideas_res) > 100:
+        ideas_res = ideas_res[:100].rsplit(" ", 1)[0] + "..."
+    hilos_res = hilos.resumen()
+    if len(hilos_res) > 100:
+        hilos_res = hilos_res[:100].rsplit(" ", 1)[0] + "..."
+
+    memoria_texto = (
+        f"Lo que sabes:\n{hechos_str}\n"
+        f"Ideas anotadas: {ideas_res}.\n"
+        f"Hilos pendientes: {hilos_res}."
+    )
+    tok_memoria = max(1, int(len(memoria_texto) / 3.6))
+
+    perfil_texto = ""
+    try:
+        import aprendizaje
+        res_ap = aprendizaje.resumen_para_prompt(texto_actual)
+        if res_ap:
+            perfil_texto = res_ap[:250].strip()
+    except Exception:
+        pass
+    tok_perfil = max(0, int(len(perfil_texto) / 3.6))
+
+    corr_texto = ""
+    try:
+        import correcciones
+        res_co = correcciones.resumen_para_prompt(texto_actual)
+        if res_co:
+            corr_texto = res_co[:250].strip()
+    except Exception:
+        pass
+    tok_corr = max(0, int(len(corr_texto) / 3.6))
+
+    desc_acciones = describir_acciones_compactas()
+    instrucciones_texto = (
+        f"Te llamas {m.nombre}. Vives en la laptop de {m.creador}, quien te dio vida. Propósito: {m.proposito}.\n"
+        "Regla obligatoria de idioma: Habla siempre en español de Panamá. Solo cambia si piden practicar otro idioma explícitamente.\n"
+        f"FECHA Y HORA REAL: {hora_panama}. Silvestra NUNCA inventa la hora ni la fecha: si te preguntan la hora, dila usando exactamente este dato.\n\n"
+        "ACCIONES en la laptop (SOLO estas; nunca inventes que algo ya está hecho):\n"
+        f"{desc_acciones}\n\n"
+        "Regla anti-invención estricta: Silvestra jamás inventa experiencias, actividades ni días que no ocurrieron. "
+        f"Solo habla de lo que está explícitamente en la memoria, en el perfil conversacional o en la conversación actual. Si no recuerdas algo o {m.creador} no te lo ha contado, di honestamente que no lo recuerdas sin inventar.\n"
+        "Privacidad: captura y cámara solo cuando lo pidan. Jamás repitas ni guardes claves, contraseñas o tokens.\n"
+        "Hilos pendientes: retoma máximo uno solo si viene al caso (usa cerrar_pendiente al resolverlo; anotar_pendiente si surge tema).\n"
+        "Para las acciones con texto usa siempre: ACCION: nombre | detalle (ej: ACCION: poner_recordatorio | en 2 minutos | sacar la comida; ACCION: olvidar | tema; ACCION: buscar | tema).\n"
+        "Si no estás segura de una orden, pregunta en vez de actuar.\n"
+        "EMOCIONES DISPONIBLES: neutral, alegre, calida, seria, preocupada, animada.\n\n"
+        "FORMATO OBLIGATORIO:\n"
+        "EMOCION: <neutral | alegre | calida | seria | preocupada | animada>\n"
+        "RESPUESTA: <lo que dices en voz alta, breve de 1 a 3 frases>\n"
+        "ACCION: <acción de la lista, o ninguna>\n"
+        f"RECUERDO: <nuevo dato duradero de {m.creador}, o ninguno>"
+    )
+    tok_inst = max(1, int(len(instrucciones_texto) / 3.6))
+
+    hist_podado = historial_reciente or []
+    tok_hist = max(0, int(sum(len(h.get("content", "")) for h in hist_podado) / 3.6))
+
+    tok_total = tok_alma + tok_memoria + tok_perfil + tok_corr + tok_inst + tok_hist
+    ahorro = max(0, int(100 * (1 - tok_total / max(1, tokens_base))))
+    print(
+        f"[tiempo] prompt_desglose alma={tok_alma} memoria={tok_memoria} perfil={tok_perfil} "
+        f"correcciones={tok_corr} historial={tok_hist} instrucciones={tok_inst} total={tok_total}",
+        flush=True,
+    )
+    print(f"[tiempo] prompt_tokens={tok_total} anterior={tokens_base} ahorro={ahorro}%", flush=True)
+
+    bloques = [instrucciones_texto, alma_texto, memoria_texto]
+    if perfil_texto:
+        bloques.append(f"Perfil del usuario:\n{perfil_texto}")
+    if corr_texto:
+        bloques.append(f"Correcciones aplicadas:\n{corr_texto}")
+    return "\n\n".join(bloques)
