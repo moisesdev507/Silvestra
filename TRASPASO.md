@@ -32,7 +32,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - **`acciones.py`**: Registro central de acciones (`acciones.registrar`).
 - **`recordatorios.py`**: Recordatorios por voz persistentes en disco (`recordatorios.json`).
 - **`control_laptop.py` / `control_seguridad.py`**: Control de la laptop por niveles (libre, con código y prohibido) con lista permitida y auditoría.
-- **`pantalla_remota.py` / `casa_web.py` / `casa_web_ui.py`**: Servidor local HTTP/SSE, panel tablet y casa virtual 2D interactiva.
+- **`pantalla_remota.py` / `casa_web*.py`**: Servidor local HTTP/SSE, panel tablet y casa virtual 2D arquitectónica realista (SVG, CSS y estados).
 - **`presencia.py` / `camara.py`**: Presencia y seguimiento facial con MediaPipe.
 - **`prueba_humo.py`**: Suite de validación rápida de sintaxis, reglas de 15 KB y módulos clave.
 
