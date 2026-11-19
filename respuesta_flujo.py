@@ -1,14 +1,17 @@
 """Manejo de respuestas en streaming para Silvestra mediante la cadena de proveedores."""
 from cerebro import separar
 import proveedores
+import proveedores_cadenas as pc
 
 
 def responder_flujo(cerebro, texto, al_frase):
     """Genera la respuesta con streaming y conmutación automática de proveedores si hay fallos."""
     cerebro.historial.append({"role": "user", "content": texto})
-    mensajes = [{"role": "system", "content": cerebro.instrucciones(texto)}] + cerebro.historial[-20:]
+    # Limitar historial a los 8 turnos más recientes para ahorrar tokens y latencia
+    mensajes = [{"role": "system", "content": cerebro.instrucciones(texto)}] + cerebro.historial[-8:]
 
-    crudo = proveedores.completar_flujo(mensajes, al_frase)
+    tarea = pc.clasificar_dificultad(texto)
+    crudo = proveedores.completar_flujo(mensajes, al_frase, tarea=tarea)
 
     respuesta, accion, recuerdo, emocion = separar(crudo)
     if recuerdo:

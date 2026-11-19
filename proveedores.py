@@ -1,20 +1,25 @@
-"""Gestión y respaldo de proveedores LLM compatibles con OpenAI.
+"""Gestión, conmutación y ejecución especulativa de proveedores LLM.
 
-Orden: Groq -> Google Gemini -> OpenRouter -> Cerebras.
-Salta claves vacías, enfría en caso de 429, fuerza UTF-8 contra caracteres rotos,
-y conmuta automáticamente antes de la primera frase si hay fallo o pasan >8 s sin tokens.
+Cadenas por tarea (charla, razonamiento, visión), enfriamiento 429 por proveedor,
+forzado UTF-8 contra caracteres rotos, y ejecución en paralelo si el primer
+proveedor tarda más de 4 segundos en dar el primer token.
 """
 import json
+import queue
+import threading
 import time
 import requests
 
+import acciones
 import config
 from cerebro import _cortar, _respuesta_parcial, separar
+import proveedores_cadenas as pc
 
 _enfriamientos = {}
+enfriamientos = _enfriamientos
 _aviso_respaldo_pendiente = False
 _ultimo_proveedor = "Groq"
-_ultima_clave_groq = None
+_claves_anteriores = {}
 
 
 def forzar_utf8(texto):
@@ -47,48 +52,44 @@ def marcar_enfriamiento(nombre, headers=None):
     _registrar(f"enfriamiento proveedor={nombre} duracion={duracion:.0f}s")
 
 
-def proveedores_disponibles():
-    """Devuelve la lista de proveedores configurados, con clave y fuera de enfriamiento."""
-    global _ultima_clave_groq
+def proveedores_disponibles(tarea="charla"):
+    """Devuelve la lista de proveedores configurados y disponibles para la tarea."""
+    global _claves_anteriores
     ahora = time.time()
-    disponibles = []
 
-    clave_actual = getattr(config, "CLAVE", "")
-    if clave_actual != _ultima_clave_groq:
-        _ultima_clave_groq = clave_actual
-        if "Groq" in _enfriamientos:
-            _registrar("Groq: detectada nueva clave en config.py, reiniciando enfriamiento")
-            _enfriamientos.pop("Groq", None)
+    # Si el usuario cambió alguna clave en config.py, reiniciar enfriamiento de ese proveedor
+    mapa_claves = {
+        "Groq": getattr(config, "CLAVE", ""),
+        "Google": getattr(config, "CLAVE_GOOGLE", ""),
+        "Mistral": getattr(config, "CLAVE_MISTRAL", ""),
+        "NVIDIA": getattr(config, "CLAVE_NVIDIA", ""),
+        "Cerebras": getattr(config, "CLAVE_CEREBRAS", ""),
+        "OpenRouter": getattr(config, "CLAVE_OPENROUTER", ""),
+    }
+    for n, clv in mapa_claves.items():
+        if clv != _claves_anteriores.get(n):
+            _claves_anteriores[n] = clv
+            if n in _enfriamientos:
+                _registrar(f"{n}: detectada nueva clave en config.py, reiniciando enfriamiento")
+                _enfriamientos.pop(n, None)
 
-    for p in config.PROVEEDORES:
-        nombre = p["nombre"]
-        if nombre == "Groq":
-            p["clave"] = getattr(config, "CLAVE", "")
-        elif nombre == "Google":
-            p["clave"] = getattr(config, "CLAVE_GOOGLE", "")
-        elif nombre == "OpenRouter":
-            p["clave"] = getattr(config, "CLAVE_OPENROUTER", "")
-        elif nombre == "Cerebras":
-            p["clave"] = getattr(config, "CLAVE_CEREBRAS", "")
+    # Registrar saltos por clave vacía o enfriamiento para observabilidad
+    orden = pc.CADENAS_ORDEN.get(tarea, pc.CADENAS_ORDEN["charla"])
+    for n in orden:
+        clv = (mapa_claves.get(n) or "").strip()
+        if not clv:
+            _registrar(f"cerebro saltando proveedor={n} motivo=clave_vacia")
+        elif ahora < _enfriamientos.get(n, 0):
+            restan = int(_enfriamientos[n] - ahora)
+            _registrar(f"cerebro saltando proveedor={n} motivo=en_enfriamiento_por_cuota_faltan_{restan}s")
 
-        clave = (p.get("clave") or "").strip()
-        if not clave:
-            _registrar(f"cerebro saltando proveedor={nombre} motivo=clave_vacia")
-            continue
-
-        if ahora < _enfriamientos.get(nombre, 0):
-            restan = int(_enfriamientos[nombre] - ahora)
-            _registrar(f"cerebro saltando proveedor={nombre} motivo=en_enfriamiento_por_cuota_faltan_{restan}s")
-            continue
-
-        disponibles.append(p)
-    return disponibles
+    return pc.obtener_candidatos_tarea(tarea, _enfriamientos)
 
 
-def completar(mensajes, timeout=20):
-    """Llamada síncrona sin streaming con conmutación automática de respaldo."""
+def completar(mensajes, tarea="charla", timeout=20):
+    """Llamada síncrona sin streaming seleccionando la cadena según la tarea."""
     global _aviso_respaldo_pendiente, _ultimo_proveedor
-    candidatos = proveedores_disponibles()
+    candidatos = proveedores_disponibles(tarea)
     if not candidatos:
         raise RuntimeError("No hay proveedores de IA disponibles (claves vacías o en enfriamiento)")
 
@@ -97,7 +98,9 @@ def completar(mensajes, timeout=20):
         nombre = prov["nombre"]
         url = f"{prov['base_url'].rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {prov['clave']}", "Content-Type": "application/json"}
-        for modelo in list(prov.get("modelos", [])):
+        modelos = prov.get("modelos_activos") or prov.get("modelos", [])
+
+        for modelo in list(modelos):
             try:
                 r = requests.post(url, headers=headers, json={"model": modelo, "messages": mensajes}, timeout=timeout)
                 r.encoding = "utf-8"
@@ -112,10 +115,7 @@ def completar(mensajes, timeout=20):
                     datos = json.loads(r.content.decode("utf-8", errors="replace"))
 
                 contenido = forzar_utf8(datos["choices"][0]["message"].get("content") or "")
-                _registrar(f"cerebro proveedor={nombre} modelo={modelo}")
-                if modelo in prov["modelos"]:
-                    prov["modelos"].remove(modelo)
-                    prov["modelos"].insert(0, modelo)
+                _registrar(f"cerebro proveedor={nombre} modelo={modelo} tarea={tarea}")
                 _ultimo_proveedor = nombre
                 return contenido
             except Exception as e:
@@ -127,151 +127,241 @@ def completar(mensajes, timeout=20):
     raise ultimo_error or RuntimeError("Todos los proveedores fallaron")
 
 
-def completar_flujo(mensajes, al_frase, timeout_primer_token=8.0):
-    """Streaming de respuesta con failover antes de hablar y forzado UTF-8."""
-    global _aviso_respaldo_pendiente, _ultimo_proveedor
-    candidatos = proveedores_disponibles()
-    if not candidatos:
-        raise RuntimeError("No hay proveedores de IA disponibles")
+def _intentar_stream_proveedor(prov, modelo, mensajes, timeout_token, evento_cancelar, cola_salida):
+    """Ejecuta el streaming de un proveedor específico en su propio hilo."""
+    nombre = prov["nombre"]
+    url = f"{prov['base_url'].rstrip('/')}/chat/completions"
+    headers = {"Authorization": f"Bearer {prov['clave']}", "Content-Type": "application/json"}
+    t0 = time.time()
 
-    ultimo_error = None
-    for prov in candidatos:
-        nombre = prov["nombre"]
-        url = f"{prov['base_url'].rstrip('/')}/chat/completions"
-        headers = {"Authorization": f"Bearer {prov['clave']}", "Content-Type": "application/json"}
+    try:
+        r = requests.post(
+            url,
+            headers=headers,
+            json={"model": modelo, "messages": mensajes, "stream": True},
+            stream=True,
+            timeout=(timeout_token, 6.0),
+        )
+        r.encoding = "utf-8"
+        if r.status_code == 429:
+            marcar_enfriamiento(nombre, r.headers)
+            cola_salida.put(("error", nombre, RuntimeError(f"429 en {nombre}")))
+            return
+        if r.status_code != 200:
+            cola_salida.put(("error", nombre, RuntimeError(f"HTTP {r.status_code} en {nombre}")))
+            return
 
-        for modelo in list(prov.get("modelos", [])):
-            crudo, emitido = "", 0
-            frases_emitidas = 0
-            t0 = time.time()
-            t_primero = {"token": None, "frase": None}
+        primer_token = False
+        for linea_raw in r.iter_lines(decode_unicode=False):
+            if evento_cancelar.is_set():
+                try:
+                    r.close()
+                except Exception:
+                    pass
+                return
 
-            def emitir(f):
-                nonlocal frases_emitidas
-                global _aviso_respaldo_pendiente
-                limpia = forzar_utf8(f)
-                if not limpia:
-                    return
-                if frases_emitidas == 0:
-                    if t_primero["frase"] is None:
-                        t_primero["frase"] = time.time() - t0
-                    if _aviso_respaldo_pendiente and nombre != "Groq":
-                        _aviso_respaldo_pendiente = False
-                        al_frase("Estoy usando mi cerebro de respaldo.")
-                        frases_emitidas += 1
-                al_frase(limpia)
-                frases_emitidas += 1
-
-            MAX_TOTAL_SEGUNDOS = 25.0
-            MAX_ENTRE_TOKENS = 6.0
-            t_ultimo_token = t0
-
+            if not linea_raw:
+                continue
             try:
-                r = requests.post(
-                    url,
-                    headers=headers,
-                    json={"model": modelo, "messages": mensajes, "stream": True},
-                    stream=True,
-                    timeout=(timeout_primer_token, MAX_ENTRE_TOKENS),
-                )
-                r.encoding = "utf-8"
-                if r.status_code == 429:
-                    marcar_enfriamiento(nombre, r.headers)
-                    raise RuntimeError(f"Cuota excedida (429) en {nombre}")
-                if r.status_code != 200:
-                    raise RuntimeError(f"HTTP {r.status_code} en {nombre}: {r.text[:100]}")
+                linea = linea_raw.decode("utf-8")
+            except UnicodeDecodeError:
+                linea = linea_raw.decode("latin-1", errors="replace")
+            linea = linea.strip()
+            if not linea.startswith("data:"):
+                continue
+            contenido = linea[5:].strip()
+            if contenido == "[DONE]":
+                break
+            try:
+                obj = json.loads(contenido)
+            except Exception:
+                continue
+            choices = obj.get("choices", [])
+            if not choices:
+                continue
+            delta = choices[0].get("delta", {}).get("content") or ""
+            if not delta:
+                continue
 
-                primer_token = False
-                for linea_raw in r.iter_lines(decode_unicode=False):
-                    ahora = time.time()
-                    if (ahora - t0) > MAX_TOTAL_SEGUNDOS:
-                        if frases_emitidas == 0:
-                            raise TimeoutError(f"Tiempo total ({MAX_TOTAL_SEGUNDOS}s) excedido en {nombre}")
-                        _registrar(f"cerebro tiempo total alcanzado ({MAX_TOTAL_SEGUNDOS}s); cerrando respuesta con naturalidad")
-                        break
+            delta = forzar_utf8(delta)
+            if not primer_token:
+                primer_token = True
+                t_token = time.time() - t0
+                cola_salida.put(("primer_token", nombre, modelo, t_token))
 
-                    if primer_token and (ahora - t_ultimo_token) > MAX_ENTRE_TOKENS:
-                        if frases_emitidas == 0:
-                            raise TimeoutError(f"Pausa entre tokens ({MAX_ENTRE_TOKENS}s) excedida en {nombre}")
-                        _registrar(f"cerebro pausa entre tokens ({MAX_ENTRE_TOKENS}s); cerrando respuesta con naturalidad")
-                        break
+            cola_salida.put(("chunk", nombre, delta))
 
-                    if not primer_token and (ahora - t0) > timeout_primer_token:
-                        raise TimeoutError(f"Más de {timeout_primer_token}s sin primer token en {nombre}")
-                    if not linea_raw:
-                        continue
-                    try:
-                        linea = linea_raw.decode("utf-8")
-                    except UnicodeDecodeError:
-                        linea = linea_raw.decode("latin-1", errors="replace")
-                    linea = linea.strip()
-                    if not linea.startswith("data:"):
-                        continue
-                    contenido = linea[5:].strip()
-                    if contenido == "[DONE]":
-                        break
-                    try:
-                        obj = json.loads(contenido)
-                    except Exception:
-                        continue
+        if not primer_token:
+            cola_salida.put(("error", nombre, TimeoutError(f"Sin tokens en {nombre}")))
+        else:
+            cola_salida.put(("fin", nombre, None))
+    except Exception as ex:
+        cola_salida.put(("error", nombre, ex))
 
-                    choices = obj.get("choices", [])
-                    if not choices:
-                        continue
-                    parte = choices[0].get("delta", {}).get("content") or ""
-                    if not parte:
-                        continue
 
-                    parte = forzar_utf8(parte)
-                    ahora_token = time.time()
-                    t_ultimo_token = ahora_token
-                    if not primer_token:
-                        primer_token = True
-                        t_primero["token"] = ahora_token - t0
+def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=4.0):
+    """Streaming con lanzamiento especulativo en paralelo si el 1° proveedor tarda >4 s."""
+    global _aviso_respaldo_pendiente, _ultimo_proveedor
+    import queue
 
-                    crudo += parte
+    candidatos = proveedores_disponibles(tarea)
+    if not candidatos:
+        raise RuntimeError(f"No hay proveedores disponibles para tarea '{tarea}'")
+
+    idx = 0
+    while idx < len(candidatos):
+        p1 = candidatos[idx]
+        m1 = (p1.get("modelos_activos") or p1.get("modelos", []))[0]
+        p2 = candidatos[idx + 1] if (idx + 1 < len(candidatos)) else None
+        m2 = (p2.get("modelos_activos") or p2.get("modelos", []))[0] if p2 else None
+
+        cola = queue.Queue()
+        cancelar_p1 = threading.Event()
+        cancelar_p2 = threading.Event()
+
+        hilo_p1 = threading.Thread(
+            target=_intentar_stream_proveedor,
+            args=(p1, m1, mensajes, 8.0, cancelar_p1, cola),
+            daemon=True,
+        )
+        hilo_p1.start()
+
+        # Esperar hasta timeout_paralelo por el primer token de P1
+        ganador = None
+        t_inicio = time.time()
+        p2_lanzado = False
+
+        while True:
+            ahora = time.time()
+            espera = max(0.05, timeout_paralelo - (ahora - t_inicio)) if not p2_lanzado else 0.1
+            try:
+                msg = cola.get(timeout=espera)
+                tipo, prov_nom = msg[0], msg[1]
+                if tipo == "primer_token":
+                    ganador = p1 if prov_nom == p1["nombre"] else p2
+                    mod_ganador = msg[2]
+                    t_tok = msg[3]
+                    if p2_lanzado:
+                        perdedor = p2["nombre"] if ganador == p1 else p1["nombre"]
+                        _registrar(f"cerebro ganador={ganador['nombre']} ({t_tok:.2f}s, superó a {perdedor})")
+                        if ganador == p1:
+                            cancelar_p2.set()
+                        else:
+                            cancelar_p1.set()
+                    else:
+                        _registrar(f"cerebro ganador={ganador['nombre']} modelo={mod_ganador} primer_token={t_tok:.2f}s")
+                    break
+                elif tipo == "error":
+                    _registrar(f"cerebro {prov_nom} falló al iniciar: {msg[2]}")
+                    if prov_nom == p1["nombre"] and not p2_lanzado:
+                        # P1 falló antes de 4s: lanzar P2 de inmediato si existe
+                        if p2:
+                            p2_lanzado = True
+                            hilo_p2 = threading.Thread(
+                                target=_intentar_stream_proveedor,
+                                args=(p2, m2, mensajes, 8.0, cancelar_p2, cola),
+                                daemon=True,
+                            )
+                            hilo_p2.start()
+                            continue
+                        else:
+                            break
+                    elif p2_lanzado and prov_nom == p2["nombre"]:
+                        pass
+            except queue.Empty:
+                if not p2_lanzado and p2:
+                    p2_lanzado = True
+                    _registrar(f"cerebro {p1['nombre']} tardó >{timeout_paralelo:.1f}s sin primer token; lanzando {p2['nombre']} en paralelo")
+                    hilo_p2 = threading.Thread(
+                        target=_intentar_stream_proveedor,
+                        args=(p2, m2, mensajes, 8.0, cancelar_p2, cola),
+                        daemon=True,
+                    )
+                    hilo_p2.start()
+                elif (time.time() - t_inicio) > 16.0:
+                    cancelar_p1.set()
+                    cancelar_p2.set()
+                    break
+
+        if ganador is None:
+            cancelar_p1.set()
+            cancelar_p2.set()
+            idx += 2 if p2_lanzado else 1
+            continue
+
+        # Consumir el stream del ganador
+        nombre_g = ganador["nombre"]
+        crudo, emitido = "", 0
+        frases_emitidas = 0
+
+        def emitir(f):
+            nonlocal frases_emitidas
+            global _aviso_respaldo_pendiente
+            limpia = forzar_utf8(f)
+            if not limpia:
+                return
+            if frases_emitidas == 0:
+                if _aviso_respaldo_pendiente and nombre_g != "Groq":
+                    _aviso_respaldo_pendiente = False
+                    al_frase("Estoy usando mi cerebro de respaldo.")
+                    frases_emitidas += 1
+            al_frase(limpia)
+            frases_emitidas += 1
+
+        while True:
+            try:
+                item = cola.get(timeout=8.0)
+                t_item, p_item = item[0], item[1]
+                if p_item != nombre_g:
+                    continue
+                if t_item == "chunk":
+                    chunk = item[2]
+                    crudo += chunk
                     parcial = _respuesta_parcial(crudo)
                     if parcial is not None:
                         frases, emitido = _cortar(parcial, emitido)
                         for f in frases:
                             emitir(f)
+                elif t_item in ("fin", "error"):
+                    break
+            except queue.Empty:
+                break
 
-                if not primer_token:
-                    raise TimeoutError(f"Stream sin tokens en {nombre}/{modelo}")
+        parcial = _respuesta_parcial(crudo)
+        if parcial is None:
+            txt = separar(crudo)[0]
+            if txt:
+                emitir(txt)
+        else:
+            frases, emitido = _cortar(parcial, emitido, final=True)
+            for f in frases:
+                emitir(f)
 
-                parcial = _respuesta_parcial(crudo)
-                if parcial is None:
-                    txt = separar(crudo)[0]
-                    if txt:
-                        emitir(txt)
-                else:
-                    frases, emitido = _cortar(parcial, emitido, final=True)
-                    for f in frases:
-                        emitir(f)
+        if not crudo.strip():
+            _registrar(f"cerebro {nombre_g} terminó con respuesta vacía")
+            idx += 1
+            continue
 
-                _registrar(f"cerebro proveedor={nombre} modelo={modelo} primer_token={t_primero['token']:.2f}s primera_frase={t_primero['frase']} total={time.time() - t0:.2f}s")
-                if modelo in prov["modelos"]:
-                    prov["modelos"].remove(modelo)
-                    prov["modelos"].insert(0, modelo)
-                _ultimo_proveedor = nombre
-                return forzar_utf8(crudo)
+        _ultimo_proveedor = nombre_g
+        return forzar_utf8(crudo)
 
-            except Exception as e:
-                ultimo_error = e
-                if frases_emitidas > 0:
-                    _registrar(f"cerebro excepción en stream tras empezar a hablar ({e}); cerrando frase con naturalidad")
-                    parcial = _respuesta_parcial(crudo)
-                    if parcial is None:
-                        txt = separar(crudo)[0]
-                        if txt:
-                            emitir(txt)
-                    else:
-                        frases, emitido = _cortar(parcial, emitido, final=True)
-                        for f in frases:
-                            emitir(f)
-                    return forzar_utf8(crudo)
-                _registrar(f"cerebro cambio proveedor anterior={nombre} motivo={e}")
-                if nombre == "Groq" and _ultimo_proveedor == "Groq":
-                    _aviso_respaldo_pendiente = True
+    raise RuntimeError(f"Todos los proveedores de la cadena '{tarea}' fallaron")
 
-    raise ultimo_error or RuntimeError("Todos los proveedores fallaron en responder")
+
+def accion_estado_proveedores(app):
+    """Muestra en la burbuja y pronuncia en voz alta el estado de los proveedores."""
+    def _tarea():
+        texto_voz, texto_burbuja = pc.reporte_estado_proveedores(_enfriamientos)
+        app.cola.put(("hablar_registro", (texto_voz, texto_burbuja)))
+        print(f"[tiempo] Consulta de estado_proveedores completada.", flush=True)
+
+    threading.Thread(target=_tarea, daemon=True).start()
+
+
+def instalar(app):
+    """Registra la acción estado_proveedores en Silvestra."""
+    acciones.registrar(
+        "estado_proveedores",
+        lambda: accion_estado_proveedores(app),
+        "informa el estado de los proveedores de IA (activos, enfriamiento o sin clave) y sus cadenas por tarea (úsala cuando pregunten 'cómo van los proveedores', 'estado de los proveedores', 'qué modelos están activos')",
+    )

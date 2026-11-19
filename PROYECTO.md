@@ -26,9 +26,9 @@ Silvestra es una asistente de IA de escritorio para Windows, hecha por Moisés (
 - `eventos.py`: procesador de eventos de la cola (`self.cola`), ejecutado estrictamente en el hilo principal de Qt. Paciencia aumentada en demos (hasta 5 silencios consecutivos durante el modo escenario o presentación antes de callarse; 2 en modo normal).
 - `conversacion.py`: conversación por voz, control de escucha con Whisper, filtro de eco, chat de texto y envío en streaming.
 - `nacimiento.py`: ciclo de vida inicial, diálogo de nacimiento (nombre, creador, propósito), saludo dinámico inicial y renacer.
-- `cerebro.py`: arma el prompt del sistema (`instrucciones()`), incluye `SOBRE_MI`, la lista de acciones, la fecha y hora, la memoria, las ideas y las emociones disponibles. Tiene `separar()` que lee la salida del modelo con el formato **EMOCION / RESPUESTA / ACCION / RECUERDO** de forma tolerante (limpiando posibles etiquetas de razonamiento interno como `<think>`), y los ayudantes `_respuesta_parcial` y `_cortar` para el modo streaming. Usa `proveedores.completar()` para llamadas síncronas.
-- `proveedores.py`: cadena de respaldo de proveedores LLM compatibles con OpenAI (`Groq` -> `Google Gemini` -> `OpenRouter` -> `Cerebras`). Conmuta en streaming antes de la primera frase si hay error de cuota (429), modelo inaccesible o >8 s sin primer token. Enfriamiento de 60 s tras 429, registro en `silvestra.log` y aviso hablado ("Estoy usando mi cerebro de respaldo") al saltar a un proveedor secundario.
-- `respuesta_flujo.py`: respuesta en streaming. Conecta el cerebro con `proveedores.completar_flujo()` entregando frases completas (`al_frase`) mientras el modelo escribe, manteniendo la personalidad y el formato de salida con emoción asociada.
+- `cerebro.py`: arma el prompt del sistema (`instrucciones()`), incluye `SOBRE_MI` compacto, la lista de acciones, la fecha y hora, hechos de memoria desduplicados y podados (máximo 8 más recientes), hilos pendientes y emociones disponibles. Mide el ahorro de tokens con respecto al prompt base sin podar e imprime `[tiempo] prompt_tokens={tokens_nuevo} anterior={tokens_base} ahorro={pct}%`. Mantiene un historial de solo 8 turnos recientes para reducir consumo y latencia. Tiene `separar()` que lee la salida del modelo con el formato **EMOCION / RESPUESTA / ACCION / RECUERDO** de forma tolerante (limpiando etiquetas de razonamiento interno como `<think>`), y los ayudantes `_respuesta_parcial` y `_cortar` para el modo streaming. Clasifica la dificultad del mensaje con `proveedores_cadenas.clasificar_dificultad()` y usa `proveedores.completar()` o `proveedores.completar_flujo()`.
+- `proveedores.py` y `proveedores_cadenas.py`: gestión multillm compatible con OpenAI (`Groq`, `Cerebras`, `Google Gemini`, `Mistral`, `NVIDIA NIM`, `OpenRouter`). Cadenas separadas y optimizadas por tarea (`charla`, `razonamiento`, `vision`, `voz`). Enfriamiento de 429 por proveedor (hasta 60 s, reiniciable al cambiar clave en caliente). Clasificador local de dificultad basado en patrones y longitud sin llamadas extras de red. Lanzamiento especulativo en paralelo: si el primer proveedor tarda más de 4.0 s sin entregar su primer token, se dispara el siguiente en paralelo; el primero en responder gana y el otro se cancela (`[tiempo] cerebro ganador=...`). Acción `estado_proveedores` para consultar el estado en la burbuja y por voz.
+- `respuesta_flujo.py`: respuesta en streaming. Conecta el cerebro con `proveedores.completar_flujo(..., tarea=tarea)` entregando frases completas (`al_frase`) mientras el modelo escribe, manteniendo la personalidad y el formato de salida con emoción asociada. Historial acotado a 8 turnos.
 - `voz.py`: voz con `edge-tts` (es-PA-MargaritaNeural) y pygame. Modulación emocional sutil mediante prosodia SSML estándar (`rate`, `pitch`, `volume`) definida en `config.EMOCIONES_VOZ` (`neutral`, `alegre`, `animada`, `calida`, `seria`, `preocupada`), sin depender de estilos propietarios de Azure que esa voz no soporta. Respaldo local tolerante por contexto (exclamaciones `¡!` ➔ `animada`, errores o fallos ➔ `seria`, cuidado ➔ `preocupada`, mañana ➔ `alegre`). Si falla o no hay internet, conmuta a la voz de Windows (SAPI) ignorando la emoción limpiamente sin fallar. `Voz.hablar(texto, al_terminar, emocion)` y `Voz.flujo(al_terminar, emocion)`. Registro en log `[voz] emocion=… rate=… pitch=…`.
 - `oido.py`: micrófono con `sounddevice`, detector de voz por energía y transcripción con Whisper de Groq (`whisper-large-v3-turbo`). Filtra alucinaciones de Whisper (lista FALSAS, no_speech_prob, avg_logprob). **No pongas listas de órdenes en el prompt de Whisper**: provoca frases inventadas. Oído de respaldo local con Vosk (`vosk-model-small-es-0.42` sin gramática restringida y carga perezosa) si Whisper falla por red, timeout o cuota (429), con registro en log `[oido] respaldo=vosk` y aviso hablado ("Te escucho con mi oído de respaldo") una sola vez por sesión.
 - `memoria.py` y `memoria.json`: nombre, creador, propósito y hechos que recuerda.
@@ -90,12 +90,61 @@ El modo escenario se activa automáticamente al pedirle a Silvestra que se prese
 - **Movimiento suave**: cuadrícula con respiración sutil, partículas con efecto parallax de doble capa y 30 FPS con bajo consumo de CPU.
 - **Cómo cerrarlo**: presiona la tecla **Esc** en el teclado, o di/escribe la orden *"cierra el escenario"* (acción `cerrar_escenario`).
 
-## Cadena de proveedores LLM y simulación de fallos
-La cadena de fallback está definida en `config.PROVEEDORES` y gestionada por `proveedores.py`:
-1. **Groq** (principal): `openai/gpt-oss-120b`, `openai/gpt-oss-20b`.
-2. **Google Gemini** (respaldo 1): endpoint compatible OpenAI `v1beta/openai` con `gemini-flash-lite-latest`, `gemini-3-flash-preview`, `gemini-flash-latest`.
-3. **OpenRouter** (respaldo 2): `openrouter/free` (autoenrutado al mejor modelo libre disponible) y `nvidia/nemotron-3.5-super-vl:free`.
-4. **Cerebras** (respaldo 3): se salta automáticamente al tener su clave vacía en `config.py`.
+## Cadena de proveedores LLM, tareas especializadas y optimización de latencia
+
+La gestión multillm está modularizada en `proveedores.py` y `proveedores_cadenas.py`. Soporta 6 proveedores compatibles con la API de OpenAI:
+1. **Groq** (`CLAVE`): Ultrarrápido (`llama-3.3-70b-versatile`, `llama-3.1-8b-instant`, `llama-3.2-11b-vision-preview`).
+2. **Cerebras** (`CLAVE_CEREBRAS`): Inferencia acelerada en chip CS-3 (`llama3.1-8b`, `llama-3.3-70b`). No soporta visión multimodal (se excluye automáticamente de la cadena de visión).
+3. **Google Gemini** (`CLAVE_GOOGLE`): Endpoint compatible OpenAI `v1beta/openai` (`gemini-flash-lite-latest`, `gemini-2.5-flash`, `gemini-2.5-pro`).
+4. **Mistral AI** (`CLAVE_MISTRAL`): Endpoint `https://api.mistral.ai/v1` (`mistral-small-latest` liviano para charla, `codestral-latest` / `mistral-large-latest` potentes para código/razonamiento, `pixtral-12b-2409` para visión).
+5. **NVIDIA NIM** (`CLAVE_NVIDIA`): Endpoint `https://integrate.api.nvidia.com/v1` (`meta/llama-3.1-8b-instruct` liviano para charla, `meta/llama-3.3-70b-instruct` / `deepseek-ai/deepseek-r1` potentes, `meta/llama-3.2-11b-vision-instruct` para visión).
+6. **OpenRouter** (`CLAVE_OPENROUTER`): Enrutador universal (`openrouter/free`, `nvidia/nemotron-3.5-super-vl:free`).
+
+Si una clave de API está vacía en `config.py`, ese proveedor se omite limpiamente con motivo `clave_vacia` sin generar errores ni consumir tiempo.
+
+### Cadenas separadas por tarea (ordenadas de más rápido o potente a menos)
+- **`charla`** (conversación casual, saludos, órdenes directas): modelos livianos primero para máxima velocidad y menor consumo de tokens.
+  `Groq` ➔ `Cerebras` ➔ `Google` ➔ `Mistral` ➔ `NVIDIA` ➔ `OpenRouter`
+- **`razonamiento`** (preguntas analíticas, código, explicaciones profundas, URLs o textos extensos): modelos de alta capacidad primero.
+  `Groq` ➔ `Mistral` ➔ `Google` ➔ `NVIDIA` ➔ `Cerebras` ➔ `OpenRouter`
+- **`vision`** (análisis de pantalla y fotos): exclusivamente proveedores con visión multimodal. Cerebras queda excluido.
+  `Groq` ➔ `Google` ➔ `Mistral` ➔ `NVIDIA` ➔ `OpenRouter`
+- **`voz`** (transcripción de audio a texto): `Groq` con Whisper (`whisper-large-v3-turbo`) y respaldo local offline inmediato con Vosk.
+
+### Clasificador local de dificultad (sin llamadas extra a la red)
+La función `proveedores_cadenas.clasificar_dificultad(texto)` clasifica cada entrada sin gastar red ni tokens:
+- Longitud del mensaje > 140 caracteres.
+- Presencia de código o sintaxis de programación (`def `, `class `, `import `, `{`, `}`, `=>`, `sql`, errores de consola).
+- Presencia de enlaces web (`http://`, `https://`).
+- Palabras clave analíticas o reflexivas (*"piensa bien"*, *"razona"*, *"calcula"*, *"por qué"*, *"analiza"*, *"resuelve"*, *"explica detalladamente"*, *"compara"*).
+Si cumple alguna de estas condiciones se asigna la cadena de `razonamiento`; en caso contrario se asigna la de `charla`.
+
+### Optimización y ahorro de tokens en el prompt
+Para mitigar el consumo de cuotas gratuitas:
+1. **Poda y desduplicación de memoria**: los hechos en `memoria.hechos` se limpian de duplicados y se limitan a los 8 más recientes.
+2. **Compactación de `SOBRE_MI` y reglas**: se eliminaron redundancias sobre español y personalidad entre `SOBRE_MI`, `alma.txt` e instrucciones.
+3. **Historial de conversación acotado**: solo se envían los 8 turnos más recientes (en lugar de 20 o más).
+4. **Métricas en tiempo real**: `cerebro.py` compara el tamaño en tokens del prompt compacto con la base sin podar y registra en `silvestra.log`:
+   `[tiempo] prompt_tokens={tokens_nuevo} anterior={tokens_base} ahorro={pct}%`
+
+### Ejecución especulativa en paralelo (Hedged Parallel Execution)
+En `completar_flujo`:
+- Se lanza el primer proveedor de la cadena (P1).
+- Si P1 no emite su **primer token en 4.0 segundos**, se dispara automáticamente en paralelo el siguiente proveedor disponible (P2).
+- El primero que entregue un token válido gana la carrera; el perdedor es cancelado de inmediato mediante un `threading.Event` (`cancelar_p1` o `cancelar_p2`) para no desperdiciar recursos ni tokens.
+- Se registra en `silvestra.log`: `[tiempo] cerebro ganador={ganador_nombre} ({latencia:.2f}s, superó a {perdedor_nombre})`.
+
+### Enfriamiento por límite de tasa (HTTP 429)
+Cuando una API devuelve error 429:
+- Se lee la cabecera `Retry-After` (si está presente) o se aplica un enfriamiento fijo de 60 segundos (máximo 60 s).
+- El proveedor se marca como no disponible en `_enfriamientos` y se salta en las siguientes peticiones sin intentar la llamada.
+- Si el usuario actualiza o cambia la clave de API en `config.py` en caliente, el enfriamiento se restablece de inmediato.
+
+### Acción `estado_proveedores`
+Silvestra cuenta con la acción `estado_proveedores` registrada en `acciones.py`:
+- Se dispara con frases naturales como: *"cómo van los proveedores"*, *"estado de los proveedores"*, *"qué modelos están activos"*, *"revisa los proveedores"*.
+- Silvestra responde en voz alta indicando los proveedores activos, los que están en pausa temporal por cuota (con los segundos restantes) y los que no tienen clave configurada.
+- En la burbuja flotante muestra un desglose visual con íconos (`✅`, `⏳`, `⚪`) y la lista de cadenas activas por tarea.
 
 ### Cómo simular la caída de Groq para probar el respaldo:
 1. Abre `config.py` y cambia temporalmente tu clave de Groq:

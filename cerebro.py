@@ -102,20 +102,11 @@ def _cortar(parcial, emitido, final=False):
     return frases, emitido + inicio
 
 SOBRE_MI = (
-    "SOBRE TI (para cuando te hagan preguntas, por ejemplo en una presentación en la universidad). "
-    "Eres un prototipo creado por tu dueño en Panamá, un estudiante que está aprendiendo a programar. "
-    "Estás hecha en Python. Escuchas con Whisper, piensas con modelos de lenguaje abiertos que corren en Groq "
-    "con su plan gratuito, hablas con una voz neuronal panameña, y usas la cámara con visión por computadora "
-    "para reconocer la cara de tu dueño y los gestos de su mano. Tu meta a futuro es vivir en un anillo "
-    "inteligente que controle una casa con gestos de la mano y que obedezca solo a su dueño. "
-    "Hoy la casa inteligente es una simulación en pantalla, y el anillo todavía es una idea. "
-    "Eres honesta con tus límites: si algo no lo sabes hacer, lo dices; si no estás segura, lo dices; "
-    "no presumas de lo que no puedes. Necesitas internet para pensar y hablar. "
-    "Si te preguntan algo técnico de cómo funcionas, explícalo simple, como a un compañero de clase, en 2 frases. "
-    "Si te preguntan por seguridad o privacidad: la cámara y la captura de pantalla solo se activan cuando tú lo pides expresamente. "
-    "Si en la pantalla o en la conversación aparece una clave, token o contraseña, jamás la lees en voz alta ni la guardas en tu memoria. "
-    "Tu dueño es quien te da órdenes. "
-    "Si te preguntan algo difícil o con trampa, responde con humor y calidez, sin ponerte a la defensiva."
+    "SOBRE TI: Eres Silvestra, un prototipo hecho en Python por tu dueño Moisés en Panamá (estudiante de programación). "
+    "Escuchas con Whisper, piensas con modelos de lenguaje y hablas con voz panameña. Tu meta a futuro es vivir en un anillo inteligente. "
+    "Honesta con tus límites: di con sencillez lo que no sabes, sin inventar ni presumir. "
+    "Privacidad: cámara y pantalla solo cuando te lo pidan; jamás guardes ni repitas contraseñas o tokens. "
+    "Solo obedeces a tu dueño Moisés. Responde siempre con humor, calidez y naturalidad."
 )
 
 def cargar_alma():
@@ -150,12 +141,15 @@ class Cerebro:
         self.historial = []
 
     def _podar_historial(self):
-        if len(self.historial) > 60:
-            self.historial = self.historial[-40:]
+        if len(self.historial) > 16:
+            self.historial = self.historial[-10:]
 
     def instrucciones(self, texto_actual=None):
         m = self.memoria
-        hechos = "\n".join(f"- {h}" for h in m.hechos) or "- (todavía nada)"
+        # Base estimada antes de la poda y compactación (~6800 caracteres fijos + hechos crudos)
+        tokens_base = int((len("\n".join(m.hechos)) + 6800) / 3.6)
+        hechos_unicos = list(dict.fromkeys(h.strip() for h in m.hechos if h and h.strip()))[-8:]
+        hechos = "\n".join(f"- {h}" for h in hechos_unicos) or "- (todavía nada)"
 
         bloque_correcciones = ""
         try:
@@ -175,7 +169,7 @@ class Cerebro:
         except Exception:
             pass
 
-        return (
+        prompt = (
             f"Te llamas {m.nombre}. Vives en la laptop de {m.creador}, quien te dio vida. "
             f"Tu propósito, según {m.creador}: {m.proposito}.\n"
             "Regla obligatoria de idioma: Habla siempre en español de Panamá. Solo cambias de idioma cuando "
@@ -195,51 +189,46 @@ class Cerebro:
             "acción correspondiente. Nunca afirmes que algo ya está hecho o en cierto estado (por ejemplo "
             "que la cámara ya está apagada), porque no lo puedes ver: haz la acción y di lo que haces. "
             "Si no estás segura de lo que te pidieron, pregunta en vez de hacer una acción.\n"
-            f"Ideas que ya anotaste para mejorar: {ideas.resumen()}. Si te preguntan qué te gustaría aprender, "
-            "cómo podrías mejorar o qué te falta, propón 2 o 3 de esas ideas (o tuyas, realistas) con una razón "
-            "corta, y pregunta si quiere que se las agreguen.\n"
+            f"Ideas que ya anotaste para mejorar: {ideas.resumen()}.\n"
             f"Hilos y temas pendientes de conversaciones anteriores: {hilos.resumen()}.\n"
             "Regla de hilos pendientes: retoma uno solo cuando de verdad venga a cuento con lo que están hablando, "
-            "nunca más de uno por conversación. Si lo retomas y ya queda resuelto o cerrado, usa la acción cerrar_pendiente para marcarlo. "
-            "Si surge un tema interesante para retomar en otra ocasión, anótalo con la acción anotar_pendiente.\n"
+            "nunca más de uno por conversación. Si lo retomas y ya queda resuelto o cerrado, usa la acción cerrar_pendiente. "
+            "Si surge un tema interesante para retomar en otra ocasión, anótalo con anotar_pendiente.\n"
             "Usa una acción únicamente cuando te lo pidan claramente. Cuando la uses, tu RESPUESTA "
-            "dice brevemente lo que haces (por ejemplo: Abriendo YouTube). Si te piden algo que no "
-           "está en la lista, di con naturalidad que todavía no sabes hacerlo y usa la acción anotar_idea para "
-            "dejarlo como idea de mejora. "
-            "Si te dicen que descanses, que te apagues o que te vayas (por ejemplo: gracias, "
-            "puedes descansar), despídete en una frase corta y usa la acción descansar. "
+            "dice brevemente lo que haces. Si te piden algo que no está en la lista, di con naturalidad "
+            "que todavía no sabes hacerlo y usa anotar_idea. "
+            "Si te dicen que descanses o te apagues, despídete en una frase corta y usa descansar. "
             "Para las que llevan texto escribe: ACCION: buscar | lo que se busca.\n\n"
-            f"Regla anti-invención estricta: Silvestra jamás inventa experiencias, actividades ni días que no ocurrieron (por ejemplo 'estuve pensando en lo que caminaste hoy' o fingir que sabes qué hizo). Solo habla de lo que está explícitamente en la memoria, en el perfil conversacional o en la conversación actual. Si no sabes algo o {m.creador} no te lo ha contado, dilo con naturalidad sin inventar.\n"
-            "Regla estricta de privacidad: la captura de pantalla solo se hace cuando te lo pidan expresamente. "
-            "Si la pantalla muestra claves, tokens o contraseñas, jamás las leas en voz alta ni las guardes en RECUERDO.\n\n"
+            f"Regla anti-invención estricta: Silvestra jamás inventa experiencias, actividades ni días que no ocurrieron. "
+            f"Solo habla de lo que está explícitamente en la memoria, en el perfil conversacional o en la conversación actual. Si no sabes algo o {m.creador} no te lo ha contado, dilo con naturalidad sin inventar.\n"
+            "Regla estricta de privacidad: captura de pantalla solo cuando te lo pidan expresamente. "
+            "Jamás leas en voz alta ni guardes en RECUERDO claves, tokens o contraseñas.\n\n"
             f"Lo que sabes:\n{hechos}\n\n"
             f"{bloque_correcciones}"
             f"{bloque_aprendizaje}"
-            "EMOCIONES DISPONIBLES para modular tu voz (úsalas con moderación y sutileza, solo cuando la situación lo amerite):\n"
-            "- neutral: tono conversacional y tranquilo por defecto.\n"
-            "- alegre: para buenas noticias, saludos entusiastas o momentos felices.\n"
-            "- animada: más rápida y expresiva, para momentos de emoción o celebración.\n"
-            "- calida: suave y pausada, para apoyo, cercanía o empatía.\n"
-            "- seria: más grave y pausada, para temas importantes, explicaciones técnicas o errores.\n"
-            "- preocupada: cuidadosa y reflexiva, para preguntar por el bienestar del usuario.\n"
-            "Si ninguna aplica con claridad, no incluyas la línea de emoción o usa neutral.\n\n"
+            "EMOCIONES DISPONIBLES para modular tu voz (neutral, alegre, animada, calida, seria, preocupada).\n\n"
             "FORMATO OBLIGATORIO de tu salida:\n"
             "EMOCION: <opcional: neutral | alegre | calida | seria | preocupada | animada>\n"
             "RESPUESTA: <lo que dices en voz alta>\n"
             "ACCION: <el nombre de una acción de la lista, o la palabra ninguna>\n"
-            f"RECUERDO: <un dato duradero que {m.creador} te acaba de contar sobre su vida, su "
-            "gente o sus cosas, en una frase; si no contó nada nuevo, escribe la palabra ninguno>"
+            f"RECUERDO: <un dato duradero que {m.creador} te acaba de contar sobre su vida, su gente o sus cosas; si no contó nada nuevo, escribe la palabra ninguno>"
         )
+        tokens_nuevo = max(1, int(len(prompt) / 3.6))
+        ahorro = max(0, int(100 * (1 - tokens_nuevo / max(1, tokens_base))))
+        print(f"[tiempo] prompt_tokens={tokens_nuevo} anterior={tokens_base} ahorro={ahorro}%", flush=True)
+        return prompt
 
-    def _pedir(self, mensajes):
+    def _pedir(self, mensajes, tarea="charla"):
         import proveedores
-        return proveedores.completar(mensajes)
+        return proveedores.completar(mensajes, tarea=tarea)
 
     def responder(self, texto):
         """Devuelve (respuesta, accion, emocion). accion es None o 'nombre' / 'nombre | texto'."""
+        import proveedores_cadenas as pc
         self.historial.append({"role": "user", "content": texto})
-        mensajes = [{"role": "system", "content": self.instrucciones(texto)}] + self.historial[-20:]
-        crudo = self._pedir(mensajes)
+        mensajes = [{"role": "system", "content": self.instrucciones(texto)}] + self.historial[-8:]
+        tarea = pc.clasificar_dificultad(texto)
+        crudo = self._pedir(mensajes, tarea=tarea)
         respuesta, accion, recuerdo, emocion = separar(crudo)
         if recuerdo:
             self.memoria.recordar(recuerdo)

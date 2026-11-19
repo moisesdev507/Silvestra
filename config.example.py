@@ -18,7 +18,15 @@ CLAVE_OPENROUTER = ""
 # Consigue tu clave gratis en: https://cloud.cerebras.ai/
 CLAVE_CEREBRAS = ""
 
-# 5. Telegram Bot (Para hablar con Silvestra desde el celular - Opcional)
+# 5. Mistral AI (Excelente comprensión de español y modelos potentes - Opcional)
+# Consigue tu clave gratis en: https://console.mistral.ai/ (Tier de experimentación)
+CLAVE_MISTRAL = ""
+
+# 6. NVIDIA NIM (Acceso ultrarrápido a modelos de última generación - Opcional)
+# Consigue tu clave y 1000 créditos gratis en: https://build.nvidia.com/
+CLAVE_NVIDIA = ""
+
+# 7. Telegram Bot (Para hablar con Silvestra desde el celular - Opcional)
 # Crea tu bot gratis con @BotFather en Telegram y copia el token aquí
 TOKEN_TELEGRAM = ""
 
@@ -35,13 +43,16 @@ MODELOS_VISION = [
 
 ARCHIVO_MEMORIA = "memoria.json"
 
-# Cadena ordenada de proveedores compatibles con OpenAI
+# Proveedores compatibles con OpenAI con modelos organizados por tarea
 PROVEEDORES = [
     {
         "nombre": "Groq",
         "base_url": "https://api.groq.com/openai/v1",
         "clave": CLAVE,
         "modelos": MODELOS,
+        "modelos_charla": ["openai/gpt-oss-20b", "llama-3.1-8b-instant"],
+        "modelos_razonamiento": ["openai/gpt-oss-120b", "llama-3.3-70b-versatile"],
+        "modelos_vision": MODELOS_VISION,
     },
     {
         "nombre": "Google",
@@ -52,6 +63,43 @@ PROVEEDORES = [
             "gemini-3-flash-preview",
             "gemini-flash-latest",
         ],
+        "modelos_charla": ["gemini-flash-lite-latest", "gemini-flash-latest"],
+        "modelos_razonamiento": ["gemini-3-flash-preview", "gemini-flash-latest"],
+        "modelos_vision": ["gemini-flash-lite-latest", "gemini-flash-latest"],
+    },
+    {
+        "nombre": "Mistral",
+        "base_url": "https://api.mistral.ai/v1",
+        "clave": CLAVE_MISTRAL,
+        "modelos": [
+            "mistral-small-latest",
+            "mistral-large-latest",
+            "codestral-latest",
+        ],
+        "modelos_charla": ["mistral-small-latest", "open-mistral-nemo"],
+        "modelos_razonamiento": ["codestral-latest", "mistral-large-latest"],
+        "modelos_vision": ["pixtral-12b-2409"],
+    },
+    {
+        "nombre": "NVIDIA",
+        "base_url": "https://integrate.api.nvidia.com/v1",
+        "clave": CLAVE_NVIDIA,
+        "modelos": [
+            "meta/llama-3.1-8b-instruct",
+            "meta/llama-3.3-70b-instruct",
+        ],
+        "modelos_charla": ["meta/llama-3.1-8b-instruct"],
+        "modelos_razonamiento": ["meta/llama-3.3-70b-instruct", "deepseek-ai/deepseek-r1"],
+        "modelos_vision": ["meta/llama-3.2-11b-vision-instruct"],
+    },
+    {
+        "nombre": "Cerebras",
+        "base_url": "https://api.cerebras.ai/v1",
+        "clave": CLAVE_CEREBRAS,
+        "modelos": ["llama3.1-8b"],
+        "modelos_charla": ["llama3.1-8b"],
+        "modelos_razonamiento": ["llama-3.3-70b", "llama3.1-8b"],
+        "modelos_vision": [],
     },
     {
         "nombre": "OpenRouter",
@@ -61,12 +109,9 @@ PROVEEDORES = [
             "openrouter/free",
             "nvidia/nemotron-3.5-super-vl:free",
         ],
-    },
-    {
-        "nombre": "Cerebras",
-        "base_url": "https://api.cerebras.ai/v1",
-        "clave": CLAVE_CEREBRAS,
-        "modelos": ["llama3.1-8b"],
+        "modelos_charla": ["openrouter/free"],
+        "modelos_razonamiento": ["nvidia/nemotron-3.5-super-vl:free", "openrouter/free"],
+        "modelos_vision": ["nvidia/nemotron-3.5-super-vl:free"],
     },
 ]
 
