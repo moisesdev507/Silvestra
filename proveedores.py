@@ -48,12 +48,18 @@ def proveedores_disponibles(tarea="charla"):
     return pc.proveedores_disponibles(tarea, _enfriamientos, _claves_anteriores)
 
 
+def _lanzar_reintento(tarea):
+    pc.lanzar_reintento_segundo_plano(proveedores_disponibles, tarea)
+
+
 def completar(mensajes, tarea="charla", timeout=20):
     """Llamada síncrona sin streaming seleccionando la cadena según la tarea."""
     global _aviso_respaldo_pendiente, _ultimo_proveedor
     candidatos = proveedores_disponibles(tarea)
     if not candidatos:
-        raise RuntimeError("No hay proveedores de IA disponibles (claves vacías o en enfriamiento)")
+        _registrar("cerebro sin proveedores disponibles: activando modo de emergencia local")
+        _lanzar_reintento(tarea)
+        return pc.respuesta_emergencia_local()
 
     ultimo_error = None
     for prov in candidatos:
@@ -91,7 +97,9 @@ def completar(mensajes, tarea="charla", timeout=20):
         if nombre == "Groq" and _ultimo_proveedor == "Groq":
             _aviso_respaldo_pendiente = True
 
-    raise ultimo_error or RuntimeError("Todos los proveedores fallaron")
+    _registrar("cerebro todos los proveedores fallaron: activando modo de emergencia local")
+    _lanzar_reintento(tarea)
+    return pc.respuesta_emergencia_local()
 
 
 def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_cancelar, cola_salida):
@@ -181,7 +189,11 @@ def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=4.0):
 
     candidatos = proveedores_disponibles(tarea)
     if not candidatos:
-        raise RuntimeError(f"No hay proveedores disponibles para tarea '{tarea}'")
+        _registrar("cerebro sin proveedores para streaming: activando modo de emergencia local con voz")
+        if callable(al_frase):
+            al_frase(pc.FRASE_EMERGENCIA_LOCAL)
+        _lanzar_reintento(tarea)
+        return pc.respuesta_emergencia_local()
 
     idx = 0
     while idx < len(candidatos):
@@ -320,7 +332,11 @@ def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=4.0):
         _ultimo_proveedor = nombre_g
         return forzar_utf8(crudo)
 
-    raise RuntimeError(f"Todos los proveedores de la cadena '{tarea}' fallaron")
+    _registrar("cerebro todos los proveedores en streaming fallaron: activando modo de emergencia local con voz")
+    if callable(al_frase):
+        al_frase(pc.FRASE_EMERGENCIA_LOCAL)
+    _lanzar_reintento(tarea)
+    return pc.respuesta_emergencia_local()
 
 
 def accion_estado_proveedores(app):

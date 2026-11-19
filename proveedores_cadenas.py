@@ -12,11 +12,52 @@ import time
 import config
 
 CADENAS_ORDEN = {
-    "charla": ["Groq", "Cerebras", "Cloudflare", "Google", "Mistral", "NVIDIA", "OpenRouter", "Cohere"],
-    "razonamiento": ["Groq", "Mistral", "Cloudflare", "Google", "NVIDIA", "Cerebras", "OpenRouter", "Cohere"],
-    "vision": ["Groq", "Cloudflare", "Google", "Mistral", "NVIDIA", "OpenRouter"],
+    "charla": ["Groq", "Cerebras", "Cloudflare", "Google", "Mistral", "NVIDIA", "OpenRouter", "GitHub", "SambaNova", "Cohere"],
+    "razonamiento": ["Groq", "Mistral", "Cloudflare", "Google", "NVIDIA", "Cerebras", "OpenRouter", "GitHub", "SambaNova", "Cohere"],
+    "vision": ["Groq", "Cloudflare", "Google", "Mistral", "NVIDIA", "OpenRouter", "GitHub"],
     "voz": ["Groq"],
 }
+
+FRASE_EMERGENCIA_LOCAL = "Dame un segundito que se me fue la señal de mis cerebros, pero ya estoy reintentando reconectarme."
+
+
+def respuesta_emergencia_local():
+    """Devuelve una respuesta local sin red en formato completo de Silvestra."""
+    return (
+        "EMOCION: calida\n"
+        f"RESPUESTA: {FRASE_EMERGENCIA_LOCAL}\n"
+        "ACCION: ninguna\n"
+        "RECUERDO: ninguno"
+    )
+
+
+def lanzar_reintento_segundo_plano(obtener_cands_fn, tarea):
+    """Reintenta en segundo plano tras una pausa para reconectar con los proveedores."""
+    import threading
+    import requests
+
+    def _reintento():
+        time.sleep(8.0)
+        print(f"[tiempo] reintento en segundo plano: verificando recuperación para '{tarea}'", flush=True)
+        try:
+            cands = obtener_cands_fn(tarea)
+            if cands:
+                p = cands[0]
+                m = (p.get("modelos_activos") or p.get("modelos", []))[0]
+                url = f"{p['base_url'].rstrip('/')}/chat/completions"
+                headers = {"Authorization": f"Bearer {p['clave']}", "Content-Type": "application/json"}
+                r = requests.post(
+                    url,
+                    headers=headers,
+                    json={"model": m, "messages": [{"role": "user", "content": "ping"}]},
+                    timeout=5.0,
+                )
+                if r.status_code == 200:
+                    print(f"[tiempo] reintento en segundo plano: conexión restablecida con {p['nombre']} ({m})", flush=True)
+        except Exception as e:
+            print(f"[tiempo] reintento en segundo plano: aún no disponible ({e})", flush=True)
+
+    threading.Thread(target=_reintento, daemon=True).start()
 
 _PATRON_RAZONAMIENTO = re.compile(
     r"\b(piensa|piensa bien|razona|analiza|reflexiona|detalla|explica a fondo|paso a paso|"
@@ -93,6 +134,8 @@ def proveedores_disponibles(tarea, enfriamientos, claves_anteriores):
         "NVIDIA": getattr(config, "CLAVE_NVIDIA", ""),
         "Cerebras": getattr(config, "CLAVE_CEREBRAS", ""),
         "OpenRouter": getattr(config, "CLAVE_OPENROUTER", ""),
+        "GitHub": getattr(config, "CLAVE_GITHUB", ""),
+        "SambaNova": getattr(config, "CLAVE_SAMBANOVA", ""),
         "Cohere": getattr(config, "CLAVE_COHERE", ""),
     }
     for n, clv in mapa_claves.items():
@@ -131,6 +174,10 @@ def refrescar_clave_proveedor(prov_dict):
         prov_dict["clave"] = getattr(config, "CLAVE_CEREBRAS", "")
     elif nombre == "OpenRouter":
         prov_dict["clave"] = getattr(config, "CLAVE_OPENROUTER", "")
+    elif nombre == "GitHub":
+        prov_dict["clave"] = getattr(config, "CLAVE_GITHUB", "")
+    elif nombre == "SambaNova":
+        prov_dict["clave"] = getattr(config, "CLAVE_SAMBANOVA", "")
     elif nombre == "Cloudflare":
         clv = getattr(config, "CLAVE_CLOUDFLARE", "")
         acc_id = getattr(config, "ID_CUENTA_CLOUDFLARE", "")
@@ -208,7 +255,10 @@ def reporte_estado_proveedores(enfriamientos):
         prov_map[copia["nombre"]] = copia
 
     estados = {}
-    todos = ["Groq", "Cloudflare", "Google", "Mistral", "NVIDIA", "Cerebras", "OpenRouter", "Cohere"]
+    todos = [
+        "Groq", "Cloudflare", "Google", "Mistral", "NVIDIA",
+        "Cerebras", "OpenRouter", "GitHub", "SambaNova", "Cohere"
+    ]
     activos_nombres = []
     enfriando_nombres = []
     sin_clave_nombres = []
@@ -281,6 +331,7 @@ def reporte_estado_proveedores(enfriamientos):
 
     lineas.append("• Voz a texto: Groq (Whisper) con respaldo local Vosk")
     lineas.append("• Respaldo de emergencia: Cohere (Trial 1,000 llamadas/mes)")
+    lineas.append("• Respaldo local sin red: Activo (frase natural y reintento en segundo plano)")
 
     texto_burbuja = "\n".join(lineas)
     return texto_voz, texto_burbuja

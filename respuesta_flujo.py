@@ -11,7 +11,15 @@ def responder_flujo(cerebro, texto, al_frase):
     mensajes = [{"role": "system", "content": cerebro.instrucciones(texto)}] + cerebro.historial[-8:]
 
     tarea = pc.clasificar_dificultad(texto)
-    crudo = proveedores.completar_flujo(mensajes, al_frase, tarea=tarea)
+    try:
+        crudo = proveedores.completar_flujo(mensajes, al_frase, tarea=tarea)
+    except Exception as e:
+        print(f"[respuesta_flujo] Excepción en streaming: {e}. Usando respuesta local.", flush=True)
+        try:
+            al_frase(pc.FRASE_EMERGENCIA_LOCAL)
+        except Exception:
+            pass
+        crudo = pc.respuesta_emergencia_local()
 
     respuesta, accion, recuerdo, emocion = separar(crudo)
     if recuerdo:

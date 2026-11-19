@@ -228,7 +228,11 @@ class Cerebro:
         self.historial.append({"role": "user", "content": texto})
         mensajes = [{"role": "system", "content": self.instrucciones(texto)}] + self.historial[-8:]
         tarea = pc.clasificar_dificultad(texto)
-        crudo = self._pedir(mensajes, tarea=tarea)
+        try:
+            crudo = self._pedir(mensajes, tarea=tarea)
+        except Exception as e:
+            print(f"[cerebro] Excepción no controlada: {e}. Usando respuesta local.", flush=True)
+            crudo = pc.respuesta_emergencia_local()
         respuesta, accion, recuerdo, emocion = separar(crudo)
         if recuerdo:
             self.memoria.recordar(recuerdo)

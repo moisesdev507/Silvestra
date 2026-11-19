@@ -31,11 +31,19 @@ CLAVE_NVIDIA = ""
 CLAVE_CLOUDFLARE = ""
 ID_CUENTA_CLOUDFLARE = ""
 
-# 8. Cohere (Solo como respaldo de emergencia - Plan de prueba de 1,000 llamadas al mes, no comercial)
+# 8. GitHub Models (Modelos OpenAI, Meta y Microsoft con token de GitHub - Opcional)
+# Consigue tu token en: https://github.com/settings/tokens (Personal Access Token)
+CLAVE_GITHUB = ""
+
+# 9. SambaNova Cloud (Inferencia acelerada ultra rápida con modelos Llama y Qwen - Opcional)
+# Consigue tu clave gratis en: https://cloud.sambanova.ai/apis
+CLAVE_SAMBANOVA = ""
+
+# 10. Cohere (Solo como respaldo de emergencia - Plan de prueba de 1,000 llamadas al mes, no comercial)
 # Consigue tu Trial API Key en: https://dashboard.cohere.com/api-keys
 CLAVE_COHERE = ""
 
-# 9. Telegram Bot (Para hablar con Silvestra desde el celular - Opcional)
+# 11. Telegram Bot (Para hablar con Silvestra desde el celular - Opcional)
 # Crea tu bot gratis con @BotFather en Telegram y copia el token aquí
 TOKEN_TELEGRAM = ""
 
@@ -187,6 +195,50 @@ PROVEEDORES = [
             "google/gemini-2.0-flash-exp:free",
             "openrouter/free",
         ],
+    },
+    {
+        "nombre": "GitHub",
+        "base_url": "https://models.github.ai/inference",
+        "clave": CLAVE_GITHUB,
+        "modelos": [
+            "openai/gpt-4o-mini",
+            "meta/llama-3.1-8b-instruct",
+            "openai/gpt-4o",
+            "meta/llama-3.3-70b-instruct",
+        ],
+        "modelos_charla": [
+            "openai/gpt-4o-mini",
+            "meta/llama-3.1-8b-instruct",
+        ],
+        "modelos_razonamiento": [
+            "openai/gpt-4o",
+            "meta/llama-3.3-70b-instruct",
+            "openai/gpt-4o-mini",
+        ],
+        "modelos_vision": [
+            "openai/gpt-4o",
+            "openai/gpt-4o-mini",
+        ],
+    },
+    {
+        "nombre": "SambaNova",
+        "base_url": "https://api.sambanova.ai/v1",
+        "clave": CLAVE_SAMBANOVA,
+        "modelos": [
+            "Meta-Llama-3.1-8B-Instruct",
+            "Meta-Llama-3.3-70B-Instruct",
+            "Qwen2.5-72B-Instruct",
+        ],
+        "modelos_charla": [
+            "Meta-Llama-3.1-8B-Instruct",
+            "Meta-Llama-3.3-70B-Instruct",
+        ],
+        "modelos_razonamiento": [
+            "Meta-Llama-3.3-70B-Instruct",
+            "Qwen2.5-72B-Instruct",
+            "Meta-Llama-3.1-8B-Instruct",
+        ],
+        "modelos_vision": [],
     },
     {
         "nombre": "Cohere",

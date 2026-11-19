@@ -92,7 +92,7 @@ El modo escenario se activa automáticamente al pedirle a Silvestra que se prese
 
 ## Cadena de proveedores LLM, tareas especializadas y optimización de latencia
 
-La gestión multillm está modularizada en `proveedores.py` y `proveedores_cadenas.py`. Soporta 8 proveedores compatibles con la API de OpenAI:
+La gestión multillm está modularizada en `proveedores.py` y `proveedores_cadenas.py`. Soporta 10 proveedores compatibles con la API de OpenAI:
 1. **Groq** (`CLAVE`): Ultrarrápido con múltiples modelos independientes (`llama-3.1-8b-instant`, `llama-3.3-70b-versatile`, `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `llama-3.2-11b-vision-preview`).
 2. **Cloudflare Workers AI** (`CLAVE_CLOUDFLARE`, `ID_CUENTA_CLOUDFLARE`): Endpoint compatible OpenAI `https://api.cloudflare.com/client/v4/accounts/{id}/ai/v1`. Modelos Llama gratuitos (10,000 Neurons/día gratis): `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (más potente), `@cf/meta/llama-3.1-8b-instruct` (liviano) y `@cf/meta/llama-3.2-11b-vision-instruct` (visión).
 3. **Google Gemini** (`CLAVE_GOOGLE`): Endpoint compatible OpenAI `v1beta/openai` con cupos independientes por modelo (`gemini-flash-lite-latest`, `gemini-2.5-flash`, `gemini-flash-latest`, `gemini-3-flash-preview`).
@@ -100,18 +100,27 @@ La gestión multillm está modularizada en `proveedores.py` y `proveedores_caden
 5. **NVIDIA NIM** (`CLAVE_NVIDIA`): Endpoint `https://integrate.api.nvidia.com/v1` (`meta/llama-3.1-8b-instruct` liviano para charla, `meta/llama-3.3-70b-instruct` / `deepseek-ai/deepseek-r1` potentes, `meta/llama-3.2-11b-vision-instruct` para visión).
 6. **Cerebras** (`CLAVE_CEREBRAS`): Inferencia acelerada en chip CS-3 (`llama3.1-8b`, `llama-3.3-70b`). No soporta visión multimodal (se excluye automáticamente de la cadena de visión).
 7. **OpenRouter** (`CLAVE_OPENROUTER`): Enrutador con múltiples modelos `:free` independientes (`openrouter/free`, `meta-llama/llama-3.1-8b-instruct:free`, `meta-llama/llama-3.3-70b-instruct:free`, `google/gemini-2.0-flash-exp:free`, `qwen/qwen-2.5-72b-instruct:free`, `deepseek/deepseek-r1:free`, `nvidia/nemotron-3.5-super-vl:free`).
-8. **Cohere** (`CLAVE_COHERE`): Respaldo de emergencia al final de las cadenas (`command-r-08-2024`, `command-r-plus-08-2024`, `command-r`). Su plan de prueba permite 1,000 llamadas al mes (20 RPM, no comercial). Excluido de visión.
+8. **GitHub Models** (`CLAVE_GITHUB`): Endpoint `https://models.github.ai/inference` con token de GitHub (`openai/gpt-4o-mini`, `meta/llama-3.1-8b-instruct`, `openai/gpt-4o`, `meta/llama-3.3-70b-instruct`). Soporta visión multimodal con GPT-4o.
+9. **SambaNova Cloud** (`CLAVE_SAMBANOVA`): Endpoint `https://api.sambanova.ai/v1` (`Meta-Llama-3.1-8B-Instruct`, `Meta-Llama-3.3-70B-Instruct`, `Qwen2.5-72B-Instruct`). Inferencia ultra veloz de modelos abiertos.
+10. **Cohere** (`CLAVE_COHERE`): Respaldo de emergencia al final de las cadenas (`command-r-08-2024`, `command-r-plus-08-2024`, `command-r`). Su plan de prueba permite 1,000 llamadas al mes (20 RPM, no comercial). Excluido de visión.
 
 Si una clave de API está vacía en `config.py` (o falta el Account ID en Cloudflare), ese proveedor se omite limpiamente con motivo `clave_vacia` sin generar errores ni consumir tiempo.
 
 ### Cadenas separadas por tarea (ordenadas de más rápido o potente a menos)
 - **`charla`** (conversación casual, saludos, órdenes directas): modelos livianos primero para máxima velocidad y menor consumo de tokens.
-  `Groq` ➔ `Cerebras` ➔ `Cloudflare` ➔ `Google` ➔ `Mistral` ➔ `NVIDIA` ➔ `OpenRouter` ➔ `Cohere` (emergencia)
+  `Groq` ➔ `Cerebras` ➔ `Cloudflare` ➔ `Google` ➔ `Mistral` ➔ `NVIDIA` ➔ `OpenRouter` ➔ `GitHub` ➔ `SambaNova` ➔ `Cohere` (emergencia)
 - **`razonamiento`** (preguntas analíticas, código, explicaciones profundas, URLs o textos extensos): modelos de alta capacidad primero.
-  `Groq` ➔ `Mistral` ➔ `Cloudflare` ➔ `Google` ➔ `NVIDIA` ➔ `Cerebras` ➔ `OpenRouter` ➔ `Cohere` (emergencia)
-- **`vision`** (análisis de pantalla y fotos): exclusivamente proveedores con visión multimodal. Cerebras y Cohere quedan excluidos.
-  `Groq` ➔ `Cloudflare` ➔ `Google` ➔ `Mistral` ➔ `NVIDIA` ➔ `OpenRouter`
+  `Groq` ➔ `Mistral` ➔ `Cloudflare` ➔ `Google` ➔ `NVIDIA` ➔ `Cerebras` ➔ `OpenRouter` ➔ `GitHub` ➔ `SambaNova` ➔ `Cohere` (emergencia)
+- **`vision`** (análisis de pantalla y fotos): exclusivamente proveedores con visión multimodal. Cerebras, SambaNova y Cohere quedan excluidos.
+  `Groq` ➔ `Cloudflare` ➔ `Google` ➔ `Mistral` ➔ `NVIDIA` ➔ `OpenRouter` ➔ `GitHub`
 - **`voz`** (transcripción de audio a texto): `Groq` con Whisper (`whisper-large-v3-turbo`) y respaldo local offline inmediato con Vosk.
+
+### Modo de emergencia local sin red (Silvestra nunca calla)
+Si todos los proveedores configurados fallan, sufren límite de tasa (429) o no hay conexión a internet:
+1. Silvestra **nunca se queda en silencio ni rompe el programa**.
+2. Responde de inmediato con una frase corta, cálida y natural en español de Panamá sintetizada por su voz local (`edge-tts` o SAPI de Windows):
+   *"Dame un segundito que se me fue la señal de mis cerebros, pero ya estoy reintentando reconectarme."*
+3. En un hilo secundario independiente (`_lanzar_reintento`), ejecuta una verificación periódica no bloqueante para restablecer la conexión tan pronto como la red o las cuotas se recuperen.
 
 ### Cupos independientes por modelo y conmutación dentro de la misma cuenta
 Cada modelo de cada proveedor se gestiona como un cupo independiente:
