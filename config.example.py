@@ -71,18 +71,26 @@ PROVEEDORES = [
         "nombre": "Groq",
         "base_url": "https://api.groq.com/openai/v1",
         "clave": CLAVE,
-        "modelos": MODELOS,
+        "modelos": [
+            "llama-3.1-8b-instant",
+            "llama-3.3-70b-versatile",
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b",
+            "qwen/qwen3.8-27b",
+        ],
         "modelos_charla": [
             "llama-3.1-8b-instant",
             "openai/gpt-oss-20b",
             "llama-3.3-70b-versatile",
             "openai/gpt-oss-120b",
+            "qwen/qwen3.8-27b",
         ],
         "modelos_razonamiento": [
             "llama-3.3-70b-versatile",
             "openai/gpt-oss-120b",
             "llama-3.1-8b-instant",
             "openai/gpt-oss-20b",
+            "qwen/qwen3.8-27b",
         ],
         "modelos_vision": MODELOS_VISION,
     },
@@ -114,12 +122,15 @@ PROVEEDORES = [
             "gemini-flash-lite-latest",
             "gemini-2.5-flash",
             "gemini-flash-latest",
+            "gemini-2.0-flash",
             "gemini-3-flash-preview",
         ],
         "modelos_charla": [
             "gemini-flash-lite-latest",
             "gemini-2.5-flash",
             "gemini-flash-latest",
+            "gemini-2.0-flash",
+            "gemini-3-flash-preview",
         ],
         "modelos_razonamiento": [
             "gemini-2.5-flash",
@@ -152,10 +163,23 @@ PROVEEDORES = [
         "clave": CLAVE_NVIDIA,
         "modelos": [
             "meta/llama-3.1-8b-instruct",
+            "nvidia/llama-3.1-nemotron-70b-instruct",
             "meta/llama-3.3-70b-instruct",
+            "qwen/qwen2.5-72b-instruct",
+            "deepseek-ai/deepseek-r1",
         ],
-        "modelos_charla": ["meta/llama-3.1-8b-instruct"],
-        "modelos_razonamiento": ["meta/llama-3.3-70b-instruct", "deepseek-ai/deepseek-r1"],
+        "modelos_charla": [
+            "meta/llama-3.1-8b-instruct",
+            "nvidia/llama-3.1-nemotron-70b-instruct",
+            "meta/llama-3.3-70b-instruct",
+            "qwen/qwen2.5-72b-instruct",
+        ],
+        "modelos_razonamiento": [
+            "meta/llama-3.3-70b-instruct",
+            "deepseek-ai/deepseek-r1",
+            "nvidia/llama-3.1-nemotron-70b-instruct",
+            "meta/llama-3.1-70b-instruct",
+        ],
         "modelos_vision": ["meta/llama-3.2-11b-vision-instruct"],
     },
     {
@@ -174,15 +198,20 @@ PROVEEDORES = [
         "modelos": [
             "openrouter/free",
             "meta-llama/llama-3.1-8b-instruct:free",
-            "meta-llama/llama-3.3-70b-instruct:free",
             "google/gemini-2.0-flash-exp:free",
+            "nvidia/nemotron-3.5-lightning:free",
+            "meta-llama/llama-3.3-70b-instruct:free",
             "nvidia/nemotron-3.5-super-vl:free",
+            "deepseek/deepseek-r1:free",
+            "qwen/qwen-2.5-72b-instruct:free",
         ],
         "modelos_charla": [
             "openrouter/free",
             "meta-llama/llama-3.1-8b-instruct:free",
             "google/gemini-2.0-flash-exp:free",
+            "nvidia/nemotron-3.5-lightning:free",
             "meta-llama/llama-3.3-70b-instruct:free",
+            "nvidia/nemotron-3.5-super-vl:free",
         ],
         "modelos_razonamiento": [
             "meta-llama/llama-3.3-70b-instruct:free",
@@ -260,6 +289,24 @@ PROVEEDORES = [
         "modelos_vision": [],
     },
 ]
+
+# -------------------------------------------------------------------------
+# PROVEEDORES ADICIONALES (PROVEEDORES_EXTRA)
+# Puedes añadir cualquier proveedor compatible con OpenAI sin tocar código.
+# Silvestra los cargará automáticamente al final de las cadenas con enfriamiento
+# independiente por cada modelo.
+#
+# Formato requerido:
+# PROVEEDORES_EXTRA = [
+#     {
+#         "nombre": "MiProveedor",
+#         "url": "https://api.miproveedor.com/v1",
+#         "clave": "tu_clave_aqui",
+#         "modelos": ["modelo-1", "modelo-2"]
+#     }
+# ]
+# -------------------------------------------------------------------------
+PROVEEDORES_EXTRA = []
 
 # Colores de la interfaz gráfica (PySide6 / cara flotante)
 TRANSPARENTE = "#ff00ff"

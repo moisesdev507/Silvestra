@@ -129,6 +129,20 @@ Cada modelo de cada proveedor se gestiona como un cupo independiente:
 3. **Salto de proveedor**: solo cuando todos los modelos disponibles de ese proveedor están en enfriamiento o fallan, se conmuta al siguiente proveedor de la cadena.
 4. **Visibilidad en el estado**: la acción `estado_proveedores` indica cuántos modelos están activos para cada proveedor (por ejemplo: `✅ Groq: Activo (3/4 modelos)`). Si el usuario actualiza una clave en `config.py`, se restablece el enfriamiento del proveedor y de todos sus modelos.
 
+### Proveedores adicionales sin tocar código (`PROVEEDORES_EXTRA`)
+Puedes añadir cualquier proveedor compatible con OpenAI directamente en `config.py` en la lista `PROVEEDORES_EXTRA`:
+```python
+PROVEEDORES_EXTRA = [
+    {
+        "nombre": "MiProveedor",
+        "url": "https://api.miproveedor.com/v1",
+        "clave": "tu_clave_aqui",
+        "modelos": ["modelo-1", "modelo-2"]
+    }
+]
+```
+`proveedores_cadenas.py` los detecta y carga automáticamente al final de las cadenas (antes del respaldo de emergencia de Cohere), aplicando enfriamiento independiente por cada modelo y reiniciando el cooldown si cambias la clave, sin necesidad de modificar el código del sistema.
+
 ### Clasificador local de dificultad (sin llamadas extra a la red)
 La función `proveedores_cadenas.clasificar_dificultad(texto)` clasifica cada entrada sin gastar red ni tokens:
 - Longitud del mensaje > 140 caracteres.

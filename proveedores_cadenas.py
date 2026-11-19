@@ -1,11 +1,4 @@
-"""Cadenas de proveedores LLM por tarea, clasificador de dificultad y estado.
-
-Separa las cadenas en:
-(a) charla: modelo liviano primero para responder rápido y gastar pocos tokens.
-(b) razonamiento: modelos potentes primero para código, análisis y preguntas complejas.
-(c) vision: solo proveedores con soporte de imágenes (Groq, Google, Mistral, NVIDIA, OpenRouter).
-(d) voz: reconocimiento de voz con Whisper y respaldo local Vosk.
-"""
+"""Cadenas de proveedores LLM por tarea, clasificador de dificultad y estado."""
 import re
 import time
 
@@ -147,6 +140,18 @@ def proveedores_disponibles(tarea, enfriamientos, claves_anteriores):
             if claves_a_borrar:
                 print(f"[tiempo] {n}: detectada nueva clave en config.py, reiniciando enfriamiento", flush=True)
 
+    # Revisar cambios de clave en PROVEEDORES_EXTRA
+    for ext in getattr(config, "PROVEEDORES_EXTRA", []):
+        n = ext.get("nombre")
+        clv = ext.get("clave", "")
+        if n and clv != claves_anteriores.get(n):
+            claves_anteriores[n] = clv
+            claves_a_borrar = [k for k in enfriamientos if k == n or k.startswith(f"{n}::")]
+            for k in claves_a_borrar:
+                enfriamientos.pop(k, None)
+            if claves_a_borrar:
+                print(f"[tiempo] {n} (extra): nueva clave detectada, reiniciando enfriamiento", flush=True)
+
     orden = CADENAS_ORDEN.get(tarea, CADENAS_ORDEN["charla"])
     for n in orden:
         clv = (mapa_claves.get(n) or "").strip()
@@ -162,32 +167,19 @@ def proveedores_disponibles(tarea, enfriamientos, claves_anteriores):
 def refrescar_clave_proveedor(prov_dict):
     """Actualiza la clave dinámica y base_url del proveedor desde config.py."""
     nombre = prov_dict.get("nombre", "")
-    if nombre == "Groq":
-        prov_dict["clave"] = getattr(config, "CLAVE", "")
-    elif nombre == "Google":
-        prov_dict["clave"] = getattr(config, "CLAVE_GOOGLE", "")
-    elif nombre == "Mistral":
-        prov_dict["clave"] = getattr(config, "CLAVE_MISTRAL", "")
-    elif nombre == "NVIDIA":
-        prov_dict["clave"] = getattr(config, "CLAVE_NVIDIA", "")
-    elif nombre == "Cerebras":
-        prov_dict["clave"] = getattr(config, "CLAVE_CEREBRAS", "")
-    elif nombre == "OpenRouter":
-        prov_dict["clave"] = getattr(config, "CLAVE_OPENROUTER", "")
-    elif nombre == "GitHub":
-        prov_dict["clave"] = getattr(config, "CLAVE_GITHUB", "")
-    elif nombre == "SambaNova":
-        prov_dict["clave"] = getattr(config, "CLAVE_SAMBANOVA", "")
+    attrs = {
+        "Groq": "CLAVE", "Google": "CLAVE_GOOGLE", "Mistral": "CLAVE_MISTRAL",
+        "NVIDIA": "CLAVE_NVIDIA", "Cerebras": "CLAVE_CEREBRAS", "OpenRouter": "CLAVE_OPENROUTER",
+        "GitHub": "CLAVE_GITHUB", "SambaNova": "CLAVE_SAMBANOVA", "Cohere": "CLAVE_COHERE",
+    }
+    if nombre in attrs:
+        prov_dict["clave"] = getattr(config, attrs[nombre], "")
     elif nombre == "Cloudflare":
         clv = getattr(config, "CLAVE_CLOUDFLARE", "")
         acc_id = getattr(config, "ID_CUENTA_CLOUDFLARE", "")
-        if not clv or not acc_id:
-            prov_dict["clave"] = ""
-        else:
-            prov_dict["clave"] = clv
+        prov_dict["clave"] = clv if (clv and acc_id) else ""
+        if acc_id:
             prov_dict["base_url"] = f"https://api.cloudflare.com/client/v4/accounts/{acc_id}/ai/v1"
-    elif nombre == "Cohere":
-        prov_dict["clave"] = getattr(config, "CLAVE_COHERE", "")
     return prov_dict
 
 
@@ -242,6 +234,36 @@ def obtener_candidatos_tarea(tarea, enfriamientos):
         p_candidato["modelos_activos"] = modelos_disponibles
         candidatos.append(p_candidato)
 
+    # Cargar automáticamente PROVEEDORES_EXTRA al final de las cadenas
+    extras = getattr(config, "PROVEEDORES_EXTRA", [])
+    extras_cands = []
+    for ext in extras:
+        n = ext.get("nombre") or "Extra"
+        url = ext.get("url") or ext.get("base_url") or ""
+        clv = (ext.get("clave") or "").strip()
+        mods = ext.get("modelos") or []
+        if not url or not clv or not mods:
+            continue
+        if ahora < enfriamientos.get(n, 0):
+            continue
+        mods_act = [m for m in mods if ahora >= enfriamientos.get(f"{n}::{m}", 0)]
+        if not mods_act:
+            continue
+        extras_cands.append({
+            "nombre": n,
+            "base_url": url,
+            "clave": clv,
+            "modelos": list(mods),
+            "modelos_activos": mods_act,
+        })
+
+    if extras_cands:
+        idx_cohere = next((i for i, c in enumerate(candidatos) if c["nombre"] == "Cohere"), -1)
+        if idx_cohere >= 0:
+            candidatos[idx_cohere:idx_cohere] = extras_cands
+        else:
+            candidatos.extend(extras_cands)
+
     return candidatos
 
 
@@ -259,6 +281,21 @@ def reporte_estado_proveedores(enfriamientos):
         "Groq", "Cloudflare", "Google", "Mistral", "NVIDIA",
         "Cerebras", "OpenRouter", "GitHub", "SambaNova", "Cohere"
     ]
+    extras = getattr(config, "PROVEEDORES_EXTRA", [])
+    for ext in extras:
+        n = ext.get("nombre")
+        if n and n not in todos:
+            if "Cohere" in todos:
+                todos.insert(todos.index("Cohere"), n)
+            else:
+                todos.append(n)
+            prov_map[n] = {
+                "nombre": n,
+                "base_url": ext.get("url") or ext.get("base_url"),
+                "clave": ext.get("clave", ""),
+                "modelos": ext.get("modelos", []),
+            }
+
     activos_nombres = []
     enfriando_nombres = []
     sin_clave_nombres = []
