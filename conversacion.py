@@ -5,6 +5,7 @@ y la generación en streaming de respuestas mediante Groq.
 """
 import difflib
 import threading
+import time
 import unicodedata
 
 import respuesta_flujo
