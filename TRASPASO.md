@@ -15,7 +15,7 @@ Asistente personal con rostro interactivo PyQt5, voz panameña (`es-PA-Margarita
 
 ### Módulos principales
 - **`main.py`**: Orquestación y ciclo principal PyQt5.
-- **`cara_qt.py` / `cara_dibujo.py` / `cara_movimiento.py` / `cara_baile.py` / `burbuja.py`**: Rostro animado, seguimiento de cursor/rostro, inclinación física orgánica, anillos reactivos por modo y 3 coreografías (`groove`, `salsa`, `fiesta`) con partículas y música.
+- **`cara_qt.py` / `cara_dibujo.py` / `cara_movimiento.py` / `cara_baile.py` / `baile_audio.py` / `burbuja.py`**: Rostro animado, seguimiento de cursor/rostro, inclinación física orgánica, anillos reactivos por modo y 3 coreografías de 15s (`groove`, `salsa`, `fiesta`) con partículas y música rítmica local sin anuncios.
 - **`oido.py` / `oido_flujo.py` / `oido_vad.py` / `oido_feedback.py`**: Flujo persistente anti-crash 0xc0000374, Silero VAD neuronal, feedback sutil (~75ms WAV en memoria) y Whisper/Vosk.
 - **`voz.py` / `voz_reproductor.py` / `voz_cache.py`**: Síntesis `edge-tts`, reproductor thread-safe SDL/mixer, RMS labial, corte rápido barge-in y caché.
 - **`cerebro.py` / `cerebro_prompt.py` / `cerebro_enrutador.py`**: Prompt (<1350 tokens), enrutador dos carriles (`rapido` gratis vs `pro` OpenRouter/Claude con fallback) y acciones.
@@ -41,7 +41,7 @@ Asistente personal con rostro interactivo PyQt5, voz panameña (`es-PA-Margarita
 
 ## 4. Estado actual (lo que ya funciona)
 - Rostro reactivo, mirada suave (`camara.py`), parpadeo y aro facial interactivo.
-- Expresividad visual y coreografías (`cara_baile.py`): seguimiento de mirada acotado a los ojos (centrado al hablar/escuchar), inclinación orgánica según velocidad (±12°), anillos HUD reactivos por modo y 3 bailes con partículas musicales neón y música en YouTube.
+- Expresividad visual y coreografías (`cara_baile.py`, `baile_audio.py`): seguimiento de mirada acotado a los ojos (centrado al hablar/escuchar), inclinación orgánica según velocidad (±12°), anillos HUD reactivos por modo y 3 bailes de 15s con partículas musicales neón y música rítmica local sin anuncios.
 - Interrupción por voz (barge-in <500ms), filtro de eco y exclusión mutua de streams de audio (sin 0xc0000374).
 - Silero VAD neuronal (`oido_vad.py`), feedback auditivo suave en memoria (`oido_feedback.py`), Whisper determinista y Vosk offline.
 - Personalidad concisa y natural (1-2 frases habladas, sin preguntas de relleno de chatbot, confirmaciones breves en acciones).

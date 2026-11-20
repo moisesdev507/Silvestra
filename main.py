@@ -113,6 +113,12 @@ class Silvestra:
         )
         self.cara.silvestra_app = self
         self.cara._ref_app = self
+        try:
+            import modos_sistema
+            self.modo_activo = modos_sistema.obtener_modo_activo(self)
+        except Exception:
+            self.modo_activo = "normal"
+        self.cara.modo_activo = self.modo_activo
         self.cara._ref_voz = self.voz
         self.cara.poner_viva(bool(self.memoria.nombre))
         memoria.instalar(self)

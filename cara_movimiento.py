@@ -55,7 +55,7 @@ class CaraMovimientoMixin:
         self.seguir_hasta = time.time() + segundos
         self.sincronizar = True
 
-    def bailar(self, estilo="aleatorio", segundos=35, con_musica=True, consulta_usuario=None, app=None):
+    def bailar(self, estilo="aleatorio", segundos=15.0, con_musica=True, consulta_usuario=None, app=None):
         """Inicia una de las coreografías rítmicas con música opcional o detiene el baile."""
         import cara_baile
         self._tocar()
@@ -92,6 +92,11 @@ class CaraMovimientoMixin:
             gestor.detener(app=app_ref)
         self.baile_hasta = 0.0
         self.baile_tilt = 0.0
+        self.baile_dx = 0.0
+        self.baile_dy = 0.0
+        self._actualizar_tilt(0.0)
+        if hasattr(self, "fijar_emocion") and getattr(self, "emocion_objetivo", "neutral") != "neutral":
+            self.fijar_emocion("neutral")
 
     def _activo(self):
         ahora = time.time()
@@ -171,15 +176,14 @@ class CaraMovimientoMixin:
                 self._gestor_baile = gestor
             dx, dy, tilt, emo = gestor.actualizar_fisica(ahora, self.fx, self.fy, ancho, alto, TAM)
             self.baile_tilt = tilt
-            if hasattr(self, "fijar_emocion") and emo != "neutral":
+            self.baile_dx = dx
+            self.baile_dy = dy
+            if emo and hasattr(self, "emocion_objetivo") and self.emocion_objetivo != emo:
                 self.fijar_emocion(emo)
-            self.move(int(self.fx + dx), int(self.fy + dy))
             return
 
         if self.baile_hasta:
-            self.baile_hasta = 0.0
-            self.baile_tilt = 0.0
-            self._actualizar_tilt(0.0)
+            self.parar_baile()
             self._poner(self.fx, self.fy)
 
         # Seguir al mouse

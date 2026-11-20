@@ -157,6 +157,8 @@ def activar_modo(app, modo, origen="voz"):
     # 2. Actualizar estado en memoria de app
     if app:
         app.modo_activo = modo_can
+        if hasattr(app, "cara") and app.cara:
+            app.cara.modo_activo = modo_can
 
     # 3. Sincronizar solo_dueno si el modo lo exige
     if cfg["solo_dueno"] is True:

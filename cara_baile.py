@@ -1,19 +1,13 @@
 """Coreografías de baile, partículas musicales y anillos HUD reactivos para Silvestra."""
 import math
 import random
-import threading
 import time
 
 from PySide6.QtCore import QPointF
 from PySide6.QtGui import QColor, QFont
 
+DURACION_BAILE_SEG = 15.0
 ESTILOS_VALIDOS = ("groove", "salsa", "fiesta")
-
-CONSULTAS_MUSICA = {
-    "groove": "funk groove pop upbeat instrumental",
-    "salsa": "salsa brava alegre instrumental baile",
-    "fiesta": "electro dance fiesta beat bailable",
-}
 
 COLORES_NEON = [
     QColor(0, 240, 255),    # Cian neón
@@ -41,6 +35,7 @@ class ParticulaMusical:
         self.nacimiento = time.time()
         self.rotacion = random.uniform(-15, 15)
         self.alfa = 255
+        self.fuente = QFont("Arial", self.tamano, QFont.Bold)
 
     def viva(self, ahora):
         return (ahora - self.nacimiento) < self.vida_max
@@ -59,8 +54,7 @@ class ParticulaMusical:
         c = QColor(self.color)
         c.setAlpha(max(0, min(255, self.alfa)))
         p.setPen(c)
-        fuente = QFont("Arial", self.tamano, QFont.Bold)
-        p.setFont(fuente)
+        p.setFont(self.fuente)
         p.drawText(QPointF(self.x, self.y), self.simbolo)
         p.restore()
 
@@ -77,7 +71,7 @@ class GestorBaile:
         self.prox_particula = 0.0
         self.musica_lanzada = False
 
-    def iniciar(self, estilo="aleatorio", segundos=35, app=None, con_musica=True, consulta_usuario=None):
+    def iniciar(self, estilo="aleatorio", segundos=DURACION_BAILE_SEG, app=None, con_musica=True, consulta_usuario=None):
         ahora = time.time()
         est_limpio = str(estilo or "").strip().lower()
 
@@ -91,73 +85,37 @@ class GestorBaile:
         self.activo = True
         self.estilo = est_limpio
         self.t_inicio = ahora
-        self.baile_hasta = ahora + float(segundos)
+        dur = float(segundos or DURACION_BAILE_SEG)
+        self.baile_hasta = ahora + dur
         self.particulas.clear()
         self.prox_particula = ahora
         self.musica_lanzada = False
 
-        print(f"[baile] iniciado estilo={self.estilo} musica={con_musica}", flush=True)
+        print(f"[baile] iniciado estilo={self.estilo} musica={con_musica} duracion={dur}s", flush=True)
 
         if con_musica:
-            self._lanzar_musica(app, self.estilo, consulta_usuario)
+            try:
+                import baile_audio
+                self.musica_lanzada = baile_audio.reproducir_musica_baile(self.estilo)
+            except Exception as e:
+                print(f"[baile] musica_error={e}", flush=True)
 
         return True, f"Bailando estilo {self.estilo}."
 
     def detener(self, app=None):
-        if not self.activo:
+        if not self.activo and not self.musica_lanzada:
             return
         self.activo = False
         self.baile_hasta = 0.0
         self.particulas.clear()
         print("[baile] detenido", flush=True)
         if self.musica_lanzada:
-            self._detener_musica(app)
-
-    def _lanzar_musica(self, app, estilo, consulta_personalizada=None):
-        self.musica_lanzada = True
-        consulta = consulta_personalizada or CONSULTAS_MUSICA.get(estilo, CONSULTAS_MUSICA["groove"])
-        s_app = getattr(app, "silvestra_app", None) or getattr(app, "_ref_app", None) or app
-
-        def _hilo_musica():
+            self.musica_lanzada = False
             try:
-                if s_app is not None:
-                    import control_laptop
-                    control_laptop.musica_youtube(s_app, consulta)
-                else:
-                    import urllib.parse
-                    import webbrowser
-                    webbrowser.open("https://www.youtube.com/results?search_query=" + urllib.parse.quote(consulta))
-            except Exception as e:
-                try:
-                    if s_app is not None:
-                        import control_pc
-                        control_pc.buscar_youtube(s_app, consulta)
-                    else:
-                        import urllib.parse
-                        import webbrowser
-                        webbrowser.open("https://www.youtube.com/results?search_query=" + urllib.parse.quote(consulta))
-                except Exception as e2:
-                    print(f"[baile] musica_error={e2}", flush=True)
-
-        threading.Thread(target=_hilo_musica, daemon=True).start()
-
-    def _detener_musica(self, app):
-        s_app = getattr(app, "silvestra_app", None) or getattr(app, "_ref_app", None) or app
-
-        def _hilo_parar():
-            try:
-                if s_app is not None:
-                    import control_laptop
-                    control_laptop.multimedia(s_app, "pausa")
+                import baile_audio
+                baile_audio.detener_musica_baile()
             except Exception:
-                try:
-                    if s_app is not None:
-                        import control_pc
-                        control_pc.controlar_musica(s_app, "pausa")
-                except Exception:
-                    pass
-
-        threading.Thread(target=_hilo_parar, daemon=True).start()
+                pass
 
     def actualizar_fisica(self, ahora, fx, fy, ancho_pantalla, alto_pantalla, tam_cara=250):
         """Calcula el desplazamiento relativo (dx, dy), inclinación y emoción del estilo activo."""
@@ -189,9 +147,9 @@ class GestorBaile:
             tilt = 18.0 * math.sin(t * 11.5)
             emocion = "animada"
 
-        # Limitar dentro de los bordes del monitor para no desbordar
-        nx = max(10, min(ancho_pantalla - tam_cara - 10, fx + dx)) - fx
-        ny = max(10, min(alto_pantalla - tam_cara - 60, fy + dy)) - fy
+        # Desplazamiento elástico acotado para bailar dentro del lienzo sin recortar
+        nx = max(-26.0, min(26.0, dx))
+        ny = max(-22.0, min(22.0, dy))
 
         # Generar partículas musicales
         if ahora >= self.prox_particula and len(self.particulas) < 16:

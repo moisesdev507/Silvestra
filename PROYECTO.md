@@ -1092,10 +1092,11 @@ Para mantener todos los archivos bajo el límite de 15 KB, `cerebro.py` se divid
   - Inclinación suave calculada a partir de la velocidad horizontal de desplazamiento (`vx`), inclinando orgánicamente hasta ±12° al caminar o seguir el mouse, y retornando a 0° al detenerse.
 - **Anillos HUD Reactivos**:
   - Color, rotación y pulso sincronizados con el modo activo (`normal`, `programacion`, `estudio`, `noche`) y estilo neón acelerado durante el baile.
-- **3 Coreografías de Baile con Música y Partículas**:
-  - Estilos `groove`, `salsa` y `fiesta` con física procedural rítmica independiente.
+- **3 Coreografías de Baile con Música Local y Partículas (`baile_audio.py`)**:
+  - Duración exacta de 15 segundos (`DURACION_BAILE_SEG = 15.0`) con parada y restauración de estado limpia.
+  - Estilos `groove` (~108 BPM), `salsa` (~118 BPM) y `fiesta` (~126 BPM) con física rítmica procedural en lienzo.
   - Generación de partículas musicales neón (`♪`, `♫`, `♩`, `✦`) flotantes hacia arriba con desvanecimiento alfa.
-  - Reproducción automática en segundo plano de música de YouTube según el ritmo (`control_laptop.musica_youtube` / `control_pc.buscar_youtube`), deteniéndose al parar el baile.
+  - Reproducción de pistas rítmicas locales sin anuncios sintetizadas con `numpy` en PCM 16-bit o personalizadas en `musica_baile/`, eliminando aperturas de navegador y consumo de red.
 
 ## Límites conocidos
 - El temporizador de estudio Pomodoro se pierde si se cierra la app (los recordatorios ya sobreviven al cierre de forma persistente en `recordatorios.json`).

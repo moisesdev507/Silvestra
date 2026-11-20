@@ -26,11 +26,14 @@ dueno.npy
 voz_dueno.npy
 **/voz_dueno.npy
 
-# Logs de ejecución
+# Logs de ejecución y temporales
 *.log
 silvestra.log
 acciones_log.txt
 scratch/
+sonidos/
+musica_baile/
+*.wav
 
 # Datos personales y archivos de persistencia local
 memoria.json

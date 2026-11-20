@@ -57,6 +57,7 @@ class Cara(CaraMovimientoMixin, QWidget):
         self.app = app
         self.silvestra_app = None
         self._ref_app = None
+        self.modo_activo = "normal"
         self.root = _Raiz()
 
         self.hablando = False
@@ -85,6 +86,8 @@ class Cara(CaraMovimientoMixin, QWidget):
         self.seguir_hasta = 0.0
         self.baile_hasta = 0.0
         self.baile_tilt = 0.0
+        self.baile_dx = 0.0
+        self.baile_dy = 0.0
         self._libre_hasta = 0.0
         self.arrastre = None
         self.ojo_x = 0.0
@@ -153,7 +156,7 @@ class Cara(CaraMovimientoMixin, QWidget):
         import cara_baile
         estilo, con_musica, cancion = cara_baile.parsear_comando_baile(arg)
         app_ref = getattr(self, "silvestra_app", None) or getattr(self, "_ref_app", None)
-        return self.bailar(estilo=estilo, segundos=35, con_musica=con_musica, app=app_ref, consulta_usuario=cancion)
+        return self.bailar(estilo=estilo, segundos=cara_baile.DURACION_BAILE_SEG, con_musica=con_musica, app=app_ref, consulta_usuario=cancion)
 
     # ---------- Utilidades ----------
     def _pantalla(self):

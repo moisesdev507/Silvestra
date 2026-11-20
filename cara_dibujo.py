@@ -119,7 +119,9 @@ def pintar(self):
             y_resp = 3.6 * math.sin(t * 1.1) * esc
             resp_escala = esc * (1 + 0.012 * math.sin(t * 1.5))
 
-        p.translate(c, c + y_resp + y_asentir)
+        b_dx = getattr(self, "baile_dx", 0.0) if bailando else 0.0
+        b_dy = getattr(self, "baile_dy", 0.0) if bailando else 0.0
+        p.translate(c + b_dx, c + y_resp + y_asentir + b_dy)
         p.scale(resp_escala, resp_escala)
 
         tilt_mov = getattr(self, "tilt", 0.0)
@@ -139,15 +141,12 @@ def pintar(self):
         p.setBrush(QBrush(g))
         p.drawEllipse(QPointF(0, 0), 135, 135)
 
-        # Anillos HUD reactivos por modo operativo y ritmo
+        # Anillos HUD reactivos por modo operativo y ritmo (100% en memoria)
+        modo_act = getattr(self, "modo_activo", "normal")
         silvestra = getattr(self, "silvestra_app", None) or getattr(self, "_ref_app", None)
-        modo_act = getattr(silvestra, "modo_activo", None)
-        if not modo_act:
-            try:
-                import modos_sistema
-                modo_act = modos_sistema.obtener_modo_activo(silvestra)
-            except Exception:
-                modo_act = "normal"
+        if silvestra and hasattr(silvestra, "modo_activo") and silvestra.modo_activo:
+            modo_act = silvestra.modo_activo
+            self.modo_activo = modo_act
 
         c_a1, c_a2, vel_a, pulso_a = cara_baile.obtener_estilo_anillos(modo_act, bailando, t)
         if pensando:
@@ -206,11 +205,12 @@ def pintar(self):
             # Al escuchar o hablar, centra la mirada al frente
             dx, dy = 0.0, 0.0
         elif not pensando and self.viva and not bailando:
-            # Seguimiento suave del cursor acotado dentro de los límites del ojo
+            # Seguimiento suave del cursor acotado dentro de los límites del ojo (cálculo directo en memoria)
             cur = QCursor.pos()
-            ctr = self.mapToGlobal(QPointF(c, c).toPoint())
-            raw_dx = (cur.x() - ctr.x()) / 420.0
-            raw_dy = (cur.y() - ctr.y()) / 350.0
+            ctr_x = self.x() + c
+            ctr_y = self.y() + c
+            raw_dx = (cur.x() - ctr_x) / 420.0
+            raw_dy = (cur.y() - ctr_y) / 350.0
             dist_sq = (raw_dx / 1.0) ** 2 + (raw_dy / 0.8) ** 2
             if dist_sq > 1.0:
                 dist = math.sqrt(dist_sq)
