@@ -3,6 +3,48 @@
 Se ejecuta exclusivamente en el hilo principal de Qt mediante revisar_cola,
 garantizando que ninguna operación sobre la interfaz gráfica ocurra desde hilos secundarios.
 """
+import time
+
+
+def es_confirmacion_rutinaria(texto):
+    """Detecta si un mensaje de voz es una confirmación rutinaria duplicable tras una acción."""
+    if not texto:
+        return True
+    t = str(texto).strip().lower()
+
+    # 1. Avisos de error, fallo, advertencia o bloqueo NUNCA se silencian
+    alertas = (
+        "error", "fallo", "falló", "no pude", "no puedo", "no se pudo",
+        "no está", "no esta", "no existe", "no encontré", "no encontre",
+        "no tengo", "bloquead", "prohibid", "cuidado", "advertencia",
+        "contraseña", "seguridad", "invalido", "inválido", "rechazad"
+    )
+    if any(a in t for a in alertas):
+        return False
+
+    # 2. Datos informativos explícitos o lecturas solicitadas NUNCA se silencian
+    datos = (
+        "recordatorio vencido", "te leo", "resumen:", "última entrada", "ultima entrada",
+        "son las ", "la hora es", "el clima", "temperatura", "grados", "noticia", "diario:"
+    )
+    if any(d in t for d in datos):
+        return False
+
+    # 3. Frases de confirmación rutinaria de acciones
+    rutinas = (
+        "panel jarvis listo",
+        "subiendo volumen", "bajando volumen", "cambiando silencio",
+        "pausando o reanudando", "siguiente canción", "cancion anterior", "canción anterior",
+        "abriendo ",
+        "pantalla remota desactivada", "modo privado de la tablet", "modo normal de la tablet",
+        "detección de presencia", "deteccion de presencia",
+        "subiendo brillo", "bajando brillo",
+        "listo", "hecho", "anotado", "abierto", "cerrado", "activado", "desactivado"
+    )
+    if any(r in t for r in rutinas):
+        return True
+
+    return len(t) <= 30
 
 
 def atender_evento(app, tipo, texto):
@@ -95,6 +137,8 @@ def atender_evento(app, tipo, texto):
         else:
             app.decir(respuesta, emocion=emocion)
         if accion:
+            if respuesta and str(respuesta).strip():
+                app._t_accion_llm = time.time()
             app.ejecutar(accion)
 
     elif tipo == "emocion":
@@ -151,12 +195,20 @@ def atender_evento(app, tipo, texto):
                     app.cara.raise_()
 
     elif tipo == "ejecutar_accion":
+        app._t_accion_llm = 0
         app.ejecutar(texto)
 
     elif tipo == "hablar":
+        msg = texto[0] if isinstance(texto, (list, tuple)) else str(texto)
+        emo = texto[1] if isinstance(texto, (list, tuple)) and len(texto) > 1 else None
+
+        t_llm = getattr(app, "_t_accion_llm", 0)
+        if t_llm and (time.time() - t_llm < 4.0):
+            if es_confirmacion_rutinaria(msg):
+                print(f"[eventos] Omitiendo confirmacion hablada duplicada de accion: '{msg}'", flush=True)
+                return
+
         if isinstance(texto, (list, tuple)):
-            msg = texto[0]
-            emo = texto[1] if len(texto) > 1 else None
             app.decir(msg, emocion=emo)
         else:
             app.decir(texto)
@@ -166,6 +218,11 @@ def atender_evento(app, tipo, texto):
         if burbuja_txt:
             app.cara.decir(burbuja_txt, None)
         if voz_txt:
+            t_llm = getattr(app, "_t_accion_llm", 0)
+            if t_llm and (time.time() - t_llm < 4.0):
+                if es_confirmacion_rutinaria(voz_txt):
+                    print(f"[eventos] Omitiendo voz duplicada en hablar_registro: '{voz_txt}'", flush=True)
+                    return
             app.ultimo_dicho = voz_txt
             app.voz.hablar(voz_txt)
 
@@ -208,6 +265,7 @@ def atender_evento(app, tipo, texto):
             app.cara.root.after(700, app.escuchar)
 
     elif tipo == "oido":
+        app._t_accion_llm = 0
         if hasattr(app, "iniciativa"):
             app.iniciativa.interaccion()
         app._dejar_de_escuchar()
@@ -256,6 +314,7 @@ def atender_evento(app, tipo, texto):
 
     elif tipo == "texto_tablet":
         # Texto enviado desde la consola del panel HUD de la tablet
+        app._t_accion_llm = 0
         app.origen_entrada_actual = "chat"
         if hasattr(app, "iniciativa"):
             app.iniciativa.interaccion()

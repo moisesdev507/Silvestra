@@ -233,6 +233,12 @@ class Oido:
 
         print(f"[oido] silero_segmento={duracion:.2f}s rms={rms:.1f}", flush=True)
 
+        try:
+            import oido_feedback
+            oido_feedback.reproducir_feedback_escucha(app=app)
+        except Exception:
+            pass
+
         audio = preparar_audio_int16(audio_int16, ganancia=ganancia)
         self.ultimo_audio = audio
         self.duracion_ultimo_audio = len(audio) / float(rate)
