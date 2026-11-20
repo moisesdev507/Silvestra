@@ -1,6 +1,14 @@
 """Sesión HTTP global reutilizable con pool de conexiones y keep-alive."""
+import socket
 import requests
 from requests.adapters import HTTPAdapter
+import urllib3.util.connection as urllib3_conn
+
+# Forzar resolución IPv4 en conexiones HTTP globales
+try:
+    urllib3_conn.allowed_gai_family = lambda: socket.AF_INET
+except Exception:
+    pass
 
 _sesion = None
 

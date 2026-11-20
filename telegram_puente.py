@@ -2,9 +2,17 @@
 import datetime
 import random
 import re
+import socket
 import threading
 import time
 import requests
+import urllib3.util.connection as urllib3_conn
+
+# Forzar resolución IPv4 para evitar timeouts por IPv6 no enrutables
+try:
+    urllib3_conn.allowed_gai_family = lambda: socket.AF_INET
+except Exception:
+    pass
 
 import acciones
 import config
@@ -12,21 +20,23 @@ import estado
 import pantalla
 from telegram_medios import GestorMediosTelegram
 
+PATRONES_PRIVACIDAD = [
+    (re.compile(r"gsk_[A-Za-z0-9_-]{20,}"), "[CLAVE_PROTEGIDA]"),
+    (re.compile(r"sk-(?:or-v1-)?[A-Za-z0-9_-]{20,}"), "[CLAVE_PROTEGIDA]"),
+    (re.compile(r"AQ\.[A-Za-z0-9_-]{20,}"), "[CLAVE_PROTEGIDA]"),
+    (re.compile(r"\d{8,12}:[A-Za-z0-9_-]{25,50}"), "[TOKEN_PROTEGIDO]"),
+    (re.compile(r"[A-Za-z]:\\[^\s\"'\n<>*|?]+|/(?:[\w.-]+/)+[\w.-]+"), "[RUTA_LOCAL]"),
+    (re.compile(r"(?i)\bconfig\.py\b|\.env\b"), "[configuración]"),
+]
+
 
 def sanitizar_privacidad(texto):
     """Elimina tokens, claves de API, rutas locales y archivos de configuración."""
     if not texto:
         return ""
     s = str(texto)
-    s = re.sub(r"gsk_[A-Za-z0-9_-]{20,}", "[CLAVE_PROTEGIDA]", s)
-    s = re.sub(r"sk-or-v1-[A-Za-z0-9_-]{20,}", "[CLAVE_PROTEGIDA]", s)
-    s = re.sub(r"sk-[A-Za-z0-9_-]{20,}", "[CLAVE_PROTEGIDA]", s)
-    s = re.sub(r"AQ\.[A-Za-z0-9_-]{20,}", "[CLAVE_PROTEGIDA]", s)
-    s = re.sub(r"\d{8,12}:[A-Za-z0-9_-]{25,50}", "[TOKEN_PROTEGIDO]", s)
-    s = re.sub(r"[A-Za-z]:\\[^\s\"'\n<>*|?]+", "[RUTA_LOCAL]", s)
-    s = re.sub(r"/(?:[\w.-]+/)+[\w.-]+", "[RUTA_LOCAL]", s)
-    s = re.sub(r"(?i)\bconfig\.py\b", "[configuración]", s)
-    s = re.sub(r"(?i)\.env\b", "[configuración]", s)
+    for pat, rep in PATRONES_PRIVACIDAD:
+        s = pat.sub(rep, s)
     return s
 
 
@@ -43,6 +53,9 @@ class TelegramPuente:
         self._hilo = None
         self._detener = threading.Event()
         self.medios = GestorMediosTelegram(self)
+        self._sesion_envio = requests.Session()
+        self._sesion_envio.headers.update({"Connection": "close"})
+        self._sesion_poll = requests.Session()
         if self.id_dueno <= 0:
             print("[telegram] AVISO: ID_TELEGRAM_DUENO es 0 o falta en config.py. El bot NO ejecutará acciones.", flush=True)
 
@@ -63,39 +76,53 @@ class TelegramPuente:
 
     def detener(self):
         self._detener.set()
+        try:
+            self._sesion_envio.close()
+            self._sesion_poll.close()
+        except Exception:
+            pass
+
+    def _post_reintento(self, endpoint, json=None, data=None, files=None):
+        url = f"https://api.telegram.org/bot{self.token}/{endpoint}"
+        headers = {"Connection": "close"}
+        for intento in range(3):
+            try:
+                r = self._sesion_envio.post(url, json=json, data=data, files=files, headers=headers, timeout=(5, 15))
+                if r.status_code == 200:
+                    return r
+                print(f"[telegram] Error en {endpoint}: status={r.status_code}", flush=True)
+                return None
+            except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as e:
+                print(f"[telegram] Reintento {endpoint} {intento + 1}/2 por timeout/conexión: {e}", flush=True)
+                if intento < 2:
+                    time.sleep(1.0)
+            except Exception as e:
+                print(f"[telegram] Excepción en {endpoint}: {e}", flush=True)
+                return None
+        return None
 
     def _enviar_telegram(self, chat_id, texto):
         if not self.token or not chat_id:
             return False
         texto_seguro = sanitizar_privacidad(texto)
-        url = f"https://api.telegram.org/bot{self.token}/sendMessage"
-        try:
-            r = requests.post(url, json={"chat_id": chat_id, "text": texto_seguro}, timeout=10)
-            if r.status_code == 200:
-                print(f"[telegram] Mensaje enviado a chat_id={chat_id} (longitud={len(texto_seguro)})", flush=True)
-                return True
-            print(f"[telegram] Error enviando a chat_id={chat_id}: status={r.status_code}", flush=True)
-        except Exception as e:
-            print(f"[telegram] Excepción enviando a chat_id={chat_id}: {e}", flush=True)
+        r = self._post_reintento("sendMessage", json={"chat_id": chat_id, "text": texto_seguro})
+        if r:
+            print(f"[telegram] Mensaje enviado a chat_id={chat_id} (longitud={len(texto_seguro)})", flush=True)
+            return True
         return False
 
     def enviar_audio(self, audio_bytes, caption=None):
         """Envía un audio MP3 a Telegram con sendAudio (sin requerir ffmpeg)."""
         if not self.token or not self.chat_id_autorizado or not audio_bytes:
             return False
-        url = f"https://api.telegram.org/bot{self.token}/sendAudio"
-        files = {"audio": ("nota_voz.mp3", audio_bytes, "audio/mpeg")}
         data = {"chat_id": self.chat_id_autorizado, "title": "Nota de voz", "performer": "Silvestra"}
         if caption:
             data["caption"] = sanitizar_privacidad(caption)
-        try:
-            r = requests.post(url, files=files, data=data, timeout=30)
-            if r.status_code == 200:
-                print(f"[telegram] Audio enviado a chat_id={self.chat_id_autorizado} ({len(audio_bytes)} bytes)", flush=True)
-                return True
-            print(f"[telegram] Error enviando audio a chat_id={self.chat_id_autorizado}: status={r.status_code}", flush=True)
-        except Exception as e:
-            print(f"[telegram] Excepción enviando audio: {e}", flush=True)
+        files = {"audio": ("nota_voz.mp3", audio_bytes, "audio/mpeg")}
+        r = self._post_reintento("sendAudio", data=data, files=files)
+        if r:
+            print(f"[telegram] Audio enviado a chat_id={self.chat_id_autorizado} ({len(audio_bytes)} bytes)", flush=True)
+            return True
         return False
 
     def avisar_celular(self, mensaje, forzar=False):
@@ -127,20 +154,12 @@ class TelegramPuente:
             return
 
         id_dueno = int(getattr(config, "ID_TELEGRAM_DUENO", 0) or 0)
-        if id_dueno <= 0:
-            print(f"[telegram] AVISO: ID_TELEGRAM_DUENO no configurado. Mensaje ignorado de chat_id={chat_id}", flush=True)
+        if id_dueno <= 0 or chat_id != id_dueno:
+            motivo = "ID_TELEGRAM_DUENO no configurado" if id_dueno <= 0 else "Usuario no autorizado"
+            print(f"[telegram] Mensaje ignorado de chat_id={chat_id}: {motivo}", flush=True)
             try:
                 import control_seguridad
-                control_seguridad.registrar_log("TELEGRAM", "mensaje_ignorado", f"id={chat_id}", "RECHAZADO", "ID_TELEGRAM_DUENO es 0 o falta")
-            except Exception:
-                pass
-            return
-
-        if chat_id != id_dueno:
-            print(f"[telegram] Mensaje ignorado de usuario no autorizado: chat_id={chat_id}", flush=True)
-            try:
-                import control_seguridad
-                control_seguridad.registrar_log("TELEGRAM", "mensaje_ignorado", f"id={chat_id}", "RECHAZADO", "Usuario no coincide con ID_TELEGRAM_DUENO")
+                control_seguridad.registrar_log("TELEGRAM", "mensaje_ignorado", f"id={chat_id}", "RECHAZADO", motivo)
             except Exception:
                 pass
             return
@@ -205,7 +224,7 @@ class TelegramPuente:
 
         # Manejo de captura de pantalla solicitada expresamente
         es_pedir_captura = bool(
-            (accion and (accion.startswith("enviar_captura") or accion == "enviar_captura"))
+            (accion and accion.startswith("enviar_captura"))
             or re.search(r"\b(m[aá]ndame|env[ií]ame|p[aá]same)\b.*\b(captura|pantalla)\b", texto, re.I)
         )
         if es_pedir_captura:
@@ -215,8 +234,8 @@ class TelegramPuente:
 
         # Manejo de foto de cámara solicitada expresamente
         es_pedir_camara = bool(
-            (accion and (accion.startswith("enviar_foto_camara") or accion == "enviar_foto_camara"))
-            or re.search(r"\b(m[aá]ndame|env[ií]ame|toma|t[oó]mame|p[aá]same)\b.*\b(foto de la c[aá]mara|foto con la c[aá]mara|foto de c[aá]mara)\b", texto, re.I)
+            (accion and accion.startswith("enviar_foto_camara"))
+            or re.search(r"\b(m[aá]ndame|env[ií]ame|toma|t[oó]mame|p[aá]same)\b.*\bfoto.*c[aá]mara\b", texto, re.I)
         )
         if es_pedir_camara:
             self._enviar_telegram(chat_id, sanitizar_privacidad(resp))
@@ -277,7 +296,7 @@ class TelegramPuente:
         while not self._detener.is_set():
             try:
                 params = {"offset": offset, "timeout": 20}
-                r = requests.get(url, params=params, timeout=30)
+                r = self._sesion_poll.get(url, params=params, timeout=(5, 25))
                 if r.status_code == 200:
                     datos = r.json()
                     if datos.get("ok"):
@@ -322,28 +341,10 @@ def instalar(app):
             return
         threading.Thread(target=puente.medios.enviar_foto_camara, args=(puente.chat_id_autorizado, True), daemon=True).start()
 
-    acciones.registrar(
-        "avisar_celular",
-        accion_avisar,
-        "envía un mensaje al celular de su dueño por Telegram. Escribe: ACCION: avisar_celular | mensaje",
-        con_texto=True,
-    )
-    acciones.registrar(
-        "enviar_mensaje_telegram",
-        accion_avisar,
-        "envía un mensaje de texto a Telegram. Escribe: ACCION: enviar_mensaje_telegram | mensaje",
-        con_texto=True,
-    )
-    acciones.registrar(
-        "enviar_captura",
-        accion_captura,
-        "captura la pantalla y la envía como foto al celular del dueño por Telegram (solo cuando él lo pida expresamente).",
-    )
-    acciones.registrar(
-        "enviar_foto_camara",
-        accion_camara,
-        "toma una foto con la cámara y la envía al celular del dueño por Telegram (solo cuando él lo pida expresamente).",
-    )
+    acciones.registrar("avisar_celular", accion_avisar, "envía mensaje al celular por Telegram. Escribe: ACCION: avisar_celular | mensaje", con_texto=True)
+    acciones.registrar("enviar_mensaje_telegram", accion_avisar, "envía mensaje a Telegram. Escribe: ACCION: enviar_mensaje_telegram | mensaje", con_texto=True)
+    acciones.registrar("enviar_captura", accion_captura, "captura la pantalla y la envía por Telegram.")
+    acciones.registrar("enviar_foto_camara", accion_camara, "toma foto con cámara y la envía por Telegram.")
 
     puente.iniciar()
     return puente
