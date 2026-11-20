@@ -1,77 +1,83 @@
-"""Módulo de iniciativa espontánea para Silvestra."""
+"""Módulo de iniciativa espontánea para Silvestra (Evolucionado con Etapa 5)."""
+from __future__ import annotations
+
 import os
 import threading
 import time
+from typing import Any
 
 import acciones
 import estado
 import hilos
+import iniciativa_contextual
 
 
 class Iniciativa:
-    def __init__(self, app):
+    def __init__(self, app: Any):
         self.app = app
         self.activa = estado.cargar().get("iniciativa", False)
+        self.motor = iniciativa_contextual.obtener_motor_iniciativa()
         self.ultima_iniciativa = 0.0
         self.ultima_interaccion_usuario = time.time()
 
-    def interaccion(self):
+    def interaccion(self) -> None:
         """Registra que el usuario acaba de interactuar."""
         self.ultima_interaccion_usuario = time.time()
+        self.motor.registrar_interaccion_usuario(self.ultima_interaccion_usuario)
 
-    def activar(self):
+    def activar(self) -> None:
         self.activa = True
         est = estado.cargar()
         est["iniciativa"] = True
         estado.guardar(est)
         self.app.cara.decir("Iniciativa activada.", 3000)
 
-    def desactivar(self):
+    def desactivar(self) -> None:
         self.activa = False
         est = estado.cargar()
         est["iniciativa"] = False
         estado.guardar(est)
         self.app.cara.decir("Iniciativa desactivada.", 3000)
 
-    def revisar(self):
-        """Verifica periódicamente si se cumplen las condiciones para hablar con iniciativa."""
+    def revisar(self) -> None:
+        """Verifica periódicamente mediante el motor contextual si Silvestra debe hablar."""
         try:
-            ahora = time.time()
-            hora = time.localtime().tm_hour
-            # Condiciones: activa, no descansando, hora entre 7am y 11pm, 20 min inactividad, 45 min cooldown
-            if (
-                self.activa
-                and not self.app.descansando
-                and 7 <= hora < 23
-                and ahora - self.ultima_interaccion_usuario >= 1200
-                and ahora - self.ultima_iniciativa >= 2700
-                and self.app.puede_hablar_sola()
-            ):
-                estudio_libre = True
-                if hasattr(self.app, "estudio"):
-                    if self.app.estudio.en_examen() or self.app.estudio.timer_id is not None:
-                        estudio_libre = False
-                if estudio_libre:
-                    threading.Thread(target=self._hablar, daemon=True).start()
-        except Exception:
-            pass
-        self.app.cara.root.after(30000, self.revisar)
+            if self.activa:
+                sug = self.motor.evaluar_oportunidad(self.app)
+                if sug is not None:
+                    threading.Thread(target=self._hablar, args=(sug,), daemon=True).start()
+        except Exception as e:
+            print(f"[iniciativa] Error en revisión contextual: {e}", flush=True)
 
-    def _hablar(self):
+        if hasattr(self.app, "cara") and hasattr(self.app.cara, "root"):
+            self.app.cara.root.after(30000, self.revisar)
+
+    def _hablar(self, sug: Any) -> None:
+        """Sintetiza y emite la iniciativa guiada por el contexto."""
         try:
+            valido, motivo = self.motor.revalidar_sugerencia(sug, self.app)
+            if not valido:
+                return
+
             import memoria_tiempo as mt
-            hechos_fmt = [mt.formatear_recuerdo_con_fecha(h) for h in self.app.memoria.hechos]
+            hechos_raw = getattr(self.app.memoria, "hechos", []) if hasattr(self.app, "memoria") else []
+            hechos_fmt = [mt.formatear_recuerdo_con_fecha(h) for h in hechos_raw]
             hechos = "\n".join(f"- {h}" for h in hechos_fmt) or "- (ninguno)"
+
+            guia = getattr(sug, "prompt_orientacion", "Llevan más de 20 minutos en silencio.")
+            nombre_asistente = getattr(self.app.memoria, "nombre", None) or "Silvestra"
+            creador = getattr(self.app.memoria, "creador", None) or "tu creador"
+
             sistema = (
-                f"Eres {self.app.memoria.nombre or 'Silvestra'}, asistente de {self.app.memoria.creador or 'tu creador'}.\n"
-                "Llevan más de 20 minutos en silencio y quieres hablarle con iniciativa propia de forma espontánea.\n"
+                f"Eres {nombre_asistente}, asistente de {creador}.\n"
+                f"Contexto situacional: {guia}\n"
                 f"Hechos que recuerdas (con su antigüedad):\n{hechos}\n"
                 f"Hilos y temas pendientes:\n{hilos.resumen()}\n\n"
-                "Di UNA sola frase corta y natural (un comentario amistoso o una pregunta sencilla basada en un hilo pendiente o en algo que recuerdes de él).\n"
+                "Di UNA sola frase corta y natural (un comentario amistoso o pregunta sencilla).\n"
                 "Reglas:\n"
                 "1. Máximo 15 a 20 palabras.\n"
                 "2. Tono panameño suave y cercano, sin sonar invasiva ni robot.\n"
-                "3. Si un evento en los recuerdos ya pasó según su fecha, PROHIBIDO preguntar por él en futuro.\n"
+                "3. Si un evento en recuerdos ya pasó según su fecha, PROHIBIDO preguntar por él en futuro.\n"
                 "4. Sin asteriscos, sin listas, sin comillas, sin emojis.\n"
                 "Responde ÚNICAMENTE con la frase que dirás en voz alta."
             )
@@ -79,16 +85,22 @@ class Iniciativa:
                 {"role": "system", "content": sistema},
                 {"role": "user", "content": "Genera tu comentario espontáneo."},
             ])
-            limpio = frase.replace("*", "").replace("\n", " ").strip("\"' ")
+            limpio = str(frase or "").replace("*", "").replace("\n", " ").strip("\"' ")
             if limpio:
+                valido_post, _ = self.motor.revalidar_sugerencia(sug, self.app)
+                if not valido_post:
+                    return
+
+                self.motor.marcar_emitida(sug)
                 self.ultima_iniciativa = time.time()
+                emocion = getattr(sug, "emocion_sugerida", "calida")
                 if hasattr(self.app, "cola") and self.app.cola:
-                    self.app.cola.put(("hablar", (limpio, "calida")))
+                    self.app.cola.put(("hablar", (limpio, emocion)))
         except Exception as e:
             print(f"[iniciativa] Error generando comentario: {e}", flush=True)
 
 
-def instalar(app):
+def instalar(app: Any) -> Iniciativa:
     ini = Iniciativa(app)
     acciones.registrar(
         "activar_iniciativa",
@@ -100,5 +112,6 @@ def instalar(app):
         ini.desactivar,
         "desactiva la iniciativa propia para que Silvestra no hable de forma espontánea.",
     )
-    app.cara.root.after(30000, ini.revisar)
+    if hasattr(app, "cara") and hasattr(app.cara, "root"):
+        app.cara.root.after(30000, ini.revisar)
     return ini

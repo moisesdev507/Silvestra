@@ -14,9 +14,9 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 
 ### Módulos principales
 - **`main.py`**: Orquestación y ciclo principal PySide6.
-- **`cara_*.py` / `baile_audio.py` / `burbuja.py`**: Avatar compacto (208 px), mirada reactiva, inclinación física, anillos HUD, 3 bailes de 15s con música rítmica local y menú con confirmación de 3s (`Renacer`/`Descansar`).
-- **`naturalidad.py` / `correcciones.py`**: Continuidad conversacional (<15 min sin saludos repetidos, 15m-3h casual, >3h saludo fresco) y autocorrección viva persistente (`correcciones.json`).
-- **`oido*.py`**: Stream persistente anti-crash 0xc0000374, Silero VAD, feedback auditivo en memoria (~75ms WAV) y Whisper/Vosk.
+- **`cara_*.py` / `baile_audio.py` / `burbuja.py`**: Avatar (208 px), mirada reactiva, inclinación, anillos HUD, 3 bailes y menú de confirmación 3s (`Renacer`/`Descansar`).
+- **`naturalidad.py` / `correcciones.py`**: Continuidad conversacional (pausas <15m, 15m-3h, >3h) y autocorrección viva persistente (`correcciones.json`).
+- **`oido*.py`**: Stream persistente anti-crash, Silero VAD, feedback WAV en memoria y Whisper/Vosk.
 - **`voz*.py`**: Síntesis `edge-tts`, mixer thread-safe, RMS labial, corte barge-in y modulación emocional.
 - **`cerebro*.py`**: Prompt optimizado (<1350 tok), carril dual (`rapido` vs `pro`), enrutador y acciones.
 - **`proveedores*.py` / `sesion_http.py`**: Multi-LLM en cascada con pool Keep-Alive y streaming emocional temprano.
@@ -27,7 +27,7 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - **`iniciativa.py`**: Comentarios espontáneos diurnos (7-23h) tras inactividad basados en hilos y memoria.
 - **`telegram_puente*.py`**: Bot API nativo (`urllib.request` + SSL + IPv4) y llamadas asíncronas daemon sin bloqueos.
 - **`control_*.py`**: Control por niveles (libre, peligroso con código y prohibido), VS Code y multimedia.
-- **`contexto_*.py`**: Context Engine (Etapas 1-4): sensor Win32, motor 3 niveles, puente a prompt y telemetría SSE a tablet.
+- **`contexto_*.py` / `iniciativa_contextual.py`**: Context Engine (Etapas 1-5): sensor Win32, motor 3 niveles, puente a prompt, telemetría SSE a tablet y motor de iniciativa contextual supervisable.
 - **`pantalla_remota*.py` / `pantalla_biometria.py`**: HUD Jarvis tablet, telemetría y blindaje táctil de 3s.
 - **`presencia.py` / `camara*.py`**: Detección facial YuNet + SFace multi-muestra (20 muestras) y enrolamiento.
 - **`voz_dueno*.py`**: Biometría vocal CAM++ multi-muestra (25 muestras), scoring top-2 y Solo Dueño.
@@ -42,7 +42,7 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 5. **Configuración y claves:** Exclusivamente en `config.py` (ignorado en git).
 
 ## 4. Estado actual (lo que ya funciona)
-- Avatar PySide6 compacto (208 px), anillos reactivos por modo y 3 bailes con música local sin anuncios.
+- Avatar PySide6 compacto (208 px), anillos reactivos y 3 bailes con música local.
 - Doble confirmación de 3s en reinicio/despertar/renacer en menú y tablet HUD.
 - Naturalidad y autocorrección viva (`naturalidad.py`, `correcciones.py`) con seguimiento de pausas.
 - Interrupción por voz (barge-in <500ms), filtro de eco, Silero VAD neuronal y Vosk/Whisper offline.
@@ -55,8 +55,8 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - 4 modos (`normal`, `programacion`, `estudio`, `noche`) en `estado.json` y prompt dinámico.
 - Biometría vocal CAM++ (25 muestras) y facial YuNet+SFace (20 muestras) con entrenamiento Telegram.
 - Telegram 100% nativo (`urllib.request` + SSL + IPv4, <0.6s) sin timeouts ni bloqueos de Qt.
-- Context Engine Etapas 1-4 (`contexto_*.py`): certeza en 3 niveles, prompt <=50 tok y HUD tablet con 5 tarjetas en tiempo real.
-- Iniciativa espontánea activa (`iniciativa.py`) y modulación emocional viva desde el 1er token (`proveedores_stream.py`).
+- Context Engine Etapas 1-5 (`contexto_*.py`, `iniciativa_contextual.py`): certeza 3 niveles, prompt <=50 tok, HUD tablet 5 tarjetas y motor de iniciativa contextual supervisable con cooldowns y revalidación.
+- Iniciativa espontánea contextual activa (`iniciativa.py`) y modulación emocional viva desde el 1er token.
 - Suite `prueba_humo.py` 100% PASS y arquitectura modular (todos los `.py` <= 15 KB).
 
 ## 5. Tareas pendientes y pospuestas
