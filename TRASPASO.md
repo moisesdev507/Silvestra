@@ -27,6 +27,7 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - **`iniciativa.py`**: Comentarios espontáneos diurnos (7-23h) tras inactividad basados en hilos y memoria.
 - **`telegram_puente*.py`**: Bot API nativo (`urllib.request` + SSL + IPv4) y llamadas asíncronas daemon sin bloqueos.
 - **`control_*.py`**: Control por niveles (libre, peligroso con código y prohibido), VS Code y multimedia.
+- **`contexto_*.py`**: Context Engine (Etapas 1-2): sensor Win32 64-bit y motor en 3 niveles (`detectado`, `probable`, `confirmado` TTL).
 - **`pantalla_remota*.py` / `pantalla_biometria.py`**: HUD Jarvis tablet, telemetría y blindaje táctil de 3s.
 - **`presencia.py` / `camara*.py`**: Detección facial YuNet + SFace multi-muestra (20 muestras) y enrolamiento.
 - **`voz_dueno*.py`**: Biometría vocal CAM++ multi-muestra (25 muestras), scoring top-2 y Solo Dueño.
@@ -54,6 +55,7 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - 4 modos (`normal`, `programacion`, `estudio`, `noche`) en `estado.json` y prompt dinámico.
 - Biometría vocal CAM++ (25 muestras) y facial YuNet+SFace (20 muestras) con entrenamiento Telegram.
 - Telegram 100% nativo (`urllib.request` + SSL + IPv4, <0.6s) sin timeouts ni bloqueos de Qt.
+- Context Engine Etapas 1-2 (`contexto_windows.py`, `contexto_motor.py`, `contexto_reglas.py`) con certeza en 3 niveles y TTL.
 - Iniciativa espontánea activa (`iniciativa.py`) y modulación emocional viva desde el 1er token (`proveedores_stream.py`).
 - Suite `prueba_humo.py` 100% PASS y arquitectura modular (todos los `.py` <= 15 KB).
 
