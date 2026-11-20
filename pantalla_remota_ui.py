@@ -86,10 +86,10 @@ PAGINA_JARVIS_HTML = f"""<!DOCTYPE html>
           <span style="font-size:9px; color:var(--gold); font-family:var(--font-mono)">CTRL</span>
         </div>
         <div class="action-grid">
-          <button class="btn-action" onclick="ejecutarAccion('tablet_modo_privado')" title="Ocultar datos sensibles">🔒 PRIVADO</button>
-          <button class="btn-action" onclick="ejecutarAccion('tablet_modo_normal')" title="Mostrar datos normales">🔓 NORMAL</button>
-          <button class="btn-action gold" onclick="ejecutarAccion('crear_respaldo')" title="Generar respaldo de datos">💾 RESPALDO</button>
-          <button class="btn-action gold" onclick="ejecutarAccion('ocultar_tarjeta')" title="Limpiar tarjeta principal">✖ TARJETA</button>
+          <button class="btn-action" data-accion="tablet_modo_privado" title="Ocultar datos sensibles">🔒 PRIVADO</button>
+          <button class="btn-action" data-accion="tablet_modo_normal" title="Mostrar datos normales">🔓 NORMAL</button>
+          <button class="btn-action gold" data-accion="crear_respaldo" title="Generar respaldo de datos">💾 RESPALDO</button>
+          <button class="btn-action gold" data-accion="ocultar_tarjeta" title="Limpiar tarjeta principal">✖ TARJETA</button>
         </div>
         <div id="accionFb" class="console-fb" style="margin-top:4px"></div>
       </div>
@@ -126,7 +126,7 @@ PAGINA_JARVIS_HTML = f"""<!DOCTYPE html>
         <div class="console-label">// CONSOLA // ENVIAR COMANDO A SILVESTRA</div>
         <div class="console-row">
           <input id="consoleInput" class="console-input" type="text" placeholder="Escribe un mensaje..." maxlength="500" autocomplete="off" autocorrect="off" spellcheck="false">
-          <button class="console-send" onclick="enviarComando()">▶ ENVIAR</button>
+          <button class="console-send" id="btnEnviar">▶ ENVIAR</button>
         </div>
         <div id="consoleFb" class="console-fb"></div>
       </div>

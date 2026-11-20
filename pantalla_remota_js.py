@@ -290,48 +290,71 @@ JS_JARVIS = """
   function enviarComando() {
     if (_cmdPending) return;
     const inp = document.getElementById('consoleInput');
-    const fb = document.getElementById('consoleFb');
+    const fb  = document.getElementById('consoleFb');
     if (!inp) return;
     const texto = inp.value.trim();
     if (!texto) return;
     _cmdPending = true;
     if (fb) { fb.textContent = 'ENVIANDO...'; fb.style.color = 'var(--gold)'; }
-    fetch(`/api/panel/comando?token=${encodeURIComponent(token)}`, {
+    fetch('/api/panel/comando?token=' + encodeURIComponent(token), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ texto })
+      body: JSON.stringify({ texto: texto })
     })
-    .then(r => r.json())
-    .then(d => {
-      if (fb) { fb.textContent = d.ok ? '✔ ENVIADO' : ('✖ ' + (d.error || 'Error')); fb.style.color = d.ok ? 'var(--green)' : '#f87171'; }
-      if (d.ok) inp.value = '';
+    .then(function(r) {
+      var status = r.status;
+      return r.json().then(function(d) { return { d: d, status: status }; });
     })
-    .catch(() => { if (fb) { fb.textContent = '✖ SIN CONEXIÓN'; fb.style.color = '#f87171'; } })
-    .finally(() => { _cmdPending = false; setTimeout(() => { if (fb) fb.textContent = ''; }, 3500); });
+    .then(function(res) {
+      var d = res.d;
+      if (fb) {
+        fb.textContent = d.ok ? '✔ ENVIADO' : ('✖ HTTP ' + res.status + ' — ' + (d.error || 'Error'));
+        fb.style.color  = d.ok ? 'var(--green)' : '#f87171';
+      }
+      if (d.ok && inp) inp.value = '';
+    })
+    .catch(function() { if (fb) { fb.textContent = '✖ SIN CONEXIÓN'; fb.style.color = '#f87171'; } })
+    .finally(function() { _cmdPending = false; setTimeout(function() { if (fb) fb.textContent = ''; }, 3500); });
   }
 
-  const ci = document.getElementById('consoleInput');
+  var ci = document.getElementById('consoleInput');
   if (ci) {
     ci.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); enviarComando(); } });
   }
+  var btnEnviar = document.getElementById('btnEnviar');
+  if (btnEnviar) { btnEnviar.addEventListener('click', enviarComando); }
 
-  // 8. Acciones rápidas de la tablet
+  // 8. Acciones rápidas de la tablet (delegación de eventos en action-grid)
   let _accionPending = false;
   function ejecutarAccion(nombre) {
     if (_accionPending) return;
-    const fb = document.getElementById('accionFb');
+    var fb = document.getElementById('accionFb');
     _accionPending = true;
     if (fb) { fb.textContent = 'EJECUTANDO...'; fb.style.color = 'var(--gold)'; }
-    fetch(`/api/panel/accion?token=${encodeURIComponent(token)}`, {
+    fetch('/api/panel/accion?token=' + encodeURIComponent(token), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accion: nombre })
     })
-    .then(r => r.json())
-    .then(d => { if (fb) { fb.textContent = d.ok ? ('✔ ' + nombre.toUpperCase()) : ('✖ ' + (d.error || 'Error')); fb.style.color = d.ok ? 'var(--green)' : '#f87171'; } })
-    .catch(() => { if (fb) { fb.textContent = '✖ SIN CONEXIÓN'; fb.style.color = '#f87171'; } })
-    .finally(() => { _accionPending = false; setTimeout(() => { if (fb) fb.textContent = ''; }, 3500); });
+    .then(function(r) {
+      var status = r.status;
+      return r.json().then(function(d) { return { d: d, status: status }; });
+    })
+    .then(function(res) {
+      var d = res.d;
+      if (fb) {
+        fb.textContent = d.ok ? ('✔ ' + nombre.toUpperCase()) : ('✖ HTTP ' + res.status + ' — ' + (d.error || 'Error'));
+        fb.style.color  = d.ok ? 'var(--green)' : '#f87171';
+      }
+    })
+    .catch(function() { if (fb) { fb.textContent = '✖ SIN CONEXIÓN'; fb.style.color = '#f87171'; } })
+    .finally(function() { _accionPending = false; setTimeout(function() { if (fb) fb.textContent = ''; }, 3500); });
   }
+
+  // Delegación: un solo listener en el contenedor para todos los botones data-accion
+  document.querySelectorAll('[data-accion]').forEach(function(btn) {
+    btn.addEventListener('click', function() { ejecutarAccion(btn.getAttribute('data-accion')); });
+  });
 
 })();
 """
