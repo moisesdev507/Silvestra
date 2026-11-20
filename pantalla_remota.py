@@ -1,28 +1,17 @@
-"""Servidor local HTTP y SSE para mostrar la cara de Silvestra en una tablet."""
+"""Servidor local HTTP y SSE para mostrar la interfaz Jarvis de Silvestra en una tablet."""
 import http.server
 import json
-import os
 import secrets
 import socket
 import threading
 import time
 import urllib.parse
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import (
-    QApplication,
-    QDialog,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QVBoxLayout,
-)
-
 import acciones
 import estado
-from pantalla_remota_panel import GestorPanelRemoto
-from pantalla_remota_web import PAGINA_HTML
+from pantalla_remota_datos import recolectar_estado_completo
+from pantalla_remota_qr import VentanaQR
+from pantalla_remota_ui import PAGINA_JARVIS_HTML
 
 PUERTO_DEFECTO = 8765
 _lock = threading.Lock()
@@ -53,93 +42,22 @@ def obtener_ip_local():
                 pass
 
 
-def generar_qr_pixmap(texto):
-    """Genera un QPixmap con el código QR usando OpenCV sin librerías externas."""
-    try:
-        import cv2
-        if hasattr(cv2, "QRCodeEncoder_create"):
-            enc = cv2.QRCodeEncoder_create()
-            qr_img = enc.encode(texto)
-            borde = 4
-            qr_con_borde = cv2.copyMakeBorder(qr_img, borde, borde, borde, borde, cv2.BORDER_CONSTANT, value=255)
-            qr_escalado = cv2.resize(qr_con_borde, (260, 260), interpolation=cv2.INTER_NEAREST)
-            h, w = qr_escalado.shape
-            app_qt = QApplication.instance() or QApplication([])
-            qimg = QImage(qr_escalado.data, w, h, w, QImage.Format_Grayscale8)
-            return QPixmap.fromImage(qimg)
-    except Exception as e:
-        log(f"No se pudo generar código QR con OpenCV: {e}")
-    return None
-
-
-class VentanaQR(QDialog):
-    """Ventana emergente que muestra el código QR y la URL de la tablet."""
-
-    def __init__(self, url, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Silvestra - Pantalla Remota Tablet")
-        self.setStyleSheet("background-color: #131824; color: #ffffff; font-family: 'Segoe UI', sans-serif;")
-        self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
-        self.resize(360, 480)
-
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(20, 20, 20, 20)
-        lay.setSpacing(14)
-
-        lbl_tit = QLabel("📱 Silvestra en tu Tablet")
-        lbl_tit.setStyleSheet("font-size: 18px; font-weight: bold; color: #4fd1c5;")
-        lbl_tit.setAlignment(Qt.AlignCenter)
-        lay.addWidget(lbl_tit)
-
-        lbl_desc = QLabel("Escanea este código QR con la cámara de tu tablet o abre el enlace en Google Chrome:")
-        lbl_desc.setStyleSheet("font-size: 13px; color: #a0aec0;")
-        lbl_desc.setWordWrap(True)
-        lbl_desc.setAlignment(Qt.AlignCenter)
-        lay.addWidget(lbl_desc)
-
-        self.lbl_qr = QLabel()
-        self.lbl_qr.setAlignment(Qt.AlignCenter)
-        pix = generar_qr_pixmap(url)
-        if pix:
-            self.lbl_qr.setPixmap(pix)
-        else:
-            self.lbl_qr.setText("(Código QR no disponible)")
-            self.lbl_qr.setStyleSheet("color: #718096; font-size: 14px;")
-        lay.addWidget(self.lbl_qr)
-
-        lbl_url = QLabel(url)
-        lbl_url.setStyleSheet("font-family: Consolas, monospace; font-size: 11px; color: #ffd166; background: #1b2333; padding: 8px; border-radius: 6px; border: 1px solid #2d3748;")
-        lbl_url.setWordWrap(True)
-        lbl_url.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        lay.addWidget(lbl_url)
-
-        lay_btn = QHBoxLayout()
-        btn_copiar = QPushButton("Copiar enlace")
-        btn_copiar.setStyleSheet("background: #2b6cb0; color: white; padding: 8px 14px; border-radius: 6px; font-weight: bold;")
-        btn_copiar.clicked.connect(lambda: QApplication.clipboard().setText(url))
-
-        btn_cerrar = QPushButton("Cerrar")
-        btn_cerrar.setStyleSheet("background: #4a5568; color: white; padding: 8px 14px; border-radius: 6px;")
-        btn_cerrar.clicked.connect(self.close)
-
-        lay_btn.addWidget(btn_copiar)
-        lay_btn.addWidget(btn_cerrar)
-        lay.addLayout(lay_btn)
-
-
 class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
-    """Manejador HTTP que valida token, sirve la página web y emite eventos SSE."""
+    """Manejador HTTP que valida token, sirve el HUD Jarvis y emite eventos en tiempo real."""
 
     def log_message(self, format, *args):
-        # Desactivar logs por defecto de BaseHTTPRequestHandler en consola
+        # Desactivar logs ruidosos por defecto en consola
         pass
+
+    def _validar_token(self, query):
+        token_cliente = query.get("token", [""])[0]
+        return bool(token_cliente and token_cliente == self.server.token_autorizado)
 
     def do_GET(self):
         url_parsed = urllib.parse.urlparse(self.path)
         query = urllib.parse.parse_qs(url_parsed.query)
-        token_cliente = query.get("token", [""])[0]
 
-        if token_cliente != self.server.token_autorizado:
+        if not self._validar_token(query):
             self.send_response(403)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.end_headers()
@@ -147,17 +65,32 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
             log(f"Intento de acceso rechazado desde {self.client_address[0]}")
             return
 
+        # Ruta 1: Interfaz principal Jarvis
         if url_parsed.path in ("/", "/index.html"):
-            contenido = PAGINA_HTML.encode("utf-8")
+            contenido = PAGINA_JARVIS_HTML.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(contenido)))
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             self.wfile.write(contenido)
-            log(f"Página servida a cliente en {self.client_address[0]}")
+            log(f"Página Jarvis servida a cliente en {self.client_address[0]}")
             return
 
+        # Ruta 2: Endpoint API JSON para estado completo y telemetría
+        if url_parsed.path == "/api/panel/estado":
+            datos = recolectar_estado_completo(self.server.app, self.server.gestor)
+            contenido = json.dumps(datos, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(contenido)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(contenido)
+            return
+
+        # Ruta 3: Flujo SSE en vivo
         if url_parsed.path == "/eventos":
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -167,21 +100,14 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
 
             log(f"Conexión de eventos SSE establecida desde {self.client_address[0]}")
-            ultimo_panel = 0.0
             try:
                 while not self.server.detener_event.is_set():
-                    ahora_t = time.time()
-                    datos = self.server.gestor.obtener_estado_dict()
-                    if ahora_t - ultimo_panel >= 10.0 or ultimo_panel == 0.0:
-                        if hasattr(self.server.gestor, "panel") and self.server.gestor.panel:
-                            datos["panel"] = self.server.gestor.panel.obtener_datos()
-                        ultimo_panel = ahora_t
-
+                    datos = recolectar_estado_completo(self.server.app, self.server.gestor)
                     payload = json.dumps(datos, ensure_ascii=False)
                     msg = f"data: {payload}\n\n".encode("utf-8")
                     self.wfile.write(msg)
                     self.wfile.flush()
-                    time.sleep(0.04)
+                    time.sleep(0.2)
             except (BrokenPipeError, ConnectionResetError):
                 pass
             except Exception as e:
@@ -195,7 +121,7 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
 
 
 class GestorPantallaRemota:
-    """Orquesta el ciclo de vida del servidor HTTP local y la publicación de estado."""
+    """Orquesta el servidor HTTP local, el estado Jarvis y las acciones de la tablet."""
 
     def __init__(self, app):
         self.app = app
@@ -203,7 +129,11 @@ class GestorPantallaRemota:
         self._hilo = None
         self._detener_event = threading.Event()
         self.ventana_qr = None
-        self.panel = GestorPanelRemoto(app)
+        self.tarjeta_principal = "SILVESTRA VIRTUAL INTERFACE // SISTEMA OPERATIVO"
+        self.ultimos_eventos = [
+            {"hora": time.strftime("%H:%M"), "texto": "Servidor HUD inicializado"},
+            {"hora": time.strftime("%H:%M"), "texto": "Esperando conexión de tablet"},
+        ]
 
         d = estado.cargar()
         self.token = d.get("remota_token")
@@ -218,52 +148,16 @@ class GestorPantallaRemota:
         if self.activa:
             self.iniciar_servidor()
 
+    def registrar_evento(self, texto):
+        """Registra un evento visible en el terminal del panel Jarvis."""
+        self.ultimos_eventos.append({"hora": time.strftime("%H:%M"), "texto": texto})
+        if len(self.ultimos_eventos) > 10:
+            self.ultimos_eventos.pop(0)
+
     def obtener_url_completa(self):
         """Devuelve la URL accesible desde la red local para la tablet."""
         ip = obtener_ip_local()
         return f"http://{ip}:{self.puerto}/?token={self.token}"
-
-    def obtener_estado_dict(self):
-        """Lee el estado en vivo de Silvestra sin bloquear ni invocar métodos Qt."""
-        with _lock:
-            descansando = getattr(self.app, "descansando", False)
-            escuchando = getattr(self.app, "escuchando", False)
-            pensando = getattr(self.app.cara, "pensando", False)
-            hablando = False
-            voz = getattr(self.app, "voz", None)
-            if voz and hasattr(voz, "ocupada"):
-                try:
-                    hablando = voz.ocupada()
-                except Exception:
-                    hablando = False
-
-            if descansando:
-                est = "dormida"
-            elif hablando:
-                est = "hablando"
-            elif pensando:
-                est = "pensando"
-            elif escuchando:
-                est = "escuchando"
-            else:
-                est = "reposo"
-
-            emocion = getattr(self.app.cara, "emocion_objetivo", "neutral") or "neutral"
-            vol = float(getattr(voz, "nivel_volumen", 0.0) if voz else 0.0)
-            subtitulo = getattr(self.app, "ultimo_dicho", "") if hablando else ""
-            cara_activa = False
-            pres = getattr(self.app, "presencia", None)
-            if pres and getattr(pres, "activa", False) and getattr(pres, "ausente", False):
-                cara_activa = True
-
-            return {
-                "estado": est,
-                "emocion": emocion,
-                "volumen": vol,
-                "subtitulo": subtitulo,
-                "cara_activa": cara_activa,
-                "t": time.time(),
-            }
 
     def iniciar_servidor(self):
         """Inicia el servidor HTTP en un hilo secundario daemon."""
@@ -276,6 +170,7 @@ class GestorPantallaRemota:
             servidor.token_autorizado = self.token
             servidor.detener_event = self._detener_event
             servidor.gestor = self
+            servidor.app = self.app
             self._servidor = servidor
 
             def _correr():
@@ -287,6 +182,7 @@ class GestorPantallaRemota:
 
             self._hilo = threading.Thread(target=_correr, daemon=True, name="ServidorPantallaRemota")
             self._hilo.start()
+            self.registrar_evento("Servidor HTTP online")
             return True
         except Exception as e:
             log(f"Error al iniciar servidor en puerto {self.puerto}: {e}")
@@ -309,8 +205,12 @@ class GestorPantallaRemota:
             self._hilo = None
             log("Servidor detenido correctamente.")
 
-    def accion_mostrar_en_tablet(self):
+    def accion_mostrar_en_tablet(self, arg=None):
         """Inicia la pantalla remota, copia la URL y abre la ventana con el código QR."""
+        if arg and str(arg).strip():
+            self.tarjeta_principal = str(arg).strip()
+            self.registrar_evento(f"Proyección: {self.tarjeta_principal[:24]}")
+
         ok = self.iniciar_servidor()
         d = estado.cargar()
         d["remota_activa"] = True
@@ -319,8 +219,8 @@ class GestorPantallaRemota:
         url = self.obtener_url_completa()
 
         self.app.cola.put(("copiar_portapapeles", url))
-        msg_voz = "Pantalla remota lista en tu red local. Ya copié la dirección al portapapeles."
-        burbuja = f"📱 PANTALLA REMOTA:\n{url}\n\n(Enlace copiado al portapapeles)"
+        msg_voz = "Panel Jarvis listo en tu tablet. Ya copié la dirección al portapapeles."
+        burbuja = f"📱 PANEL JARVIS TABLET:\n{url}\n\n(Enlace copiado al portapapeles)"
         self.app.cola.put(("hablar_registro", (msg_voz, burbuja)))
 
         def _mostrar_dialogo():
@@ -334,8 +234,7 @@ class GestorPantallaRemota:
             except Exception as e:
                 log(f"Error abriendo ventana QR: {e}")
 
-        # Programar la apertura de la ventana de forma segura en el hilo de Qt
-        if hasattr(self.app.cara, "root") and hasattr(self.app.cara.root, "after"):
+        if hasattr(self.app, "cara") and hasattr(self.app.cara, "root") and hasattr(self.app.cara.root, "after"):
             self.app.cara.root.after(100, _mostrar_dialogo)
 
     def accion_ocultar_en_tablet(self):
@@ -353,16 +252,20 @@ class GestorPantallaRemota:
         self.app.cola.put(("hablar", "Pantalla remota desactivada."))
 
     def accion_modo_privado(self):
-        """Activa el modo privado en la tablet ocultando los recordatorios."""
-        if hasattr(self, "panel") and self.panel:
-            self.panel.fijar_modo_privado(True)
-        self.app.cola.put(("hablar", "Modo privado de la tablet activado. Oculté los recordatorios."))
+        """Activa el modo privado en la tablet ocultando recordatorios y notas."""
+        d = estado.cargar()
+        d["tablet_modo_privado"] = True
+        estado.guardar(d)
+        self.registrar_evento("Modo privado activado")
+        self.app.cola.put(("hablar", "Modo privado de la tablet activado. Datos confidenciales ocultos."))
 
     def accion_modo_normal(self):
-        """Activa el modo normal en la tablet mostrando los recordatorios."""
-        if hasattr(self, "panel") and self.panel:
-            self.panel.fijar_modo_privado(False)
-        self.app.cola.put(("hablar", "Modo normal de la tablet activado. Mostrando recordatorios."))
+        """Activa el modo normal en la tablet mostrando recordatorios y notas."""
+        d = estado.cargar()
+        d["tablet_modo_privado"] = False
+        estado.guardar(d)
+        self.registrar_evento("Modo normal activado")
+        self.app.cola.put(("hablar", "Modo normal de la tablet activado. Mostrando datos."))
 
 
 def instalar(app):
@@ -370,9 +273,9 @@ def instalar(app):
     gestor = GestorPantallaRemota(app)
     app.pantalla_remota = gestor
     reg = acciones.registrar
-    reg("mostrar_en_tablet", gestor.accion_mostrar_en_tablet, "muestra la cara de Silvestra en tablet con QR y enlace.")
+    reg("mostrar_en_tablet", gestor.accion_mostrar_en_tablet, "muestra la interfaz Jarvis en tablet con QR y enlace.", con_texto=True)
     reg("ocultar_en_tablet", gestor.accion_ocultar_en_tablet, "apaga el servidor de pantalla remota para tablet.")
-    reg("tablet_modo_privado", gestor.accion_modo_privado, "oculta los recordatorios en la tablet.")
-    reg("tablet_modo_normal", gestor.accion_modo_normal, "muestra los recordatorios en la tablet.")
+    reg("tablet_modo_privado", gestor.accion_modo_privado, "oculta datos sensibles en la tablet.")
+    reg("tablet_modo_normal", gestor.accion_modo_normal, "muestra datos normales en la tablet.")
     log("Módulo de pantalla remota instalado.")
     return gestor

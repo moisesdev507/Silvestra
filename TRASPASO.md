@@ -32,7 +32,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - **`acciones.py`**: Registro central de acciones (`acciones.registrar`).
 - **`recordatorios.py`**: Recordatorios por voz persistentes en disco (`recordatorios.json`).
 - **`control_laptop.py` / `control_seguridad.py`**: Control de la laptop por niveles (libre, con código y prohibido) con lista permitida y auditoría.
-- **`pantalla_remota.py`**: Servidor local para visualizar panel en navegador móvil.
+- **`pantalla_remota.py` / `pantalla_remota_ui.py` / `pantalla_remota_datos.py`**: Servidor y HUD Jarvis en tiempo real para tablet.
 - **`respaldo.py`**: Copia de seguridad zip fuera de Git (`~/Documents/Respaldos_Silvestra`) con rotación a 10 archivos sin claves.
 - **`presencia.py` / `camara.py`**: Presencia y seguimiento facial con MediaPipe.
 - **`prueba_humo.py`**: Suite de validación rápida de sintaxis, reglas de 15 KB y módulos clave.
@@ -62,7 +62,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - Acciones por voz: recuerdos, recordatorios persistentes, proveedores y control de escucha.
 - Control de laptop por niveles: libre (apps/sitios, volumen, música inmediata y ducking), peligroso exclusivo por Telegram (apagar, reiniciar con código local y verificación `ID_TELEGRAM_DUENO`) y prohibido con auditoría.
 - Respaldo automático fuera de Git (`respaldo.py`, acción `crear_respaldo`) con rotación a 10 archivos en Documentos sin claves.
-- Modo reposo y panel para tablet vía navegador web.
+- Panel Jarvis en tiempo real para tablet (orbe reactivo, telemetría CPU/RAM/batería, recordatorios, notas y SSE).
 - Suite de prueba de humo (`prueba_humo.py`) y arquitectura modular (todos los archivos <= 15 KB).
 
 ## 5. Tareas pendientes y pospuestas
