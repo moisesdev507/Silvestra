@@ -1,43 +1,28 @@
-"""Puente de comunicación entre Telegram y Silvestra vía Telegram Bot API."""
+"""Puente de comunicación entre Telegram y Silvestra vía Telegram Bot API nativa."""
 import datetime
-import random
+import json
 import re
 import socket
+import ssl
 import threading
 import time
-import requests
-import urllib3.util.connection as urllib3_conn
+import urllib.error
+import urllib.parse
+import urllib.request
 
-# Forzar resolución IPv4 para evitar timeouts por IPv6 no enrutables
-try:
-    urllib3_conn.allowed_gai_family = lambda: socket.AF_INET
-except Exception:
-    pass
+# Forzar resolución IPv4 nativa para telegram.org
+_orig_gai = socket.getaddrinfo
+def _ipv4_gai(h, p, f=0, t=0, pr=0, fl=0):
+    return _orig_gai(h, p, socket.AF_INET if h and "telegram.org" in str(h) else f, t, pr, fl)
+socket.getaddrinfo = _ipv4_gai
+
+_SSL_CTX = ssl.create_default_context()
 
 import acciones
 import config
 import estado
 import pantalla
-from telegram_medios import GestorMediosTelegram
-
-PATRONES_PRIVACIDAD = [
-    (re.compile(r"gsk_[A-Za-z0-9_-]{20,}"), "[CLAVE_PROTEGIDA]"),
-    (re.compile(r"sk-(?:or-v1-)?[A-Za-z0-9_-]{20,}"), "[CLAVE_PROTEGIDA]"),
-    (re.compile(r"AQ\.[A-Za-z0-9_-]{20,}"), "[CLAVE_PROTEGIDA]"),
-    (re.compile(r"\d{8,12}:[A-Za-z0-9_-]{25,50}"), "[TOKEN_PROTEGIDO]"),
-    (re.compile(r"[A-Za-z]:\\[^\s\"'\n<>*|?]+|/(?:[\w.-]+/)+[\w.-]+"), "[RUTA_LOCAL]"),
-    (re.compile(r"(?i)\bconfig\.py\b|\.env\b"), "[configuración]"),
-]
-
-
-def sanitizar_privacidad(texto):
-    """Elimina tokens, claves de API, rutas locales y archivos de configuración."""
-    if not texto:
-        return ""
-    s = str(texto)
-    for pat, rep in PATRONES_PRIVACIDAD:
-        s = pat.sub(rep, s)
-    return s
+from telegram_medios import GestorMediosTelegram, sanitizar_privacidad
 
 
 class TelegramPuente:
@@ -47,23 +32,12 @@ class TelegramPuente:
         self.activo = bool(self.token)
         self.id_dueno = int(getattr(config, "ID_TELEGRAM_DUENO", 0) or 0)
         self.chat_id_autorizado = self.id_dueno if self.id_dueno > 0 else estado.cargar().get("telegram_chat_id")
-        self.codigo_pendiente = None
-        self.tiempo_codigo = 0.0
         self.historial_proactivo = []
         self._hilo = None
         self._detener = threading.Event()
         self.medios = GestorMediosTelegram(self)
-        self._sesion_envio = requests.Session()
-        self._sesion_envio.headers.update({"Connection": "close"})
-        self._sesion_poll = requests.Session()
         if self.id_dueno <= 0:
             print("[telegram] AVISO: ID_TELEGRAM_DUENO es 0 o falta en config.py. El bot NO ejecutará acciones.", flush=True)
-
-    def _guardar_chat_autorizado(self, chat_id):
-        datos = estado.cargar()
-        datos["telegram_chat_id"] = chat_id
-        estado.guardar(datos)
-        self.chat_id_autorizado = chat_id
 
     def iniciar(self):
         if not self.activo:
@@ -76,53 +50,68 @@ class TelegramPuente:
 
     def detener(self):
         self._detener.set()
-        try:
-            self._sesion_envio.close()
-            self._sesion_poll.close()
-        except Exception:
-            pass
-
-    def _post_reintento(self, endpoint, json=None, data=None, files=None):
-        url = f"https://api.telegram.org/bot{self.token}/{endpoint}"
-        headers = {"Connection": "close"}
-        for intento in range(3):
-            try:
-                r = self._sesion_envio.post(url, json=json, data=data, files=files, headers=headers, timeout=(5, 15))
-                if r.status_code == 200:
-                    return r
-                print(f"[telegram] Error en {endpoint}: status={r.status_code}", flush=True)
-                return None
-            except (requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as e:
-                print(f"[telegram] Reintento {endpoint} {intento + 1}/2 por timeout/conexión: {e}", flush=True)
-                if intento < 2:
-                    time.sleep(1.0)
-            except Exception as e:
-                print(f"[telegram] Excepción en {endpoint}: {e}", flush=True)
-                return None
-        return None
 
     def _enviar_telegram(self, chat_id, texto):
         if not self.token or not chat_id:
             return False
         texto_seguro = sanitizar_privacidad(texto)
-        r = self._post_reintento("sendMessage", json={"chat_id": chat_id, "text": texto_seguro})
-        if r:
-            print(f"[telegram] Mensaje enviado a chat_id={chat_id} (longitud={len(texto_seguro)})", flush=True)
-            return True
+        url = f"https://api.telegram.org/bot{self.token}/sendMessage"
+        payload = json.dumps({"chat_id": chat_id, "text": texto_seguro}).encode("utf-8")
+        headers = {"Content-Type": "application/json", "User-Agent": "Silvestra/1.0", "Connection": "close"}
+
+        for intento in range(2):
+            req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=15, context=_SSL_CTX) as resp:
+                    if resp.status == 200:
+                        datos = json.loads(resp.read().decode("utf-8"))
+                        if datos.get("ok"):
+                            print(f"[telegram] Mensaje enviado a chat_id={chat_id} (longitud={len(texto_seguro)})", flush=True)
+                            return True
+                    return False
+            except (socket.timeout, TimeoutError) as e:
+                print(f"[telegram] Timeout en sendMessage (sin reintentar para no duplicar): {e}", flush=True)
+                return False
+            except urllib.error.URLError as e:
+                err_s = str(e.reason).lower() if hasattr(e, "reason") else str(e).lower()
+                if "timed out" in err_s:
+                    print(f"[telegram] Timeout en sendMessage (sin reintentar para no duplicar): {e}", flush=True)
+                    return False
+                print(f"[telegram] Error de conexión en sendMessage (intento {intento + 1}/2): {e}", flush=True)
+                if intento == 0:
+                    time.sleep(1.0)
+            except Exception as e:
+                print(f"[telegram] Excepción enviando a chat_id={chat_id}: {e}", flush=True)
+                return False
         return False
 
     def enviar_audio(self, audio_bytes, caption=None):
         """Envía un audio MP3 a Telegram con sendAudio (sin requerir ffmpeg)."""
         if not self.token or not self.chat_id_autorizado or not audio_bytes:
             return False
-        data = {"chat_id": self.chat_id_autorizado, "title": "Nota de voz", "performer": "Silvestra"}
+        url = f"https://api.telegram.org/bot{self.token}/sendAudio"
+        boundary = f"----SilvestraBoundary{int(time.time()*1000)}"
+        c_disp = f"--{boundary}\r\nContent-Disposition: form-data; name="
+        body = bytearray()
+        for k, v in [("chat_id", str(self.chat_id_autorizado)), ("title", "Nota de voz"), ("performer", "Silvestra")]:
+            body.extend(f'{c_disp}"{k}"\r\n\r\n{v}\r\n'.encode("utf-8"))
         if caption:
-            data["caption"] = sanitizar_privacidad(caption)
-        files = {"audio": ("nota_voz.mp3", audio_bytes, "audio/mpeg")}
-        r = self._post_reintento("sendAudio", data=data, files=files)
-        if r:
-            print(f"[telegram] Audio enviado a chat_id={self.chat_id_autorizado} ({len(audio_bytes)} bytes)", flush=True)
-            return True
+            body.extend(f'{c_disp}"caption"\r\n\r\n{sanitizar_privacidad(caption)}\r\n'.encode("utf-8"))
+        body.extend(
+            f'{c_disp}"audio"; filename="nota_voz.mp3"\r\nContent-Type: audio/mpeg\r\n\r\n'.encode("utf-8")
+            + audio_bytes + b"\r\n" + f"--{boundary}--\r\n".encode("utf-8")
+        )
+        headers = {"Content-Type": f"multipart/form-data; boundary={boundary}", "User-Agent": "Silvestra/1.0", "Connection": "close"}
+        req = urllib.request.Request(url, data=bytes(body), headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=30, context=_SSL_CTX) as resp:
+                if resp.status == 200:
+                    datos = json.loads(resp.read().decode("utf-8"))
+                    if datos.get("ok"):
+                        print(f"[telegram] Audio enviado a chat_id={self.chat_id_autorizado} ({len(audio_bytes)} bytes)", flush=True)
+                        return True
+        except Exception as e:
+            print(f"[telegram] Excepción enviando audio: {e}", flush=True)
         return False
 
     def avisar_celular(self, mensaje, forzar=False):
@@ -130,10 +119,8 @@ class TelegramPuente:
         if not self.chat_id_autorizado:
             print("[telegram] Aviso proactivo descartado: sin chat vinculado.", flush=True)
             return False
-
         ahora = time.time()
         self.historial_proactivo = [t for t in self.historial_proactivo if ahora - t < 3600]
-
         if not forzar:
             if len(self.historial_proactivo) >= 3:
                 print("[telegram] Aviso proactivo bloqueado: límite de 3 mensajes/hora alcanzado.", flush=True)
@@ -142,7 +129,6 @@ class TelegramPuente:
             if hora >= 22 or hora < 7:
                 print(f"[telegram] Aviso proactivo bloqueado: horario de silencio ({hora:02d}:00).", flush=True)
                 return False
-
         ok = self._enviar_telegram(self.chat_id_autorizado, mensaje)
         if ok:
             self.historial_proactivo.append(ahora)
@@ -152,7 +138,6 @@ class TelegramPuente:
         chat_id = msg.get("chat", {}).get("id")
         if chat_id is None:
             return
-
         id_dueno = int(getattr(config, "ID_TELEGRAM_DUENO", 0) or 0)
         if id_dueno <= 0 or chat_id != id_dueno:
             motivo = "ID_TELEGRAM_DUENO no configurado" if id_dueno <= 0 else "Usuario no autorizado"
@@ -165,36 +150,25 @@ class TelegramPuente:
             return
 
         self.chat_id_autorizado = chat_id
-        texto = msg.get("text", "")
-        texto_limpio = (texto or "").strip()
+        texto_limpio = (msg.get("text") or "").strip()
 
-        # 1. Notas de voz o audios entrantes
         if "voice" in msg or "audio" in msg:
             self.medios.procesar_nota_voz(msg)
-            return
-
-        # 2. Fotos entrantes (con o sin texto)
-        if "photo" in msg:
-            caption = msg.get("caption", "")
+        elif "photo" in msg:
             import camara_dueno
-            if camara_dueno.es_foto_entrenamiento_cara(caption):
+            if camara_dueno.es_foto_entrenamiento_cara(msg.get("caption", "")):
                 self._procesar_entrenamiento_cara(msg)
-                return
-            self.medios.procesar_foto(msg)
-            return
-
-        # 3. Texto normal
-        if texto_limpio:
+            else:
+                self.medios.procesar_foto(msg)
+        elif texto_limpio:
             self._atender_dueno(chat_id, texto_limpio)
 
     def _atender_dueno(self, chat_id, texto):
         print(f"[telegram] Mensaje recibido de dueño chat_id={chat_id} (longitud={len(texto)})", flush=True)
         if not texto:
             return
-
         self.app.origen_entrada_actual = "telegram"
 
-        # Intercepción de código de seguridad antes del LLM
         if hasattr(self.app, "control_seguridad") and self.app.control_seguridad.tiene_pendiente():
             if self.app.control_seguridad.verificar_codigo(texto):
                 return
@@ -222,37 +196,23 @@ class TelegramPuente:
             self._enviar_telegram(chat_id, "Tuve un problema para procesar tu mensaje.")
             return
 
-        # Manejo de captura de pantalla solicitada expresamente
-        es_pedir_captura = bool(
-            (accion and accion.startswith("enviar_captura"))
-            or re.search(r"\b(m[aá]ndame|env[ií]ame|p[aá]same)\b.*\b(captura|pantalla)\b", texto, re.I)
-        )
-        if es_pedir_captura:
+        if (accion and accion.startswith("enviar_captura")) or re.search(r"\b(m[aá]ndame|env[ií]ame|p[aá]same)\b.*\b(captura|pantalla)\b", texto, re.I):
             self._enviar_telegram(chat_id, sanitizar_privacidad(resp))
             self.medios.enviar_captura_pantalla(chat_id)
             return
 
-        # Manejo de foto de cámara solicitada expresamente
-        es_pedir_camara = bool(
-            (accion and accion.startswith("enviar_foto_camara"))
-            or re.search(r"\b(m[aá]ndame|env[ií]ame|toma|t[oó]mame|p[aá]same)\b.*\bfoto.*c[aá]mara\b", texto, re.I)
-        )
-        if es_pedir_camara:
+        if (accion and accion.startswith("enviar_foto_camara")) or re.search(r"\b(m[aá]ndame|env[ií]ame|toma|t[oó]mame|p[aá]same)\b.*\bfoto.*c[aá]mara\b", texto, re.I):
             self._enviar_telegram(chat_id, sanitizar_privacidad(resp))
             self.medios.enviar_foto_camara(chat_id)
             return
 
-        # Manejo de visión de pantalla sin enviar imágenes (solo texto)
         if accion and (accion.startswith("mirar_pantalla") or accion == "mirar_pantalla"):
             arg = accion.split("|", 1)[1].strip() if "|" in accion else None
 
             def al_terminar_vision(texto_vision):
                 sani = sanitizar_privacidad(texto_vision)
                 self._enviar_telegram(chat_id, sani)
-                if hablar_en_voz_alta:
-                    self.app.cola.put(("hablar", texto_vision))
-                else:
-                    self.app.cola.put(("telegram_burbuja", texto_vision))
+                self.app.cola.put(("hablar" if hablar_en_voz_alta else "telegram_burbuja", texto_vision))
 
             pantalla.analizar_pantalla(self.app, pregunta=arg, hablar=False, al_terminar=al_terminar_vision)
             return
@@ -260,11 +220,7 @@ class TelegramPuente:
         self._enviar_telegram(chat_id, sanitizar_privacidad(resp))
         if accion:
             self.app.cola.put(("ejecutar_accion", accion))
-
-        if hablar_en_voz_alta:
-            self.app.cola.put(("hablar", resp))
-        else:
-            self.app.cola.put(("telegram_burbuja", resp))
+        self.app.cola.put(("hablar" if hablar_en_voz_alta else "telegram_burbuja", resp))
 
     def _procesar_entrenamiento_cara(self, msg):
         chat_id = msg.get("chat", {}).get("id")
@@ -278,40 +234,49 @@ class TelegramPuente:
             return
         import camara_dueno
         ok, mensaje, n = camara_dueno.aprender_cara_desde_bytes(bytes_foto)
+        if ok and hasattr(self.app, "camara") and self.app.camara:
+            try:
+                self.app.camara.recargar_banco_dueno()
+            except Exception as e:
+                print(f"[telegram] Error recargando banco en camara: {e}", flush=True)
+        self._enviar_telegram(chat_id, f"{'✅' if ok else '⚠️'} {mensaje}")
         if ok:
-            if hasattr(self.app, "camara") and self.app.camara:
-                try:
-                    self.app.camara.recargar_banco_dueno()
-                except Exception as e:
-                    print(f"[telegram] Error recargando banco en camara: {e}", flush=True)
-            self._enviar_telegram(chat_id, f"✅ {mensaje}")
             self.app.cola.put(("telegram_burbuja", f"[Foto aprendida]: {mensaje}"))
-        else:
-            self._enviar_telegram(chat_id, f"⚠️ {mensaje}")
 
     def _bucle_polling(self):
         offset = 0
-        url = f"https://api.telegram.org/bot{self.token}/getUpdates"
+        base_url = f"https://api.telegram.org/bot{self.token}/getUpdates"
 
         while not self._detener.is_set():
             try:
-                params = {"offset": offset, "timeout": 20}
-                r = self._sesion_poll.get(url, params=params, timeout=(5, 25))
-                if r.status_code == 200:
-                    datos = r.json()
-                    if datos.get("ok"):
-                        for update in datos.get("result", []):
-                            offset = max(offset, update.get("update_id", 0) + 1)
-                            msg = update.get("message") or update.get("edited_message")
-                            if msg and msg.get("chat", {}).get("id") is not None:
-                                self._procesar_mensaje(msg)
-                elif r.status_code in (401, 404):
-                    print(f"[telegram] Token inválido ({r.status_code}). Verifica config.py.", flush=True)
+                query = urllib.parse.urlencode({"offset": offset, "timeout": 20})
+                url = f"{base_url}?{query}"
+                req = urllib.request.Request(
+                    url,
+                    headers={"User-Agent": "Silvestra/1.0", "Connection": "close"}
+                )
+                with urllib.request.urlopen(req, timeout=25, context=_SSL_CTX) as resp:
+                    if resp.status == 200:
+                        datos = json.loads(resp.read().decode("utf-8"))
+                        if datos.get("ok"):
+                            for update in datos.get("result", []):
+                                offset = max(offset, update.get("update_id", 0) + 1)
+                                msg = update.get("message") or update.get("edited_message")
+                                if msg and msg.get("chat", {}).get("id") is not None:
+                                    self._procesar_mensaje(msg)
+            except urllib.error.HTTPError as e:
+                if e.code in (401, 404):
+                    print(f"[telegram] Token inválido ({e.code}). Verifica config.py.", flush=True)
                     time.sleep(15)
                 else:
                     time.sleep(3)
-            except requests.exceptions.RequestException:
-                time.sleep(5)
+            except (socket.timeout, TimeoutError):
+                pass
+            except urllib.error.URLError as e:
+                if isinstance(e.reason, (socket.timeout, TimeoutError)) or "timed out" in str(e.reason).lower():
+                    pass
+                else:
+                    time.sleep(5)
             except Exception as e:
                 print(f"[telegram] Error en polling: {e}", flush=True)
                 time.sleep(5)
@@ -321,30 +286,23 @@ def instalar(app):
     puente = TelegramPuente(app)
 
     def accion_avisar(arg=None):
-        if not arg:
-            return
-        def _hilo():
-            ok = puente.avisar_celular(arg, forzar=True)
-            if not ok:
-                app.cola.put(("frase", "No pude enviar el mensaje a Telegram."))
-        threading.Thread(target=_hilo, daemon=True, name="TelegramAvisar").start()
+        if arg:
+            threading.Thread(
+                target=lambda: puente.avisar_celular(arg, forzar=True) or app.cola.put(("frase", "No pude enviar el mensaje a Telegram.")),
+                daemon=True,
+                name="TelegramAvisar"
+            ).start()
 
-    def accion_captura(arg=None):
+    def _lanza(metodo, msg_err):
         if not puente.chat_id_autorizado:
-            app.decir("No tienes ningún celular vinculado por Telegram para enviarte la captura.")
-            return
-        threading.Thread(target=puente.medios.enviar_captura_pantalla, args=(puente.chat_id_autorizado, True), daemon=True).start()
-
-    def accion_camara(arg=None):
-        if not puente.chat_id_autorizado:
-            app.decir("No tienes ningún celular vinculado por Telegram para enviarte la foto.")
-            return
-        threading.Thread(target=puente.medios.enviar_foto_camara, args=(puente.chat_id_autorizado, True), daemon=True).start()
+            app.decir(msg_err)
+        else:
+            threading.Thread(target=metodo, args=(puente.chat_id_autorizado, True), daemon=True).start()
 
     acciones.registrar("avisar_celular", accion_avisar, "envía mensaje al celular por Telegram. Escribe: ACCION: avisar_celular | mensaje", con_texto=True)
     acciones.registrar("enviar_mensaje_telegram", accion_avisar, "envía mensaje a Telegram. Escribe: ACCION: enviar_mensaje_telegram | mensaje", con_texto=True)
-    acciones.registrar("enviar_captura", accion_captura, "captura la pantalla y la envía por Telegram.")
-    acciones.registrar("enviar_foto_camara", accion_camara, "toma foto con cámara y la envía por Telegram.")
+    acciones.registrar("enviar_captura", lambda arg=None: _lanza(puente.medios.enviar_captura_pantalla, "No tienes ningún celular vinculado por Telegram para enviarte la captura."), "captura la pantalla y la envía por Telegram.")
+    acciones.registrar("enviar_foto_camara", lambda arg=None: _lanza(puente.medios.enviar_foto_camara, "No tienes ningún celular vinculado por Telegram para enviarte la foto."), "toma foto con cámara y la envía por Telegram.")
 
     puente.iniciar()
     return puente
