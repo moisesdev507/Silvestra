@@ -5,6 +5,7 @@ nativas de Windows (ctypes), y navegar a sitios web seguros en hilos secundarios
 """
 import ctypes
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -79,10 +80,38 @@ def controlar_musica(app, comando):
         print(f"[control_pc] Comando de música no reconocido: '{cmd_norm}'", flush=True)
 
 
-def abrir_programa(app, nombre):
+def resolver_ruta_vscode():
+    """Resuelve dinámicamente la ruta absoluta de Code.exe en Windows."""
+    candidatos = [
+        os.path.expandvars(r"%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe"),
+        r"C:\Program Files\Microsoft VS Code\Code.exe",
+        r"C:\Program Files (x86)\Microsoft VS Code\Code.exe",
+    ]
+    for c in candidatos:
+        if c and os.path.isfile(c):
+            return os.path.abspath(c)
+
+    for cmd in ("code.exe", "code.cmd", "code"):
+        w = shutil.which(cmd)
+        if w and os.path.isfile(w):
+            return os.path.abspath(w)
+    return None
+
+
+def obtener_programas_permitidos():
+    """Devuelve el diccionario de programas permitidos combinando config y detección de VS Code."""
+    programas = dict(getattr(config, "PROGRAMAS_PERMITIDOS", {}))
+    ruta_vs = resolver_ruta_vscode()
+    if ruta_vs:
+        for alias in ("vscode", "vs code", "visual studio code", "code"):
+            programas[alias] = ruta_vs
+    return programas
+
+
+def abrir_programa(app, nombre, hablar=True):
     """Abre un ejecutable validado estrictamente contra la lista de programas permitidos."""
     nom_norm = (nombre or "").strip().lower().replace("_", " ")
-    programas = getattr(config, "PROGRAMAS_PERMITIDOS", {})
+    programas = obtener_programas_permitidos()
 
     # Búsqueda exacta o coincidencia en lista permitida
     exe_encontrado = None
@@ -94,17 +123,22 @@ def abrir_programa(app, nombre):
 
     if not exe_encontrado:
         print(f"[control_pc] Programa no permitido bloqueado: '{nombre}'", flush=True)
-        app.cola.put(("hablar", f"El programa {nombre} no está en mi lista de permitidos por seguridad."))
-        return
+        if hablar and app and hasattr(app, "cola"):
+            app.cola.put(("hablar", f"El programa {nombre} no está en mi lista de permitidos por seguridad."))
+        return False
 
     print(f"[control_pc] Abriendo programa permitido: '{nom_norm}' -> {exe_encontrado}", flush=True)
     try:
-        # shell=False estricto para evitar cualquier inyección de comandos
-        subprocess.Popen([exe_encontrado], shell=False)
-        app.cola.put(("hablar", f"Abriendo {nom_norm}."))
+        flags = 0x08000000 if os.name == "nt" else 0
+        subprocess.Popen([exe_encontrado], shell=False, creationflags=flags)
+        if hablar and app and hasattr(app, "cola"):
+            app.cola.put(("hablar", f"Abriendo {nom_norm}."))
+        return True
     except Exception as e:
         print(f"[control_pc] Error iniciando programa {exe_encontrado}: {e}", flush=True)
-        app.cola.put(("hablar", f"No pude abrir {nom_norm} en el sistema."))
+        if hablar and app and hasattr(app, "cola"):
+            app.cola.put(("hablar", f"No pude abrir {nom_norm} en el sistema."))
+        return False
 
 
 def abrir_web(app, sitio):

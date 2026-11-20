@@ -128,10 +128,13 @@ def _abrir_vscode_seguro(app):
     """Intenta abrir VS Code de forma segura sin bloquear ni crashear."""
     try:
         import control_pc
-        control_pc.abrir_programa(app, "vscode")
-        print("[modos_sistema] Solicitud de apertura de VS Code enviada.", flush=True)
+        ok = control_pc.abrir_programa(app, "vscode", hablar=False)
+        if ok:
+            print("[modo] vscode_lanzado=True", flush=True)
+        else:
+            print("[modo] vscode_error=no_permitido_o_no_encontrado", flush=True)
     except Exception as e:
-        print(f"[modos_sistema] No se pudo abrir VS Code: {e}", flush=True)
+        print(f"[modo] vscode_error={e}", flush=True)
 
 
 def activar_modo(app, modo, origen="voz"):
