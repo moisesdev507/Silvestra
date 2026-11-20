@@ -34,7 +34,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - **`control_laptop.py` / `control_seguridad.py`**: Control de la laptop por niveles (libre, con código y prohibido) con lista permitida y auditoría.
 - **`pantalla_remota.py` / `pantalla_remota_ui.py` / `pantalla_remota_datos.py`**: Servidor y HUD Jarvis en tiempo real para tablet.
 - **`respaldo.py`**: Copia de seguridad zip fuera de Git (`~/Documents/Respaldos_Silvestra`) con rotación a 10 archivos sin claves.
-- **`presencia.py` / `camara.py`**: Presencia y seguimiento facial con MediaPipe.
+- **`presencia.py` / `camara.py` / `camara_dueno.py`**: Presencia y biometría facial SFace + YuNet con banco multi-muestra (hasta 20), scoring top-2 y entrenamiento de cara por Telegram.
 - **`voz_dueno.py` / `voz_dueno_banco.py` / `voz_dueno_registro.py`**: Biometría vocal CAM++ con banco multi-muestra (hasta 25), scoring top-2, aprendizaje `reforzar_mi_voz`, doble factor y modos de seguridad.
 - **`prueba_humo.py`**: Suite de validación rápida de sintaxis, reglas de 15 KB y módulos clave.
 
@@ -49,14 +49,15 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - Rostro reactivo con mirada suave (`camara.py`), microexpresiones, parpadeo y aro facial (celeste/amarillo).
 - Interrupción por voz (barge-in <500ms), filtro de eco y exclusión mutua de streams de audio (sin 0xc0000374).
 - Síntesis en streaming (`cerebro_parser.py`) y voz panameña con `voz_reproductor.py` thread-safe.
-- Silero VAD neuronal (`oido_vad.py` 16 kHz, sin medidor casero ni descarte de 0.75s, clips >=0.30s), anti-eco inteligente, Whisper determinista (temp 0.0), filtro de baja confianza (`validar_calidad_whisper`), Vosk offline, flujo persistente anti-crash 0xc0000374 y tolerancia de silencios en `eventos.py`.
+- Silero VAD neuronal (`oido_vad.py`), anti-eco inteligente, Whisper determinista, Vosk offline y flujo anti-crash 0xc0000374.
 - Prompt compacto (<1350 tokens) con inyección selectiva (`cerebro_categorias.py`) y multillm en cascada con Keep-Alive.
 - Memoria duradera con fechas, filtro estricto anti-meta y desduplicación semántica (`memoria_filtro.py`).
 - Acciones por voz: recuerdos, recordatorios persistentes, proveedores, control de escucha y modo estudio.
 - Control de laptop por niveles (libre, peligroso exclusivo por Telegram con código y prohibido con auditoría).
 - Respaldo automático fuera de Git (`respaldo.py`) con rotación a 10 archivos en Documentos sin claves.
-- HUD Jarvis tablet a pantalla completa (100dvh horizontal, orbe Canvas, telemetría CPU/RAM/batería, recordatorios, notas, modo privado, SSE y supresión de ruido socket).
-- Biometría CAM++ multi-muestra (`voz_dueno*.py`, 8 frases), banco hasta 25 muestras en `voz_dueno.npy` con rotación FIFO (8 anclas fijas), scoring top-2, tolerancia en comandos cortos, doble factor cámara, modos Solo Dueño/Invitado y acción `reforzar_mi_voz`.
+- HUD Jarvis tablet a pantalla completa (100dvh horizontal, telemetría CPU/RAM/batería, notas, modo privado y SSE).
+- Biometría vocal CAM++ multi-muestra (`voz_dueno*.py`), banco hasta 25 muestras con rotación FIFO (8 anclas fijas), scoring top-2, tolerancia comandos cortos, doble factor, modos Solo Dueño/Invitado y `reforzar_mi_voz`.
+- Biometría facial SFace multi-muestra (`camara_dueno.py`, `camara.py`), banco hasta 20 fotos en `dueno.npy` (4 anclas fijas, FIFO), scoring top-2, descarte duplicados (>0.94) y aprendizaje enviando fotos con caption ('mi cara', 'entrenar cara') por Telegram.
 - Suite de prueba de humo (`prueba_humo.py`) y arquitectura modular (todos los archivos <= 15 KB).
 
 ## 5. Tareas pendientes y pospuestas

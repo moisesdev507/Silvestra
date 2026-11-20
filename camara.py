@@ -66,12 +66,16 @@ class Camara:
     # ---------- Dueño ----------
     def _cargar_dueno(self):
         try:
-            import numpy as np
-
-            if os.path.exists(ARCHIVO_DUENO):
-                self.dueno = np.load(ARCHIVO_DUENO).astype("float32")
+            import camara_dueno
+            self.dueno = camara_dueno.cargar_banco_cara(ARCHIVO_DUENO)
         except Exception:
             self.dueno = None
+
+    def recargar_banco_dueno(self):
+        """Recarga el banco facial en caliente (ej. tras aprender foto de Telegram)."""
+        self._cargar_dueno()
+        n = len(self.dueno) if self.dueno is not None else 0
+        print(f"[camara] Banco facial recargado en vivo. Muestras: {n}", flush=True)
 
     def permite(self):
         """¿Puede obedecer ahora? No, solo si ve a un desconocido y no a su dueño."""
@@ -184,16 +188,20 @@ class Camara:
             if self.enrolando is not None:
                 self.enrolando.append(feat.copy())
                 if len(self.enrolando) >= 8:
-                    media = np.mean(np.vstack(self.enrolando), axis=0, keepdims=True).astype("float32")
-                    np.save(ARCHIVO_DUENO, media)
-                    self.dueno = media
+                    import camara_dueno
+                    media = np.mean(np.vstack(self.enrolando), axis=0).astype("float32").reshape(-1)
+                    nuevo_banco, _ = camara_dueno.agregar_muestra_cara(media, self.dueno)
+                    camara_dueno.guardar_banco_cara(nuevo_banco, ARCHIVO_DUENO)
+                    self.dueno = nuevo_banco
                     self.enrolando = None
                     self.ult_dueno = ahora
                     self._evento("aprendida")
                 return
             if self.dueno is None:
                 return
-            if reco.match(self.dueno, feat, cv2.FaceRecognizerSF_FR_COSINE) >= 0.363:
+            import camara_dueno
+            score, max_sim, n_muestras = camara_dueno.calcular_similitud_cara(feat, self.dueno)
+            if score >= 0.363:
                 vio_dueno = True
                 if ahora - self.ult_dueno > 120:
                     self._evento("saludo")

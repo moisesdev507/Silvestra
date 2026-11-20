@@ -156,6 +156,11 @@ class TelegramPuente:
 
         # 2. Fotos entrantes (con o sin texto)
         if "photo" in msg:
+            caption = msg.get("caption", "")
+            import camara_dueno
+            if camara_dueno.es_foto_entrenamiento_cara(caption):
+                self._procesar_entrenamiento_cara(msg)
+                return
             self.medios.procesar_foto(msg)
             return
 
@@ -241,6 +246,29 @@ class TelegramPuente:
             self.app.cola.put(("hablar", resp))
         else:
             self.app.cola.put(("telegram_burbuja", resp))
+
+    def _procesar_entrenamiento_cara(self, msg):
+        chat_id = msg.get("chat", {}).get("id")
+        fotos = msg.get("photo", [])
+        if not fotos or not fotos[-1].get("file_id"):
+            return
+        from telegram_medios import descargar_archivo_telegram
+        bytes_foto, err = descargar_archivo_telegram(self.token, fotos[-1]["file_id"])
+        if err or not bytes_foto:
+            self._enviar_telegram(chat_id, "No pude descargar la foto enviada.")
+            return
+        import camara_dueno
+        ok, mensaje, n = camara_dueno.aprender_cara_desde_bytes(bytes_foto)
+        if ok:
+            if hasattr(self.app, "camara") and self.app.camara:
+                try:
+                    self.app.camara.recargar_banco_dueno()
+                except Exception as e:
+                    print(f"[telegram] Error recargando banco en camara: {e}", flush=True)
+            self._enviar_telegram(chat_id, f"✅ {mensaje}")
+            self.app.cola.put(("telegram_burbuja", f"[Foto aprendida]: {mensaje}"))
+        else:
+            self._enviar_telegram(chat_id, f"⚠️ {mensaje}")
 
     def _bucle_polling(self):
         offset = 0
