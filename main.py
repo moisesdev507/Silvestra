@@ -92,7 +92,7 @@ class Silvestra:
         self.memoria = Memoria()
         http_client = httpx.Client(limits=httpx.Limits(max_keepalive_connections=10, max_connections=20))
         self.cliente = Groq(api_key=config.CLAVE, http_client=http_client)
-        self.cerebro = Cerebro(self.cliente, self.memoria)
+        self.cerebro = Cerebro(self.cliente, self.memoria, app=self)
         self.voz = Voz()
         self.oido = Oido(self.cliente, self.memoria.vocabulario)
         self.cola = queue.Queue()

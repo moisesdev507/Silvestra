@@ -1,4 +1,5 @@
 """Enrutador determinista de dos carriles: 'rapido' (gratis) vs 'pro' (avanzado)."""
+import json
 import re
 import time
 import unicodedata
@@ -197,6 +198,144 @@ def completar_pro(mensajes, tarea="charla", timeout=15.0):
     if choices and "message" in choices[0]:
         return choices[0]["message"].get("content", "")
     raise RuntimeError("Respuesta inesperada de OpenRouter.")
+
+
+def completar_pro_flujo(mensajes, al_frase=None, on_primer_token=None, timeout=15.0):
+    """Envía la solicitud al modelo Pro con streaming de tokens y emisión de frases."""
+    cfg = obtener_configuracion_pro()
+    prov = cfg["proveedor"]
+    clave = cfg["clave"]
+    modelo = cfg["modelo"]
+
+    if not clave:
+        raise RuntimeError("No hay clave configurada para el carril Pro.")
+
+    from sesion_http import obtener_sesion
+    sesion = obtener_sesion()
+    from cerebro_parser import _cortar, _respuesta_parcial
+
+    crudo = ""
+    emitido = 0
+    primer_token_notificado = False
+
+    if prov == "anthropic":
+        url = "https://api.anthropic.com/v1/messages"
+        headers = {
+            "x-api-key": clave,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }
+        system_text = ""
+        user_assistant_msgs = []
+        for m in mensajes:
+            r = m.get("role", "user")
+            c = m.get("content", "")
+            if r == "system":
+                system_text += f"\n{c}".strip()
+            else:
+                user_assistant_msgs.append({"role": r, "content": c})
+
+        payload = {
+            "model": modelo,
+            "max_tokens": 1000,
+            "temperature": 0.5,
+            "system": system_text,
+            "messages": user_assistant_msgs,
+            "stream": True,
+        }
+        resp = sesion.post(url, headers=headers, json=payload, stream=True, timeout=(4.0, timeout))
+        if resp.status_code != 200:
+            raise RuntimeError(f"HTTP {resp.status_code} desde Anthropic: {resp.text[:120]}")
+
+        for linea_raw in resp.iter_lines(decode_unicode=False):
+            if not linea_raw:
+                continue
+            linea = linea_raw.decode("utf-8", errors="replace").strip()
+            if not linea.startswith("data:"):
+                continue
+            data_str = linea[5:].strip()
+            if not data_str or data_str == "[DONE]":
+                break
+            try:
+                evento = json.loads(data_str)
+                tipo = evento.get("type", "")
+                if tipo == "content_block_delta":
+                    delta = evento.get("delta", {})
+                    texto_chunk = delta.get("text", "")
+                    if texto_chunk:
+                        if not primer_token_notificado:
+                            primer_token_notificado = True
+                            if callable(on_primer_token):
+                                on_primer_token()
+                        crudo += texto_chunk
+                        parcial = _respuesta_parcial(crudo)
+                        if parcial is not None and callable(al_frase):
+                            frases, emitido = _cortar(parcial, emitido)
+                            for f in frases:
+                                if f.strip():
+                                    al_frase(f.strip())
+            except Exception:
+                continue
+    else:
+        # OpenRouter / OpenAI compatible
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {clave}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/moises/silvestra",
+            "X-Title": "Silvestra Assistant",
+        }
+        payload = {
+            "model": modelo,
+            "messages": mensajes,
+            "temperature": 0.5,
+            "max_tokens": 1000,
+            "stream": True,
+        }
+        resp = sesion.post(url, headers=headers, json=payload, stream=True, timeout=(4.0, timeout))
+        if resp.status_code != 200:
+            raise RuntimeError(f"HTTP {resp.status_code} desde OpenRouter: {resp.text[:120]}")
+
+        for linea_raw in resp.iter_lines(decode_unicode=False):
+            if not linea_raw:
+                continue
+            linea = linea_raw.decode("utf-8", errors="replace").strip()
+            if not linea.startswith("data:"):
+                continue
+            data_str = linea[5:].strip()
+            if not data_str or data_str == "[DONE]":
+                break
+            try:
+                evento = json.loads(data_str)
+                choices = evento.get("choices", [])
+                if choices:
+                    texto_chunk = choices[0].get("delta", {}).get("content", "")
+                    if texto_chunk:
+                        if not primer_token_notificado:
+                            primer_token_notificado = True
+                            if callable(on_primer_token):
+                                on_primer_token()
+                        crudo += texto_chunk
+                        parcial = _respuesta_parcial(crudo)
+                        if parcial is not None and callable(al_frase):
+                            frases, emitido = _cortar(parcial, emitido)
+                            for f in frases:
+                                if f.strip():
+                                    al_frase(f.strip())
+            except Exception:
+                continue
+
+    # Emitir cualquier residuo pendiente al terminar el stream
+    if callable(al_frase) and crudo:
+        parcial = _respuesta_parcial(crudo)
+        if parcial is not None and len(parcial) > emitido:
+            resto = parcial[emitido:].strip()
+            if resto:
+                al_frase(resto)
+
+    if not crudo:
+        raise RuntimeError("No se recibieron tokens del stream Pro.")
+    return crudo
 
 
 def ejecutar_con_enrutador(texto, mensajes, tarea="charla", app=None, fallback_fn=None):

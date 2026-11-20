@@ -20,9 +20,10 @@ def ahora_texto():
 
 
 class Cerebro:
-    def __init__(self, cliente, memoria):
+    def __init__(self, cliente, memoria, app=None):
         self.cliente = cliente
         self.memoria = memoria
+        self.app = app
         self.historial = []
         self.modelos = list(MODELOS)
         self.ultima_reflexion = 0.0

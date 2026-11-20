@@ -1,5 +1,6 @@
 """Manejo de respuestas en streaming para Silvestra mediante la cadena de proveedores."""
 from cerebro import separar
+import cerebro_enrutador
 import proveedores
 import proveedores_cadenas as pc
 
@@ -11,15 +12,43 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     mensajes = [{"role": "system", "content": cerebro.instrucciones(texto)}] + cerebro.historial[-8:]
 
     tarea = pc.clasificar_dificultad(texto)
-    try:
-        crudo = proveedores.completar_flujo(mensajes, al_frase, tarea=tarea, on_primer_token=on_primer_token)
-    except Exception as e:
-        print(f"[respuesta_flujo] Excepción en streaming: {e}. Usando respuesta local.", flush=True)
+
+    # Evaluación determinista del carril: rapido vs pro
+    app = getattr(cerebro, "app", None)
+    modo = "normal"
+    if app and hasattr(app, "modo_activo"):
+        modo = getattr(app, "modo_activo", "normal") or "normal"
+    else:
         try:
-            al_frase(pc.FRASE_EMERGENCIA_LOCAL)
+            import modos_sistema
+            modo = modos_sistema.obtener_modo_activo(app)
         except Exception:
             pass
-        crudo = pc.respuesta_emergencia_local()
+
+    pro_disp = cerebro_enrutador.verificar_pro_disponible()
+    carril, motivo = cerebro_enrutador.decidir_carril(texto, modo_activo=modo, pro_disponible=pro_disp)
+    print(f"[enrutador] carril={carril} motivo={motivo}", flush=True)
+
+    crudo = None
+    if carril == "pro":
+        try:
+            crudo = cerebro_enrutador.completar_pro_flujo(
+                mensajes, al_frase=al_frase, on_primer_token=on_primer_token
+            )
+        except Exception as e:
+            print(f"[enrutador] fallback_pro->rapido motivo={e}", flush=True)
+            crudo = None
+
+    if crudo is None:
+        try:
+            crudo = proveedores.completar_flujo(mensajes, al_frase, tarea=tarea, on_primer_token=on_primer_token)
+        except Exception as e:
+            print(f"[respuesta_flujo] Excepción en streaming: {e}. Usando respuesta local.", flush=True)
+            try:
+                al_frase(pc.FRASE_EMERGENCIA_LOCAL)
+            except Exception:
+                pass
+            crudo = pc.respuesta_emergencia_local()
 
     respuesta, accion, recuerdo, emocion = separar(crudo)
     if recuerdo and not getattr(cerebro, "turno_invitado", False):
