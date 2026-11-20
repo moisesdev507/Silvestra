@@ -135,6 +135,7 @@ JS_JARVIS = """
       connEl.textContent = 'EN LÍNEA';
       connEl.style.color = 'var(--green)';
     }
+    if (window.fijarEstadoEnlaceContexto) window.fijarEstadoEnlaceContexto('CONECTADO');
   }
 
   function marcarReconectando() {
@@ -142,6 +143,7 @@ JS_JARVIS = """
       connEl.textContent = 'RECONECTANDO';
       connEl.style.color = 'var(--gold)';
     }
+    if (window.fijarEstadoEnlaceContexto) window.fijarEstadoEnlaceContexto('RECONECTANDO');
   }
 
   // 5. Renderizado de datos del HUD
@@ -200,6 +202,11 @@ JS_JARVIS = """
     // Biometría en vivo
     if (d.biometria && window.actualizarBiometria) {
       window.actualizarBiometria(d.biometria);
+    }
+
+    // Context Engine en vivo
+    if (d.contexto && window.actualizarContexto) {
+      window.actualizarContexto(d.contexto);
     }
 
     // Datos y listas

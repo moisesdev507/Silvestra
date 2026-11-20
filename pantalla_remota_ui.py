@@ -1,4 +1,9 @@
 """Plantilla HTML estructurada para la interfaz Jarvis HUD de la tablet."""
+from pantalla_remota_contexto_ui import (
+    CSS_CONTEXTO_PANEL,
+    HTML_CONTEXTO_PANEL,
+    JS_CONTEXTO_PANEL,
+)
 from pantalla_remota_estilos import CSS_JARVIS
 from pantalla_remota_js import JS_JARVIS
 from pantalla_remota_js_bio import JS_BIOMETRIA
@@ -15,6 +20,7 @@ PAGINA_JARVIS_HTML = f"""<!DOCTYPE html>
   <title>SILVESTRA // JARVIS HUD</title>
   <style>
 {CSS_JARVIS}
+{CSS_CONTEXTO_PANEL}
   </style>
 </head>
 <body>
@@ -159,6 +165,7 @@ PAGINA_JARVIS_HTML = f"""<!DOCTYPE html>
         <div class="dynamic-card-title">PROYECCIÓN // TARJETA PRINCIPAL</div>
         <div id="dynamicCardText" class="dynamic-card-body">SILVESTRA VIRTUAL INTERFACE // SISTEMA OPERATIVO</div>
       </div>
+{HTML_CONTEXTO_PANEL}
     </section>
 
     <!-- PANEL DERECHO: RECORDATORIOS, NOTAS Y EVENTOS -->
@@ -198,6 +205,7 @@ PAGINA_JARVIS_HTML = f"""<!DOCTYPE html>
   <script>
 {JS_JARVIS}
 {JS_BIOMETRIA}
+{JS_CONTEXTO_PANEL}
   </script>
 </body>
 </html>

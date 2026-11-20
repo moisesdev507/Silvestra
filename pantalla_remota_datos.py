@@ -245,6 +245,14 @@ def recolectar_estado_completo(app, gestor):
             "muestras_cara": 0,
         }
 
+    # Telemetría del Context Engine (Etapa 4)
+    ctx_info = None
+    try:
+        import contexto_hud
+        ctx_info = contexto_hud.obtener_telemetria_contexto(app)
+    except Exception:
+        pass
+
     return {
         "telemetria": {
             "cpu": cpu_pct,
@@ -262,6 +270,7 @@ def recolectar_estado_completo(app, gestor):
             "tarjeta": tarjeta if not modo_privado else "MODO PRIVADO ACTIVO // INFORMACIÓN OCULTA",
         },
         "biometria": bio_info,
+        "contexto": ctx_info,
         "datos": {
             "recordatorios": obtener_recordatorios(modo_privado),
             "notas": obtener_notas(modo_privado),
