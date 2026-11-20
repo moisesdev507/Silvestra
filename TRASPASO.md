@@ -49,7 +49,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - Rostro reactivo con mirada suave (`camara.py`), microexpresiones, parpadeo y aro facial (celeste/amarillo).
 - Interrupción por voz (barge-in <500ms), filtro de eco y exclusión mutua de streams de audio (sin 0xc0000374).
 - Síntesis en streaming (`cerebro_parser.py`) y voz panameña con `voz_reproductor.py` thread-safe.
-- Detección de voz neuronal con Silero VAD (`oido_vad.py` a 16 kHz, sin medidor de volumen casero ni filtro de 0.75s, admite frases cortas >=0.30s), anti-eco inteligente (guarda solo tras hablar), Whisper determinista (temp 0.0), filtro de baja confianza (`validar_calidad_whisper`), Vosk offline, flujo persistente anti-crash 0xc0000374 y tolerancia de silencios en `eventos.py`.
+- Silero VAD neuronal (`oido_vad.py` 16 kHz, sin medidor casero ni descarte de 0.75s, clips >=0.30s), anti-eco inteligente, Whisper determinista (temp 0.0), filtro de baja confianza (`validar_calidad_whisper`), Vosk offline, flujo persistente anti-crash 0xc0000374 y tolerancia de silencios en `eventos.py`.
 - Prompt compacto (<1350 tokens) con inyección selectiva (`cerebro_categorias.py`) y multillm en cascada con Keep-Alive.
 - Memoria duradera con fechas, filtro estricto anti-meta y desduplicación semántica (`memoria_filtro.py`).
 - Acciones por voz: recuerdos, recordatorios persistentes, proveedores, control de escucha y modo estudio.

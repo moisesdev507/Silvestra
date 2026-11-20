@@ -102,10 +102,14 @@ class DetectorVozSilero:
 
     def alimentar(self, datos_int16):
         """Alimenta un bloque de audio int16 en trozos exactos de 512 muestras."""
-        if datos_int16 is None or len(datos_int16) == 0:
+        if datos_int16 is None:
             return
 
-        muestras = np.asarray(datos_int16, dtype=np.float32) / 32768.0
+        arr_1d = np.asarray(datos_int16, dtype=np.float32).reshape(-1)
+        if len(arr_1d) == 0:
+            return
+
+        muestras = arr_1d / np.float32(32768.0)
 
         if self.disponible:
             if len(self._residuo) > 0:
@@ -116,9 +120,10 @@ class DetectorVozSilero:
             paso = 512
             limite = (total // paso) * paso
             if limite > 0:
-                self._detector.accept_waveform(muestras[:limite])
+                chunk = np.ascontiguousarray(muestras[:limite], dtype=np.float32)
+                self._detector.accept_waveform(chunk)
             if limite < total:
-                self._residuo = muestras[limite:]
+                self._residuo = np.ascontiguousarray(muestras[limite:], dtype=np.float32)
             else:
                 self._residuo = np.array([], dtype=np.float32)
         else:
@@ -158,7 +163,7 @@ class DetectorVozSilero:
                 if self._detector.empty():
                     return None
                 seg = self._detector.front
-                muestras = np.array(seg.samples, dtype=np.float32)
+                muestras = np.ascontiguousarray(seg.samples, dtype=np.float32).reshape(-1)
                 self._detector.pop()
                 return muestras
             except Exception as e:
@@ -167,7 +172,7 @@ class DetectorVozSilero:
         else:
             if not self._fb_audio:
                 return None
-            res = np.concatenate(self._fb_audio)
+            res = np.ascontiguousarray(np.concatenate(self._fb_audio), dtype=np.float32).reshape(-1)
             self._fb_audio.clear()
             self._fb_hablando = False
             self._fb_silencio_count = 0
@@ -184,7 +189,8 @@ class DetectorVozSilero:
                         bloque = np.pad(self._residuo, (0, faltan), mode="constant")
                     else:
                         bloque = self._residuo[:512]
-                    self._detector.accept_waveform(bloque)
+                    chunk = np.ascontiguousarray(bloque, dtype=np.float32).reshape(-1)
+                    self._detector.accept_waveform(chunk)
                     self._residuo = np.array([], dtype=np.float32)
                 self._detector.flush()
             except Exception as e:
