@@ -102,6 +102,19 @@ def enviar(app, texto):
     t_txt = getattr(getattr(app, "oido", None), "t_texto", time.time())
     app.t_fin_habla = t_habla
     app.metricas_turno = {"t_fin_habla": t_habla, "t_texto": t_txt, "t_primer_token": None}
+
+    # Detección de turno de invitado no verificado
+    es_invitado = bool(
+        getattr(app, "origen_entrada_actual", "chat") == "microfono"
+        and hasattr(app, "voz_dueno")
+        and getattr(app.voz_dueno, "activa", False)
+        and not getattr(app.voz_dueno, "ultima_verificacion", {}).get("es_dueno", True)
+    )
+    if hasattr(app, "cerebro"):
+        app.cerebro.turno_invitado = es_invitado
+    if hasattr(app, "memoria"):
+        app.memoria.bloqueo_invitado = es_invitado
+
     if hasattr(app, "iniciativa"):
         app.iniciativa.interaccion()
     if hasattr(app, "cuidado") and app.cuidado:

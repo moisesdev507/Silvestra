@@ -220,6 +220,13 @@ def atender_evento(app, tipo, texto):
                 app.origen_entrada_actual = "microfono"
                 if hasattr(app, "voz_dueno") and app.voz_dueno:
                     app.voz_dueno.evaluar_entrada_voz(texto)
+                vd = getattr(app, "voz_dueno", None)
+                if vd and getattr(vd, "activa", False):
+                    uv = getattr(vd, "ultima_verificacion", {})
+                    if not uv.get("es_dueno", True) and getattr(vd, "modo_solo_dueno", False):
+                        print("[voz_dueno] Audio de invitado ignorado (modo solo dueño)", flush=True)
+                        app.escuchar()
+                        return
                 if getattr(app, "musica_activa", False) and getattr(config, "VERIFICAR_DUENO_CON_MUSICA", True):
                     uv = getattr(getattr(app, "voz_dueno", None), "ultima_verificacion", {})
                     if hasattr(app, "voz_dueno") and getattr(app.voz_dueno, "activa", False) and not uv.get("es_dueno", False):
@@ -248,7 +255,7 @@ def atender_evento(app, tipo, texto):
 
     elif tipo == "texto_tablet":
         # Texto enviado desde la consola del panel HUD de la tablet
-        app.origen_entrada_actual = "tablet"
+        app.origen_entrada_actual = "chat"
         if hasattr(app, "iniciativa"):
             app.iniciativa.interaccion()
         app.enviar(texto)

@@ -46,7 +46,8 @@ class Cerebro:
         return hist_podado
 
     def instrucciones(self, texto_actual=None):
-        return construir_prompt(self.memoria, texto_actual, self._obtener_historial_podado())
+        es_invitado = bool(getattr(self, "turno_invitado", False))
+        return construir_prompt(self.memoria, texto_actual, self._obtener_historial_podado(), es_invitado=es_invitado)
 
     def _pedir(self, mensajes, tarea="charla"):
         import proveedores
@@ -66,18 +67,19 @@ class Cerebro:
             print(f"[cerebro] Excepción no controlada: {e}. Usando respuesta local.", flush=True)
             crudo = pc.respuesta_emergencia_local()
         respuesta, accion, recuerdo, emocion = separar(crudo)
-        if recuerdo:
+        if recuerdo and not getattr(self, "turno_invitado", False):
             self.memoria.recordar(recuerdo)
         self.historial.append({"role": "assistant", "content": respuesta})
         self._podar_historial()
-        try:
-            import aprendizaje
-            aprendizaje.registrar_interaccion(texto, respuesta, emocion)
-        except Exception as e:
-            print(f"[aprendizaje] Error al registrar interacción: {e}", flush=True)
+        if not getattr(self, "turno_invitado", False):
+            try:
+                import aprendizaje
+                aprendizaje.registrar_interaccion(texto, respuesta, emocion)
+            except Exception as e:
+                print(f"[aprendizaje] Error al registrar interacción: {e}", flush=True)
 
         turnos_u = sum(1 for m in self.historial if m.get("role") == "user")
-        if turnos_u > 0 and turnos_u % 3 == 0:
+        if turnos_u > 0 and turnos_u % 3 == 0 and not getattr(self, "turno_invitado", False):
             import threading
             threading.Thread(
                 target=self.memoria.extraer_hechos_conversacion,

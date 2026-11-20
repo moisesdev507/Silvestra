@@ -82,7 +82,8 @@ class VozDueno:
         self.app = app
         self.vector_dueno = None
         self.activa = False
-        self.umbral = 0.65
+        self.umbral = 0.45
+        self.modo_solo_dueno = False
         self.ultima_verificacion = {"es_dueno": True, "similitud": 1.0, "motivo": "inicial"}
         self._cargar_configuracion()
         self._cargar_vector()
@@ -91,10 +92,12 @@ class VozDueno:
         try:
             datos = estado.cargar()
             self.activa = bool(datos.get("verificacion_voz_activa", False))
-            self.umbral = float(datos.get("umbral_voz_dueno", 0.65))
+            self.umbral = float(datos.get("umbral_voz_dueno", 0.45))
+            self.modo_solo_dueno = bool(datos.get("modo_solo_dueno", False))
         except Exception:
             self.activa = False
-            self.umbral = 0.65
+            self.umbral = 0.45
+            self.modo_solo_dueno = False
 
     def _cargar_vector(self):
         try:
@@ -203,6 +206,24 @@ class VozDueno:
         print("[voz_dueno] Verificación de voz desactivada.", flush=True)
         self.app.decir("Verificación de voz desactivada. Responderé a cualquiera que me hable.")
 
+    def activar_modo_solo_dueno(self):
+        """Activa el modo exclusivo solo dueño para ignorar por completo a invitados."""
+        self.modo_solo_dueno = True
+        datos = estado.cargar()
+        datos["modo_solo_dueno"] = True
+        estado.guardar(datos)
+        print("[voz_dueno] Modo solo dueño activado.", flush=True)
+        self.app.decir("Modo solo dueño activado. Ignoraré las voces que no sean la tuya.")
+
+    def desactivar_modo_solo_dueno(self):
+        """Desactiva el modo exclusivo solo dueño permitiendo hablar con invitados."""
+        self.modo_solo_dueno = False
+        datos = estado.cargar()
+        datos["modo_solo_dueno"] = False
+        estado.guardar(datos)
+        print("[voz_dueno] Modo solo dueño desactivado.", flush=True)
+        self.app.decir("Modo solo dueño desactivado. Responderé amablemente a invitados.")
+
 
 def instalar(app):
     """Instala el subsistema de voz del dueño y registra sus acciones."""
@@ -230,5 +251,15 @@ def instalar(app):
         "desactivar_verificacion_voz",
         vd.desactivar,
         "Desactiva la verificación biométrica de voz permitiendo órdenes de cualquier persona.",
+    )
+    acciones.registrar(
+        "activar_modo_solo_dueno",
+        vd.activar_modo_solo_dueno,
+        "Activa el modo solo dueño para ignorar por completo voces no identificadas.",
+    )
+    acciones.registrar(
+        "desactivar_modo_solo_dueno",
+        vd.desactivar_modo_solo_dueno,
+        "Desactiva el modo solo dueño permitiendo que Silvestra hable con invitados.",
     )
     print("[voz_dueno] Módulo instalado correctamente.", flush=True)

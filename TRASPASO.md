@@ -55,6 +55,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - Control de laptop por niveles (libre, peligroso exclusivo por Telegram con código y prohibido con auditoría).
 - Respaldo automático fuera de Git (`respaldo.py`) con rotación a 10 archivos en Documentos sin claves.
 - HUD Jarvis tablet a pantalla completa (100dvh horizontal, orbe Canvas, telemetría CPU/RAM/batería, recordatorios, notas, modo privado, SSE y supresión de ruido socket).
+- Biometría de voz CAM++ (`voz_dueno.py`, umbral 0.45) con doble factor cámara, dos modos de seguridad (Solo Dueño que ignora a terceros e Invitado Inteligente que responde amable bloqueando memoria y acciones) y fix para consola tablet.
 - Suite de prueba de humo (`prueba_humo.py`) y arquitectura modular (todos los archivos <= 15 KB).
 
 ## 5. Tareas pendientes y pospuestas

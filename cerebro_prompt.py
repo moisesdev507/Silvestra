@@ -113,7 +113,7 @@ def describir_acciones_compactas(texto_actual=None):
     return "\n".join(lineas)
 
 
-def construir_prompt(memoria, texto_actual=None, historial_reciente=None):
+def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_invitado=False):
     """Construye el prompt del sistema optimizado por debajo de 2000 tokens."""
     m = memoria
     tokens_base = int((len("\n".join(m.hechos)) + 6800) / 3.6)
@@ -124,7 +124,11 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None):
     alma_texto = f"{cargar_alma()}\n\n{SOBRE_MI}"
     tok_alma = max(1, int(len(alma_texto) / 3.6))
 
-    hechos_str, n_recuerdos = recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5)
+    if es_invitado:
+        hechos_str = f"- (Protegido: datos privados de {m.creador} ocultos para invitados)"
+        n_recuerdos = 0
+    else:
+        hechos_str, n_recuerdos = recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5)
     total_m = len(memoria.hechos)
     print(f"[memoria] guardados=0 relevantes={n_recuerdos} total={total_m}", flush=True)
 
@@ -163,6 +167,21 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None):
     tok_corr = max(0, int(len(corr_texto) / 3.6))
 
     desc_acciones = describir_acciones_compactas(texto_actual)
+    aviso_invitado = ""
+    if es_invitado:
+        aviso_invitado = (
+            f"\n\nAVISO DE SEGURIDAD (TURNO DE INVITADO):\n"
+            f"Quien habla por micrófono NO es {m.creador}; es un invitado no verificado. "
+            f"Responde amable y natural, pero NO lo trates como {m.creador} ni reveles datos personales/privados. "
+            "PROHIBIDO: en RECUERDO pon 'ninguno'."
+        )
+
+    recuerdo_fmt = (
+        "RECUERDO: ninguno (Modo invitado: no se guardan recuerdos)"
+        if es_invitado
+        else f"RECUERDO: <nuevo dato personal duradero de {m.creador} (gustos, familia, proyectos), o ninguno. NUNCA sobre comandos, pruebas, interfaz ni Silvestra>"
+    )
+
     instrucciones_texto = (
         f"Te llamas {m.nombre}. Vives en la laptop de {m.creador}, quien te dio vida. Propósito: {m.proposito}.\n"
         "Personalidad: Habla siempre en español de Panamá con calidez, ingenio y chispa natural. "
@@ -179,7 +198,8 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None):
         "EMOCION: <neutral | alegre | calida | seria | preocupada | animada>\n"
         "RESPUESTA: <lo que dices en voz alta, breve y con personalidad de 1 a 3 frases>\n"
         "ACCION: <acción de la lista, o ninguna>\n"
-        f"RECUERDO: <nuevo dato personal duradero de {m.creador} (gustos, familia, proyectos), o ninguno. NUNCA sobre comandos, pruebas, interfaz ni Silvestra>"
+        f"{recuerdo_fmt}"
+        f"{aviso_invitado}"
     )
     tok_inst = max(1, int(len(instrucciones_texto) / 3.6))
 

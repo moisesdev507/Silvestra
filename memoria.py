@@ -34,6 +34,7 @@ class Memoria:
         global _memoria_instancia
         _memoria_instancia = self
         self._bloqueo = threading.RLock()
+        self.bloqueo_invitado = False
         self.datos = self._vacia()
         self.cargar()
 
@@ -99,6 +100,9 @@ class Memoria:
 
     def recordar(self, hecho, fecha=None):
         """Guarda un registro permanente de lo que el dueño cuenta, con fecha."""
+        if getattr(self, "bloqueo_invitado", False):
+            print(f"[memoria] Guardado bloqueado: turno de invitado ('{hecho}')", flush=True)
+            return False
         if not hecho:
             return False
         hecho = hecho.strip()
@@ -204,6 +208,8 @@ class Memoria:
     def extraer_hechos_conversacion(self, historial, pedir_fn=None):
         """Hilo secundario: usa el proveedor para extraer hechos duraderos del diálogo."""
         try:
+            if getattr(self, "bloqueo_invitado", False):
+                return
             if not historial or len(historial) < 2:
                 return
 

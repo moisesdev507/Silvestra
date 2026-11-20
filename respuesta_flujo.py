@@ -22,14 +22,15 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         crudo = pc.respuesta_emergencia_local()
 
     respuesta, accion, recuerdo, emocion = separar(crudo)
-    if recuerdo:
+    if recuerdo and not getattr(cerebro, "turno_invitado", False):
         cerebro.memoria.recordar(recuerdo)
     cerebro.historial.append({"role": "assistant", "content": respuesta})
     if hasattr(cerebro, "_podar_historial"):
         cerebro._podar_historial()
-    try:
-        import aprendizaje
-        aprendizaje.registrar_interaccion(texto, respuesta, emocion)
-    except Exception as e:
-        print(f"[aprendizaje] Error al registrar interacción: {e}", flush=True)
+    if not getattr(cerebro, "turno_invitado", False):
+        try:
+            import aprendizaje
+            aprendizaje.registrar_interaccion(texto, respuesta, emocion)
+        except Exception as e:
+            print(f"[aprendizaje] Error al registrar interacción: {e}", flush=True)
     return respuesta, accion, emocion
