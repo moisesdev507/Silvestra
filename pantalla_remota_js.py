@@ -197,6 +197,11 @@ JS_JARVIS = """
       }
     }
 
+    // Biometría en vivo
+    if (d.biometria && window.actualizarBiometria) {
+      window.actualizarBiometria(d.biometria);
+    }
+
     // Datos y listas
     if (d.datos) {
       const dt = d.datos;

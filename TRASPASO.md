@@ -24,7 +24,7 @@ Asistente personal con rostro interactivo PyQt5, voz panameña (`es-PA-Margarita
 - **`acciones.py`**: Registro central de acciones del sistema (`acciones.registrar`).
 - **`recordatorios.py`**: Recordatorios por voz persistentes en disco (`recordatorios.json`).
 - **`control_laptop.py` / `control_seguridad.py` / `control_pc.py`**: Control de laptop por niveles (libre, con código y prohibido) y multimedia.
-- **`pantalla_remota.py` / `pantalla_remota_ui.py` / `pantalla_remota_datos.py`**: Servidor y HUD Jarvis en tiempo real para tablet.
+- **`pantalla_remota*.py` / `pantalla_biometria.py`**: Servidor, HUD Jarvis tablet, telemetría y panel de control biométrico en vivo (Solo Dueño y Reforzar voz).
 - **`respaldo.py`**: Respaldo zip fuera de Git (`~/Documents/Respaldos_Silvestra`) con rotación a 10 archivos.
 - **`presencia.py` / `camara.py` / `camara_dueno.py`**: Presencia y biometría facial SFace + YuNet con banco multi-muestra (hasta 20) y entrenamiento por Telegram.
 - **`voz_dueno.py` / `voz_dueno_banco.py` / `voz_dueno_registro.py`**: Biometría vocal CAM++ con banco multi-muestra (hasta 25), scoring top-2 y modos de seguridad.
@@ -47,7 +47,7 @@ Asistente personal con rostro interactivo PyQt5, voz panameña (`es-PA-Margarita
 - Memoria duradera con fechas, filtro estricto anti-meta y desduplicación semántica (`memoria_filtro.py`).
 - Control de laptop por niveles (libre, peligroso exclusivo por Telegram con código y auditoría).
 - Respaldo automático fuera de Git (`respaldo.py`) con rotación a 10 archivos sin claves.
-- HUD Jarvis tablet a pantalla completa (100dvh horizontal, telemetría CPU/RAM/batería, notas, modo privado y SSE).
+- HUD Jarvis tablet a pantalla completa con control biométrico en vivo (`pantalla_biometria.py`): badge Dueño/Invitado/Espera, telemetría de voz y cara, botón táctil Solo Dueño y botón Reforzar voz.
 - Biometría CAM++ multi-muestra (`voz_dueno*.py`, 25 muestras), rotación FIFO (8 anclas fijas), scoring top-2, modos Solo Dueño/Invitado y `reforzar_mi_voz`.
 - Biometría facial SFace multi-muestra (`camara_dueno.py`, `camara.py`), banco hasta 20 fotos (4 anclas fijas), descarte duplicados (>0.94) y aprendizaje por Telegram.
 - Suite de prueba de humo (`prueba_humo.py`) y arquitectura modular (todos los archivos <= 15 KB).

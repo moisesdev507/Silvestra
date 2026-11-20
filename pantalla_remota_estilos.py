@@ -577,4 +577,86 @@ main.hud-grid {
   min-height: 12px;
   letter-spacing: 0.5px;
 }
+
+/* Identidad & Biometría */
+.bio-badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.bio-dueno {
+  background: rgba(16, 185, 129, 0.18);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.55);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+}
+.bio-invitado {
+  background: rgba(245, 158, 11, 0.18);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.55);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.3);
+}
+.bio-espera {
+  background: rgba(148, 163, 184, 0.12);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+.bio-telemetry-row {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  margin: 3px 0 6px 0;
+  padding: 0 2px;
+}
+.bio-actions-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.btn-bio {
+  min-height: 44px;
+  padding: 8px 6px;
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px solid var(--border);
+  color: var(--cyan);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+.btn-bio:active {
+  transform: scale(0.97);
+}
+.btn-bio.bio-on {
+  background: rgba(0, 240, 255, 0.22);
+  color: #fff;
+  border-color: var(--cyan);
+  box-shadow: var(--cyan-glow);
+}
+.btn-bio-sec {
+  background: rgba(255, 209, 102, 0.08);
+  border-color: var(--gold-dim);
+  color: var(--gold);
+}
+.btn-bio-sec:hover, .btn-bio-sec:active {
+  background: var(--gold);
+  color: #050811;
+  box-shadow: 0 0 10px rgba(255, 209, 102, 0.45);
+}
+.btn-bio:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 """

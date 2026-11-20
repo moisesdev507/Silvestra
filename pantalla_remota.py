@@ -192,6 +192,8 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
             _api.manejar_comando(self, app, gestor)
         elif url_parsed.path == "/api/panel/accion":
             _api.manejar_accion(self, app, gestor)
+        elif url_parsed.path.startswith("/api/panel/"):
+            _api.manejar_biometria(self, app, gestor, url_parsed.path)
         else:
             self.send_response(404)
             self.end_headers()

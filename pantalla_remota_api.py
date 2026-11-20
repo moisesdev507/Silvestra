@@ -8,6 +8,9 @@ ACCIONES_PERMITIDAS = {
     "tablet_modo_normal": "Activa modo normal en la tablet",
     "crear_respaldo": "Genera respaldo de datos del usuario",
     "ocultar_tarjeta": "Limpia la tarjeta principal del HUD",
+    "toggle_solo_dueno": "Alterna modo exclusivo solo dueño",
+    "reforzar_mi_voz": "Refuerza el banco biométrico de voz",
+    "reforzar_voz": "Refuerza el banco biométrico de voz",
 }
 
 MAX_COMANDO_CHARS = 500
@@ -108,3 +111,31 @@ def manejar_accion(handler, app, gestor):
     if gestor:
         gestor.registrar_evento(f"Acción solicitada: {nombre}")
     _json_respuesta(handler, 200, {"ok": True, "accion": nombre, "desc": ACCIONES_PERMITIDAS[nombre]})
+
+
+def manejar_biometria(handler, app, gestor, ruta=None):
+    """POST /api/panel/biometria, /api/panel/solo_dueno o /api/panel/reforzar_voz."""
+    import pantalla_biometria
+    body = _leer_body_json(handler) or {}
+    accion = str(body.get("accion", "")).strip().lower()
+    ruta_str = str(ruta or "").lower()
+
+    if "solo_dueno" in ruta_str or accion in ("toggle_solo_dueno", "solo_dueno"):
+        activar = body.get("activar")
+        bio = pantalla_biometria.toggle_solo_dueno(app, activar=activar)
+        if gestor:
+            gestor.registrar_evento(f"Solo Dueño: {'ON' if bio['solo_dueno'] else 'OFF'}")
+        _json_respuesta(handler, 200, {"ok": True, "accion": "solo_dueno", "biometria": bio})
+        return
+
+    if "reforzar_voz" in ruta_str or accion in ("reforzar_voz", "reforzar_mi_voz"):
+        ok, msg, bio = pantalla_biometria.disparar_reforzar_voz(app)
+        if gestor:
+            gestor.registrar_evento("Refuerzo voz solicitado")
+        codigo = 200 if ok else 429
+        _json_respuesta(handler, codigo, {"ok": ok, "mensaje": msg, "biometria": bio})
+        return
+
+    # Consulta de estado biométrico
+    bio = pantalla_biometria.obtener_estado_biometria(app)
+    _json_respuesta(handler, 200, {"ok": True, "biometria": bio})

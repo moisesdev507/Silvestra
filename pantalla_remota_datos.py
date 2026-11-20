@@ -229,6 +229,22 @@ def recolectar_estado_completo(app, gestor):
             {"hora": time.strftime("%H:%M"), "texto": "Telemetría sincronizada"},
         ]
 
+    # Biometría en vivo
+    try:
+        import pantalla_biometria
+        bio_info = pantalla_biometria.obtener_estado_biometria(app)
+    except Exception:
+        bio_info = {
+            "identidad": "espera",
+            "solo_dueno": False,
+            "similitud_voz": None,
+            "umbral_voz": 0.45,
+            "camara_activa": False,
+            "camara_dueno": False,
+            "muestras_voz": 0,
+            "muestras_cara": 0,
+        }
+
     return {
         "telemetria": {
             "cpu": cpu_pct,
@@ -245,6 +261,7 @@ def recolectar_estado_completo(app, gestor):
             "subtitulo": subtitulo if not modo_privado else "",
             "tarjeta": tarjeta if not modo_privado else "MODO PRIVADO ACTIVO // INFORMACIÓN OCULTA",
         },
+        "biometria": bio_info,
         "datos": {
             "recordatorios": obtener_recordatorios(modo_privado),
             "notas": obtener_notas(modo_privado),

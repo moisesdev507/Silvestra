@@ -1,6 +1,7 @@
 """Plantilla HTML estructurada para la interfaz Jarvis HUD de la tablet."""
 from pantalla_remota_estilos import CSS_JARVIS
 from pantalla_remota_js import JS_JARVIS
+from pantalla_remota_js_bio import JS_BIOMETRIA
 
 PAGINA_JARVIS_HTML = f"""<!DOCTYPE html>
 <html lang="es">
@@ -78,6 +79,22 @@ PAGINA_JARVIS_HTML = f"""<!DOCTYPE html>
           <div class="metric-bar-bg"><div id="volBar" class="metric-bar-fill" style="width:0%; background:var(--green); box-shadow:0 0 8px var(--green)"></div></div>
         </div>
         <div style="font-size:10px; color:var(--text-muted); font-family:var(--font-mono)">VAD Adaptativo // Edge-TTS es-PA</div>
+      </div>
+
+      <div class="hud-card">
+        <div class="card-header">
+          <span class="card-title">IDENTIDAD & BIOMETRÍA</span>
+          <span id="bioBadge" class="bio-badge bio-espera">EN ESPERA</span>
+        </div>
+        <div class="bio-telemetry-row">
+          <span id="bioVozText">Voz: -- · 0 mues</span>
+          <span id="bioCaraText">Cara: -- · 0 mues</span>
+        </div>
+        <div class="bio-actions-grid">
+          <button id="btnSoloDueno" class="btn-bio" title="Alternar modo exclusivo solo dueño">Solo Dueño: OFF</button>
+          <button id="btnReforzarVoz" class="btn-bio btn-bio-sec" title="Reforzar voz con última muestra">Reforzar voz</button>
+        </div>
+        <div id="bioFb" class="console-fb" style="margin-top:3px"></div>
       </div>
 
       <div class="hud-card">
@@ -173,6 +190,7 @@ PAGINA_JARVIS_HTML = f"""<!DOCTYPE html>
 
   <script>
 {JS_JARVIS}
+{JS_BIOMETRIA}
   </script>
 </body>
 </html>
