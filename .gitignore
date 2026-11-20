@@ -3,6 +3,7 @@
 env/
 venv/
 ENV/
+silvestra-nube/
 
 # Bytecode y caché de Python
 __pycache__/
