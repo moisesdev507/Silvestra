@@ -173,6 +173,11 @@ class Silvestra:
         self.cara.decir(texto, ms, emocion=emo)
         if con_voz:
             self.ultimo_dicho = texto
+            try:
+                import naturalidad
+                naturalidad.registrar_turno_asistente(texto)
+            except Exception:
+                pass
             self.voz.hablar(texto, lambda: self.cola.put(("fin_voz", None)), emocion=emo)
             if getattr(config, "BARGE_IN_ACTIVO", False) and self.conversacion and not self.escuchando:
                 self.cara.root.after(300, self.escuchar)

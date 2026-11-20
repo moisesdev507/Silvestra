@@ -234,6 +234,13 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
             bloques.append(dir_modo)
     except Exception:
         pass
+    try:
+        import naturalidad
+        dir_nat = naturalidad.obtener_directivas_naturalidad(texto_actual)
+        if dir_nat:
+            bloques.append(dir_nat)
+    except Exception:
+        pass
     if perfil_texto:
         bloques.append(f"Perfil del usuario:\n{perfil_texto}")
     if corr_texto:

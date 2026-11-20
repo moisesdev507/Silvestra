@@ -103,6 +103,12 @@ def enviar(app, texto):
     app.t_fin_habla = t_habla
     app.metricas_turno = {"t_fin_habla": t_habla, "t_texto": t_txt, "t_primer_token": None}
 
+    try:
+        import naturalidad
+        naturalidad.registrar_turno_usuario(texto)
+    except Exception:
+        pass
+
     # Detección de turno de invitado no verificado
     es_invitado = bool(
         getattr(app, "origen_entrada_actual", "chat") == "microfono"
@@ -245,6 +251,11 @@ def pensar(app, texto):
         )
         if timer_espera:
             timer_espera.cancel()
+        try:
+            import naturalidad
+            naturalidad.registrar_turno_asistente(resultado)
+        except Exception:
+            pass
         app.cola.put(("respuesta", resultado))
     except Exception as e:
         if timer_espera:

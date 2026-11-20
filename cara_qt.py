@@ -120,10 +120,33 @@ class Cara(CaraMovimientoMixin, QWidget):
         self.accion_paseo.setChecked(True)
         self.accion_paseo.triggered.connect(lambda *_: self._tocar())
         self.menu.addAction(self.accion_paseo)
-        self.menu.addAction("Descansar (desaparece hasta que la llames)").triggered.connect(
-            lambda *_: al_descansar()
+        def _armar_segura(titulo, conf_txt, fn):
+            act = self.menu.addAction(titulo)
+            st = {"conf": False}
+            tm = QTimer(self)
+            tm.setSingleShot(True)
+            def _rst():
+                st["conf"] = False
+                act.setText(titulo)
+            tm.timeout.connect(_rst)
+            def _click():
+                if not st["conf"]:
+                    st["conf"] = True
+                    act.setText(conf_txt)
+                    tm.start(3000)
+                else:
+                    tm.stop()
+                    _rst()
+                    fn()
+            act.triggered.connect(_click)
+            return act
+
+        self.accion_descansar = _armar_segura(
+            "Descansar (desaparece hasta que la llames)", "¿Confirmar descanso? (3s)", al_descansar
         )
-        self.menu.addAction("Renacer (borrar su memoria)").triggered.connect(lambda *_: al_renacer())
+        self.accion_renacer = _armar_segura(
+            "Renacer (borrar su memoria)", "¿Confirmar renacer? (3s)", al_renacer
+        )
         self.menu.addSeparator()
         self.menu.addAction("Salir").triggered.connect(lambda *_: QApplication.quit())
 

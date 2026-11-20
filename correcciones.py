@@ -46,6 +46,9 @@ PATRONES_CORRECCION = [
     r"\bte\s+dije\s+que\s+no\b",
     r"\bno\s+es\s+eso\b",
     r"\beso\s+est[aá]\s+mal\b",
+    r"\bno\s+dije\b",
+    r"\beso\s+no\s+es\s+as[ií]\b",
+    r"\bya\s+no\b",
 ]
 
 

@@ -117,7 +117,7 @@ class GestorBaile:
             except Exception:
                 pass
 
-    def actualizar_fisica(self, ahora, fx, fy, ancho_pantalla, alto_pantalla, tam_cara=250):
+    def actualizar_fisica(self, ahora, fx, fy, ancho_pantalla, alto_pantalla, tam_cara=208):
         """Calcula el desplazamiento relativo (dx, dy), inclinación y emoción del estilo activo."""
         if not self.activo or ahora >= self.baile_hasta:
             if self.activo:
@@ -147,13 +147,13 @@ class GestorBaile:
             tilt = 18.0 * math.sin(t * 11.5)
             emocion = "animada"
 
-        # Desplazamiento elástico acotado para bailar dentro del lienzo sin recortar
-        nx = max(-26.0, min(26.0, dx))
-        ny = max(-22.0, min(22.0, dy))
+        # Desplazamiento elástico acotado al lienzo compacto (208 px) sin recortar
+        nx = max(-20.0, min(20.0, dx * 0.82))
+        ny = max(-18.0, min(18.0, dy * 0.82))
 
         # Generar partículas musicales
         if ahora >= self.prox_particula and len(self.particulas) < 16:
-            self.particulas.append(ParticulaMusical(0, -25))
+            self.particulas.append(ParticulaMusical(0, -20))
             self.prox_particula = ahora + (0.12 if self.estilo == "fiesta" else 0.22)
 
         return nx, ny, tilt, emocion

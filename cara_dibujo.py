@@ -8,8 +8,8 @@ from PySide6.QtGui import QBrush, QColor, QCursor, QPainter, QPen, QRadialGradie
 
 import cara_baile
 
-TAM = 250               # tamaño de la ventana de la cara
-ESC = TAM / 280.0       # escala del dibujo
+TAM = 208               # tamaño compacto de la ventana de la cara (-17%)
+ESC = TAM / 280.0       # escala proporcional del dibujo
 CIAN = QColor(79, 209, 197)
 AMARILLO = QColor(255, 209, 102)
 ROSA = QColor(255, 140, 160)

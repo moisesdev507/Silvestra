@@ -5,7 +5,7 @@ import time
 
 from PySide6.QtGui import QCursor
 
-TAM = 250
+from cara_dibujo import TAM
 
 
 class CaraMovimientoMixin:

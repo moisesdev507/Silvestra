@@ -356,9 +356,48 @@ JS_JARVIS = """
     .finally(function() { _accionPending = false; setTimeout(function() { if (fb) fb.textContent = ''; }, 3500); });
   }
 
-  // Delegación: un solo listener en el contenedor para todos los botones data-accion
+  // Delegación con blindaje de doble confirmación (3s) para acciones críticas
+  var _confirmPending = null;
+  var _confirmTimer = null;
   document.querySelectorAll('[data-accion]').forEach(function(btn) {
-    btn.addEventListener('click', function() { ejecutarAccion(btn.getAttribute('data-accion')); });
+    btn.addEventListener('click', function() {
+      var act = btn.getAttribute('data-accion') || '';
+      var esCritica = btn.hasAttribute('data-confirm') ||
+                      /reiniciar|renacer|despertar|apagar|suspender/.test(act);
+      if (esCritica) {
+        if (_confirmPending !== btn) {
+          if (_confirmTimer) clearTimeout(_confirmTimer);
+          if (_confirmPending) {
+            _confirmPending.textContent = _confirmPending.getAttribute('data-orig-text') || _confirmPending.textContent;
+            _confirmPending.style.borderColor = '';
+            _confirmPending.style.color = '';
+          }
+          _confirmPending = btn;
+          if (!btn.getAttribute('data-orig-text')) {
+            btn.setAttribute('data-orig-text', btn.textContent);
+          }
+          btn.textContent = '¿Confirmar? (3s)';
+          btn.style.borderColor = '#f87171';
+          btn.style.color = '#f87171';
+          _confirmTimer = setTimeout(function() {
+            if (_confirmPending === btn) {
+              btn.textContent = btn.getAttribute('data-orig-text') || btn.textContent;
+              btn.style.borderColor = '';
+              btn.style.color = '';
+              _confirmPending = null;
+            }
+          }, 3000);
+          return;
+        } else {
+          if (_confirmTimer) clearTimeout(_confirmTimer);
+          btn.textContent = btn.getAttribute('data-orig-text') || btn.textContent;
+          btn.style.borderColor = '';
+          btn.style.color = '';
+          _confirmPending = null;
+        }
+      }
+      ejecutarAccion(act);
+    });
   });
 
 })();
