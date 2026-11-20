@@ -48,14 +48,14 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - Rostro reactivo con mirada suave (`camara.py`), microexpresiones, parpadeo y aro facial (celeste/amarillo).
 - Interrupción por voz (barge-in <500ms), filtro de eco y exclusión mutua de streams de audio (sin 0xc0000374).
 - Síntesis en streaming (`cerebro_parser.py`) y voz panameña con `voz_reproductor.py` thread-safe.
-- Reconocimiento ágil con Whisper (VAD adaptativo 0.45s, prompt contextual), filtro de alucinaciones, Vosk offline y flujo persistente (`oido_flujo.py`) que elimina el crash 0xc0000374 de PortAudio.
+- Reconocimiento ágil con Whisper (VAD adaptativo 0.45s, prompt contextual), filtro de alucinaciones, Vosk offline, flujo persistente anti-crash 0xc0000374 con guarda anti-eco y descarte previo de clips cortos/ruido (`oido_flujo.py`).
 - Prompt compacto (<1350 tokens) con inyección selectiva (`cerebro_categorias.py`) y multillm en cascada con Keep-Alive.
 - Memoria duradera con fechas, filtro estricto anti-meta y desduplicación semántica (`memoria_filtro.py`).
 - Acciones por voz: recuerdos, recordatorios persistentes, proveedores, control de escucha y modo estudio.
 - Control de laptop por niveles (libre, peligroso exclusivo por Telegram con código y prohibido con auditoría).
 - Respaldo automático fuera de Git (`respaldo.py`) con rotación a 10 archivos en Documentos sin claves.
 - HUD Jarvis tablet a pantalla completa (100dvh horizontal, orbe Canvas, telemetría CPU/RAM/batería, recordatorios, notas, modo privado, SSE y supresión de ruido socket).
-- Biometría de voz CAM++ (`voz_dueno.py`, umbral 0.45) con filtrado previo de silencios/ventanas activas (`filtrar_voz_activa`), doble factor cámara, dos modos de seguridad (Solo Dueño que ignora a terceros e Invitado Inteligente que responde amable bloqueando memoria y acciones) y fix para consola tablet.
+- Biometría de voz CAM++ (`voz_dueno.py`, umbral calibrado a 0.42 con tolerancia en comandos cortos y padding 60ms), doble factor cámara, dos modos de seguridad (Solo Dueño que ignora a terceros e Invitado Inteligente que responde amable bloqueando memoria y acciones) y fix para consola tablet.
 - Suite de prueba de humo (`prueba_humo.py`) y arquitectura modular (todos los archivos <= 15 KB).
 
 ## 5. Tareas pendientes y pospuestas

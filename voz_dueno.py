@@ -110,14 +110,16 @@ def filtrar_voz_activa(audio, samplerate=16000):
         umbral = max(piso_ruido * 1.5, piso_ruido + (rms_max - piso_ruido) * 0.10)
         activa = rms_ventanas >= umbral
 
-    # Padding de 1 ventana antes y 1 después para proteger consonantes
+    duracion_total = total_muestras / float(samplerate)
+    pad_ventanas = 2 if duracion_total <= 2.2 else 1
     activa_pad = activa.copy()
     for i in range(num_ventanas):
         if activa[i]:
-            if i > 0:
-                activa_pad[i - 1] = True
-            if i < num_ventanas - 1:
-                activa_pad[i + 1] = True
+            for p in range(1, pad_ventanas + 1):
+                if i - p >= 0:
+                    activa_pad[i - p] = True
+                if i + p < num_ventanas:
+                    activa_pad[i + p] = True
 
     indices_activos = np.where(activa_pad)[0]
     duracion_activa = len(indices_activos) * 0.030
@@ -150,7 +152,7 @@ class VozDueno:
         self.app = app
         self.vector_dueno = None
         self.activa = False
-        self.umbral = 0.45
+        self.umbral = 0.42
         self.modo_solo_dueno = False
         self.ultima_verificacion = {"es_dueno": True, "similitud": 1.0, "motivo": "inicial"}
         self._cargar_configuracion()
@@ -160,11 +162,11 @@ class VozDueno:
         try:
             datos = estado.cargar()
             self.activa = bool(datos.get("verificacion_voz_activa", False))
-            self.umbral = float(datos.get("umbral_voz_dueno", 0.45))
+            self.umbral = float(datos.get("umbral_voz_dueno", 0.42))
             self.modo_solo_dueno = bool(datos.get("modo_solo_dueno", False))
         except Exception:
             self.activa = False
-            self.umbral = 0.45
+            self.umbral = 0.42
             self.modo_solo_dueno = False
 
     def _cargar_vector(self):
@@ -220,11 +222,17 @@ class VozDueno:
             dur_filtrada = len(audio_limpio) / 16000.0 if audio_limpio is not None else duracion
             emb = extraer_embedding(audio_limpio)
             sim = calcular_similitud(emb, self.vector_dueno)
+
+            # Tolerancia en clips cortos del dueño (0.8s a 1.8s) con pocos fonemas
+            umbral_efectivo = self.umbral
+            if 0.8 <= dur_filtrada <= 1.8:
+                umbral_efectivo = max(0.38, self.umbral - 0.03)
+
             # Log exacto: [voz_dueno] similitud=0.xx umbral=0.xx duracion=X.XXs filtrado=X.XXs camara=True/False
             print(f"[voz_dueno] similitud={sim:.2f} umbral={self.umbral:.2f} duracion={duracion:.2f}s filtrado={dur_filtrada:.2f}s camara={camara_ok}", flush=True)
 
             # Doble factor: si la cámara ve al dueño, es válido aunque el puntaje de voz sea bajo
-            es_dueno = (sim >= self.umbral) or camara_ok
+            es_dueno = (sim >= umbral_efectivo) or camara_ok
             self.ultima_verificacion = {
                 "es_dueno": es_dueno,
                 "similitud": sim,

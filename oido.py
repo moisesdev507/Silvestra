@@ -7,16 +7,7 @@ from collections import deque
 
 import config
 from config import MODELO_VOZ
-from oido_flujo import FlujoMicrofono
-
-# Frases que Whisper inventa a veces cuando solo hay ruido.
-FALSAS = (
-    "conversacion informal", "conversación informal", "gracias por ver",
-    "subtítulos", "subtitulos", "suscríbete", "suscribete", "amara.org",
-    "haha", "jaja", "okay, okay", "ok, ok", "ya entendí", "ya entendi",
-    "reproducción automática", "descarga gratuita", "todos los derechos",
-    "muchas gracias", "hasta la próxima", "transcripción por",
-)
+from oido_flujo import FALSAS, FlujoMicrofono, es_transcripcion_dudosa, evaluar_clip_audio
 
 
 class Oido:
@@ -117,6 +108,7 @@ class Oido:
         hablo = False
         silencio = 0
         espera = 0
+        frames_voz = 0
         rec_vosk = None
         comandos_corte = ("espera", "ya", "para", "silencio", "callate", "alto", "stop")
 
@@ -128,11 +120,21 @@ class Oido:
 
         try:
             self._flujo.asegurar_flujo()
-            self._flujo.drenar()
+
+            # Esperar si la voz de Silvestra aún está sonando y drenar
+            if app is not None and hasattr(app, "voz") and hasattr(app.voz, "ocupada"):
+                while app.voz.ocupada():
+                    self._flujo.drenar()
+                    time.sleep(0.05)
+
+            # Ventana de guarda anti-eco: descarta la reverberación y tail del parlante
+            self._flujo.aplicar_guarda_antieco(bloques=9, pausa_inicial=0.40)
 
             ambiente = []
-            for _ in range(6):
-                datos = self._flujo.leer(timeout=0.1)
+            intentos_amb = 0
+            while len(ambiente) < 6 and intentos_amb < 20:
+                intentos_amb += 1
+                datos = self._flujo.leer(timeout=0.08)
                 if datos is None:
                     continue
                 ambiente.append(float(np.abs(datos).mean()))
@@ -146,6 +148,9 @@ class Oido:
                     break
                 datos = self._flujo.leer(timeout=0.1)
                 if datos is None:
+                    espera += 1
+                    if espera >= 160:
+                        break
                     continue
                 nivel = float(np.abs(datos).mean())
                 barge_in_habilitado = getattr(config, "BARGE_IN_ACTIVO", False)
@@ -198,6 +203,7 @@ class Oido:
                         trozos.extend(previo)
                     hablo = True
                     silencio = 0
+                    frames_voz += 1
                     self.t_fin_habla = time.time()
                     idx_ultimo_habla = len(trozos)
                 elif hablo:
@@ -233,13 +239,22 @@ class Oido:
 
         self.t_fin_escucha = time.time()
 
-        if not hablo or len(trozos) < 8:
+        if not hablo:
             self.ultimo_audio = None
             self.duracion_ultimo_audio = 0.0
             return None
 
-        # Recortar silencios sobrantes finales para no enviar audio muerto a Whisper
+        # Recortar silencios sobrantes finales
         trozos_utiles = trozos[: min(len(trozos), idx_ultimo_habla + 4)]
+
+        # Filtro estricto anti-clips basura / eco antes de llamar a Whisper
+        valido, dur_clip, rms_crudo, motivo = evaluar_clip_audio(trozos_utiles, frames_voz)
+        if not valido:
+            print(f"[oido] Clip descartado por corto/eco: {dur_clip:.2f}s rms={rms_crudo:.1f} ({motivo})", flush=True)
+            self.ultimo_audio = None
+            self.duracion_ultimo_audio = 0.0
+            return None
+
         audio_raw = np.concatenate(trozos_utiles)
 
         # Ganancia, supresión de offset DC y normalización de volumen a -3dBFS
@@ -285,6 +300,7 @@ class Oido:
             texto_vosk = self._transcribir_vosk(audio.tobytes())
             if texto_vosk is not None:
                 self.t_texto = time.time()
+                print(f"[oido] transcrito='{texto_vosk}'", flush=True)
                 return texto_vosk
             raise RuntimeError("No pude entender el audio: " + str(e)[:120])
 
@@ -298,28 +314,8 @@ class Oido:
             if f in t_low:
                 print(f"[oido] transcripcion='{texto}' descartada motivo=alucinacion_whisper('{f}')", flush=True)
                 return None
-        if self._dudoso(r):
+        if es_transcripcion_dudosa(r):
             print(f"[oido] transcripcion='{texto}' descartada motivo=dudoso_alta_probabilidad_sin_voz", flush=True)
             return None
+        print(f"[oido] transcrito='{texto}'", flush=True)
         return texto
-
-    @staticmethod
-    def _dudoso(r):
-        """True si Whisper no está seguro de que haya voz (ruido que inventa palabras)."""
-        try:
-            segs = getattr(r, "segments", None) or []
-
-            def dato(s, k):
-                return s.get(k) if isinstance(s, dict) else getattr(s, k, None)
-
-            sin_voz = [dato(s, "no_speech_prob") for s in segs]
-            logp = [dato(s, "avg_logprob") for s in segs]
-            sin_voz = [x for x in sin_voz if x is not None]
-            logp = [x for x in logp if x is not None]
-            if sin_voz and min(sin_voz) > 0.6:
-                return True
-            if logp and max(logp) < -1.0:
-                return True
-        except Exception:
-            pass
-        return False
