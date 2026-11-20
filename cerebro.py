@@ -62,7 +62,10 @@ class Cerebro:
         mensajes = [{"role": "system", "content": prompt}] + self._obtener_historial_podado()
         tarea = pc.clasificar_dificultad(texto)
         try:
-            crudo = self._pedir(mensajes, tarea=tarea)
+            import cerebro_enrutador
+            crudo = cerebro_enrutador.ejecutar_con_enrutador(
+                texto, mensajes, tarea=tarea, app=getattr(self, "app", None), fallback_fn=self._pedir
+            )
         except Exception as e:
             print(f"[cerebro] Excepción no controlada: {e}. Usando respuesta local.", flush=True)
             crudo = pc.respuesta_emergencia_local()

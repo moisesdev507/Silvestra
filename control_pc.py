@@ -130,7 +130,13 @@ def abrir_programa(app, nombre, hablar=True):
     print(f"[control_pc] Abriendo programa permitido: '{nom_norm}' -> {exe_encontrado}", flush=True)
     try:
         flags = 0x08000000 if os.name == "nt" else 0
-        subprocess.Popen([exe_encontrado], shell=False, creationflags=flags)
+        subprocess.Popen(
+            [exe_encontrado],
+            shell=False,
+            creationflags=flags,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         if hablar and app and hasattr(app, "cola"):
             app.cola.put(("hablar", f"Abriendo {nom_norm}."))
         return True

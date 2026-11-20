@@ -10,6 +10,7 @@ import acciones
 import memoria_busqueda as mb
 import memoria_filtro as mf
 from memoria_filtro import PALABRAS_PRIVADAS
+import memoria_tiempo as mt
 
 _memoria_instancia = None
 
@@ -105,7 +106,7 @@ class Memoria:
             return False
         if not hecho:
             return False
-        hecho = hecho.strip()
+        hecho = mt.anclar_fechas_relativas(hecho.strip())
         if not hecho:
             return False
 

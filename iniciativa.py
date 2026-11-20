@@ -59,17 +59,20 @@ class Iniciativa:
 
     def _hablar(self):
         try:
-            hechos = "\n".join(f"- {h}" for h in self.app.memoria.hechos) or "- (ninguno)"
+            import memoria_tiempo as mt
+            hechos_fmt = [mt.formatear_recuerdo_con_fecha(h) for h in self.app.memoria.hechos]
+            hechos = "\n".join(f"- {h}" for h in hechos_fmt) or "- (ninguno)"
             sistema = (
                 f"Eres {self.app.memoria.nombre or 'Silvestra'}, asistente de {self.app.memoria.creador or 'tu creador'}.\n"
                 "Llevan más de 20 minutos en silencio y quieres hablarle con iniciativa propia de forma espontánea.\n"
-                f"Hechos que recuerdas:\n{hechos}\n"
+                f"Hechos que recuerdas (con su antigüedad):\n{hechos}\n"
                 f"Hilos y temas pendientes:\n{hilos.resumen()}\n\n"
                 "Di UNA sola frase corta y natural (un comentario amistoso o una pregunta sencilla basada en un hilo pendiente o en algo que recuerdes de él).\n"
                 "Reglas:\n"
                 "1. Máximo 15 a 20 palabras.\n"
                 "2. Tono panameño suave y cercano, sin sonar invasiva ni robot.\n"
-                "3. Sin asteriscos, sin listas, sin comillas, sin emojis.\n"
+                "3. Si un evento en los recuerdos ya pasó según su fecha, PROHIBIDO preguntar por él en futuro.\n"
+                "4. Sin asteriscos, sin listas, sin comillas, sin emojis.\n"
                 "Responde ÚNICAMENTE con la frase que dirás en voz alta."
             )
             frase = self.app.cerebro._pedir([

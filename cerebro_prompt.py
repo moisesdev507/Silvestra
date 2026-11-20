@@ -73,7 +73,12 @@ def recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5):
         n_rec = len(elegidos)
     if not elegidos:
         return "- (todavía nada)", 0
-    return "\n".join(f"- {h}" for h in elegidos), n_rec
+    try:
+        import memoria_tiempo as mt
+        formateados = [mt.formatear_recuerdo_con_fecha(h) for h in elegidos]
+    except Exception:
+        formateados = elegidos
+    return "\n".join(f"- {h}" for h in formateados), n_rec
 
 
 def describir_acciones_compactas(texto_actual=None):
@@ -142,7 +147,8 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         hilos_res = hilos_res[:100].rsplit(" ", 1)[0] + "..."
 
     memoria_texto = (
-        f"Lo que sabes:\n{hechos_str}\n"
+        f"Lo que sabes (fechas relativas al día en que se guardó):\n{hechos_str}\n"
+        "Regla temporal: 'hoy'/'mañana' en un recuerdo son de su fecha guardada. Si el evento ya pasó, PROHIBIDO preguntar por él en futuro (ignóralo o pregunta cómo salió).\n"
         f"Ideas anotadas: {ideas_res}.\n"
         f"Hilos pendientes: {hilos_res}."
     )

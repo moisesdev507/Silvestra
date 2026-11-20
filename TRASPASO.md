@@ -18,9 +18,9 @@ Asistente personal con rostro interactivo PyQt5, voz panameña (`es-PA-Margarita
 - **`cara_qt.py` / `cara_dibujo.py` / `cara_movimiento.py` / `burbuja.py`**: Rostro animado, mirada suave, microexpresiones y boca sincronizada.
 - **`oido.py` / `oido_flujo.py` / `oido_vad.py` / `oido_feedback.py`**: Flujo persistente anti-crash 0xc0000374, Silero VAD neuronal, feedback sutil (~75ms WAV en memoria) y Whisper/Vosk.
 - **`voz.py` / `voz_reproductor.py` / `voz_cache.py`**: Síntesis `edge-tts`, reproductor thread-safe SDL/mixer, RMS labial, corte rápido barge-in y caché.
-- **`cerebro.py` / `cerebro_prompt.py` / `cerebro_parser.py`**: Prompt (<1350 tokens), streaming, personalidad natural concisa y acciones.
+- **`cerebro.py` / `cerebro_prompt.py` / `cerebro_enrutador.py`**: Prompt (<1350 tokens), enrutador dos carriles (`rapido` gratis vs `pro` OpenRouter/Claude con fallback) y acciones.
 - **`proveedores.py` / `proveedores_cadenas.py` / `sesion_http.py`**: Multi-LLM en cascada con pool HTTP Keep-Alive persistente y cooldown.
-- **`memoria.py` / `memoria_busqueda.py` / `memoria_filtro.py`**: Memoria con fechas, filtro anti-meta y desduplicación.
+- **`memoria.py` / `memoria_busqueda.py` / `memoria_tiempo.py`**: Memoria con anclaje temporal (`memoria_tiempo.py`), filtro anti-meta y regla anti-anacronismo.
 - **`acciones.py`**: Registro central de acciones del sistema (`acciones.registrar`).
 - **`recordatorios.py`**: Recordatorios por voz persistentes en disco (`recordatorios.json`).
 - **`modos_sistema.py`**: 4 modos compuestos (`normal`, `programacion`, `estudio`, `noche`) persistentes en `estado.json`, voz y tablet HUD.
@@ -45,7 +45,8 @@ Asistente personal con rostro interactivo PyQt5, voz panameña (`es-PA-Margarita
 - Personalidad concisa y natural (1-2 frases habladas, sin preguntas de relleno de chatbot, confirmaciones breves en acciones).
 - Eliminación de confirmaciones habladas duplicadas en `eventos.py` (mantiene alertas de error, lecturas informativas y disparos directos).
 - Prompt optimizado (<1350 tokens) con inyección selectiva (`cerebro_categorias.py`) y multillm en cascada con Keep-Alive.
-- Memoria duradera con fechas, filtro estricto anti-meta y desduplicación semántica (`memoria_filtro.py`).
+- Memoria duradera con fechas, filtro estricto anti-meta, anclaje temporal (`memoria_tiempo.py`, evita preguntar por eventos pasados) y desduplicación semántica (`memoria_filtro.py`).
+- Enrutador de dos carriles determinista (`cerebro_enrutador.py`): `rapido` gratuito (<1s) vs `pro` avanzado (OpenRouter/Claude con fallback transparente).
 - Control de laptop por niveles (libre, peligroso exclusivo por Telegram con código y auditoría).
 - Respaldo automático fuera de Git (`respaldo.py`) con rotación a 10 archivos sin claves.
 - HUD Jarvis tablet a pantalla completa con control biométrico en vivo (`pantalla_biometria.py`): badge Dueño/Invitado/Espera, telemetría de voz y cara, botón táctil Solo Dueño, botón Reforzar voz y selector de 4 modos.
