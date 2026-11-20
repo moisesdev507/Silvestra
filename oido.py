@@ -7,6 +7,7 @@ from collections import deque
 
 import config
 from config import MODELO_VOZ
+from oido_flujo import FlujoMicrofono
 
 # Frases que Whisper inventa a veces cuando solo hay ruido.
 FALSAS = (
@@ -33,6 +34,17 @@ class Oido:
         self.duracion_ultimo_audio = 0.0
         self.t_fin_habla = time.time()
         self.t_texto = time.time()
+        self._flujo = FlujoMicrofono(rate=16000, blocksize=int(16000 * 0.05))
+        self._escuchando_activo = False
+
+    def liberar_microfono(self):
+        """Pausa y libera el flujo persistente para procesos exclusivos (ej. calibración de voz)."""
+        with self.bloqueo:
+            self._flujo.liberar()
+
+    def cerrar(self):
+        """Cierre definitivo del flujo al apagar Silvestra."""
+        self.liberar_microfono()
 
     def _obtener_reconocedor_vosk(self):
         """Carga perezosa del modelo Vosk sin gramática restringida."""
@@ -74,6 +86,8 @@ class Oido:
             return None
 
     def escuchar(self, corto=False, app=None):
+        if self._escuchando_activo:
+            return None
         for intento in range(2):
             adquirido = self.bloqueo.acquire(timeout=4.0)
             if not adquirido:
@@ -81,24 +95,23 @@ class Oido:
                 time.sleep(0.2)
                 continue
             try:
+                self._escuchando_activo = True
                 return self._escuchar(corto, app=app)
             finally:
+                self._escuchando_activo = False
                 self.bloqueo.release()
                 time.sleep(0.05)
         print("[oido] Aviso: micrófono ocupado tras reintentar. Continuando sin colgar.", flush=True)
         return None
 
     def _escuchar(self, corto=False, app=None):
-        """Devuelve el texto, o None si nadie habló. VAD ágil con corte optimizado y normalización."""
+        """Devuelve el texto, o None si nadie habló. VAD ágil con corte optimizado y flujo persistente."""
         try:
             import numpy as np
-            import sounddevice as sd
         except ImportError:
-            raise RuntimeError("Me falta instalar sounddevice y numpy.")
+            raise RuntimeError("Me falta instalar numpy.")
 
         rate = 16000
-        # Bloques de 50 ms (800 muestras) para mayor precisión temporal
-        bloque = int(rate * 0.05)
         trozos = []
         previo = deque(maxlen=4)
         hablo = False
@@ -114,101 +127,107 @@ class Oido:
         ganancia = float(getattr(config, "GANANCIA_MICROFONO", 1.2))
 
         try:
-            with sd.InputStream(samplerate=rate, channels=1, dtype="int16", blocksize=bloque) as flujo:
-                ambiente = []
-                for _ in range(6):
-                    datos, _ = flujo.read(bloque)
-                    ambiente.append(float(np.abs(datos).mean()))
-                piso_ruido = sum(ambiente) / len(ambiente)
-                umbral = max(180.0, piso_ruido * 2.6)
+            self._flujo.asegurar_flujo()
+            self._flujo.drenar()
 
-                idx_ultimo_habla = 0
+            ambiente = []
+            for _ in range(6):
+                datos = self._flujo.leer(timeout=0.1)
+                if datos is None:
+                    continue
+                ambiente.append(float(np.abs(datos).mean()))
+            piso_ruido = sum(ambiente) / len(ambiente) if ambiente else 100.0
+            umbral = max(180.0, piso_ruido * 2.6)
 
-                while True:
-                    if app is not None and (not getattr(app, "escuchando", True) or not getattr(app, "conversacion", True)):
-                        break
-                    datos, _ = flujo.read(bloque)
-                    nivel = float(np.abs(datos).mean())
-                    barge_in_habilitado = getattr(config, "BARGE_IN_ACTIVO", False)
-                    hablando_ella = bool(app and hasattr(app, "voz") and app.voz.ocupada())
+            idx_ultimo_habla = 0
 
-                    if hablando_ella:
-                        if not barge_in_habilitado:
-                            previo.clear()
-                            trozos.clear()
-                            hablo = False
-                            silencio = 0
-                            time.sleep(0.01)
-                            continue
+            while True:
+                if app is not None and (not getattr(app, "escuchando", True) or not getattr(app, "conversacion", True)):
+                    break
+                datos = self._flujo.leer(timeout=0.1)
+                if datos is None:
+                    continue
+                nivel = float(np.abs(datos).mean())
+                barge_in_habilitado = getattr(config, "BARGE_IN_ACTIVO", False)
+                hablando_ella = bool(app and hasattr(app, "voz") and app.voz.ocupada())
 
-                        if rec_vosk is None:
-                            try:
-                                rec_vosk = self._obtener_reconocedor_vosk()
-                                rec_vosk.Reset()
-                            except Exception:
-                                rec_vosk = None
-
-                        if rec_vosk is not None:
-                            try:
-                                rec_vosk.AcceptWaveform(datos.tobytes())
-                                parcial_raw = rec_vosk.PartialResult()
-                                m = re.search(r'"partial"\s*:\s*"([^"]+)"', parcial_raw)
-                                if m:
-                                    palabras = m.group(1).strip().lower()
-                                    if palabras:
-                                        es_cmd = any(c in palabras.split() for c in comandos_corte)
-                                        if es_cmd:
-                                            motivo = "comando"
-                                            t0_corte = time.time()
-                                            if hasattr(app.voz, "detener"):
-                                                app.voz.detener()
-                                            dt_corte_ms = (time.time() - t0_corte) * 1000
-                                            print(f"[interrupcion] motivo={motivo} tiempo_corte={dt_corte_ms:.1f}ms", flush=True)
-                                            if hasattr(app, "cola"):
-                                                app.cola.put(("interrupcion", motivo))
-                                            if not hablo:
-                                                trozos.extend(previo)
-                                            hablo = True
-                                            silencio = 0
-                                            self.t_fin_habla = time.time()
-                                            idx_ultimo_habla = len(trozos)
-                            except Exception:
-                                pass
-                    elif nivel > umbral:
-                        if not hablo:
-                            trozos.extend(previo)
-                        hablo = True
+                if hablando_ella:
+                    if not barge_in_habilitado:
+                        previo.clear()
+                        trozos.clear()
+                        hablo = False
                         silencio = 0
-                        self.t_fin_habla = time.time()
-                        idx_ultimo_habla = len(trozos)
-                    elif hablo:
-                        silencio += 1
-                    else:
-                        espera += 1
-                        previo.append(datos.copy())
-                        # Actualización adaptativa suave del piso de ruido en reposo
-                        piso_ruido = piso_ruido * 0.95 + nivel * 0.05
-                        umbral = max(180.0, piso_ruido * 2.6)
+                        time.sleep(0.01)
+                        continue
 
-                    if hablo:
-                        trozos.append(datos.copy())
-                        # Detección de fin de habla optimizada con VAD adaptativo
-                        terminado = False
-                        if silencio >= max_silencio:
-                            terminado = True
-                        elif (
-                            vad_adaptativo
-                            and len(trozos) >= 16
-                            and silencio >= max_silencio_adaptativo
-                            and nivel < (piso_ruido * 1.35)
-                        ):
-                            terminado = True
-                        elif len(trozos) > (80 if corto else 300):
-                            terminado = True
-                        if terminado:
-                            break
-                    elif espera >= 160:
+                    if rec_vosk is None:
+                        try:
+                            rec_vosk = self._obtener_reconocedor_vosk()
+                            rec_vosk.Reset()
+                        except Exception:
+                            rec_vosk = None
+
+                    if rec_vosk is not None:
+                        try:
+                            rec_vosk.AcceptWaveform(datos.tobytes())
+                            parcial_raw = rec_vosk.PartialResult()
+                            m = re.search(r'"partial"\s*:\s*"([^"]+)"', parcial_raw)
+                            if m:
+                                palabras = m.group(1).strip().lower()
+                                if palabras:
+                                    es_cmd = any(c in palabras.split() for c in comandos_corte)
+                                    if es_cmd:
+                                        motivo = "comando"
+                                        t0_corte = time.time()
+                                        if hasattr(app.voz, "detener"):
+                                            app.voz.detener()
+                                        dt_corte_ms = (time.time() - t0_corte) * 1000
+                                        print(f"[interrupcion] motivo={motivo} tiempo_corte={dt_corte_ms:.1f}ms", flush=True)
+                                        if hasattr(app, "cola"):
+                                            app.cola.put(("interrupcion", motivo))
+                                        if not hablo:
+                                            trozos.extend(previo)
+                                        hablo = True
+                                        silencio = 0
+                                        self.t_fin_habla = time.time()
+                                        idx_ultimo_habla = len(trozos)
+                        except Exception:
+                            pass
+                elif nivel > umbral:
+                    if not hablo:
+                        trozos.extend(previo)
+                    hablo = True
+                    silencio = 0
+                    self.t_fin_habla = time.time()
+                    idx_ultimo_habla = len(trozos)
+                elif hablo:
+                    silencio += 1
+                else:
+                    espera += 1
+                    previo.append(datos.copy())
+                    # Actualización adaptativa suave del piso de ruido en reposo
+                    piso_ruido = piso_ruido * 0.95 + nivel * 0.05
+                    umbral = max(180.0, piso_ruido * 2.6)
+
+                if hablo:
+                    trozos.append(datos.copy())
+                    # Detección de fin de habla optimizada con VAD adaptativo
+                    terminado = False
+                    if silencio >= max_silencio:
+                        terminado = True
+                    elif (
+                        vad_adaptativo
+                        and len(trozos) >= 16
+                        and silencio >= max_silencio_adaptativo
+                        and nivel < (piso_ruido * 1.35)
+                    ):
+                        terminado = True
+                    elif len(trozos) > (80 if corto else 300):
+                        terminado = True
+                    if terminado:
                         break
+                elif espera >= 160:
+                    break
         except Exception as e:
             raise RuntimeError("No pude usar el micrófono: " + str(e)[:120])
 

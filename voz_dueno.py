@@ -75,6 +75,74 @@ def calcular_similitud(emb1, emb2):
     return float(np.dot(emb1, emb2))
 
 
+def filtrar_voz_activa(audio, samplerate=16000):
+    """Filtra silencios y tramos muertos antes de CAM++ para optimizar precisión y velocidad.
+
+    Conserva ventanas con voz activa según RMS dinámico con padding de bordes y
+    recorta a máximo 6 s. Si la voz activa resultante es menor a 0.8 s, usa el audio original.
+    """
+    if audio is None:
+        return None
+
+    arr = np.asarray(audio, dtype=np.float32)
+    if arr.ndim > 1:
+        arr = arr[:, 0]
+    total_muestras = len(arr)
+
+    tam_ventana = int(samplerate * 0.030)  # 30 ms (480 muestras)
+    if total_muestras < tam_ventana * 4:
+        return audio
+
+    num_ventanas = total_muestras // tam_ventana
+    recortado = arr[: num_ventanas * tam_ventana].reshape((num_ventanas, tam_ventana))
+
+    # Energía RMS por ventana
+    rms_ventanas = np.sqrt(np.mean(recortado ** 2, axis=1))
+    piso_ruido = float(np.percentile(rms_ventanas, 25))
+    rms_max = float(np.max(rms_ventanas))
+
+    if rms_max <= 1e-4:
+        return audio
+
+    if piso_ruido >= rms_max * 0.75:
+        activa = np.ones(num_ventanas, dtype=bool)
+    else:
+        umbral = max(piso_ruido * 1.5, piso_ruido + (rms_max - piso_ruido) * 0.10)
+        activa = rms_ventanas >= umbral
+
+    # Padding de 1 ventana antes y 1 después para proteger consonantes
+    activa_pad = activa.copy()
+    for i in range(num_ventanas):
+        if activa[i]:
+            if i > 0:
+                activa_pad[i - 1] = True
+            if i < num_ventanas - 1:
+                activa_pad[i + 1] = True
+
+    indices_activos = np.where(activa_pad)[0]
+    duracion_activa = len(indices_activos) * 0.030
+
+    # Fallback a audio original si queda menos de 0.8 segundos de voz real
+    if duracion_activa < 0.8:
+        return audio
+
+    # Recortar a máximo 6 segundos de voz activa más fuerte
+    max_ventanas = int(6.0 / 0.030)  # 200 ventanas
+    if len(indices_activos) > max_ventanas:
+        ventanas_filtradas = recortado[indices_activos]
+        rms_filtradas = rms_ventanas[indices_activos]
+        suma_movil = np.convolve(rms_filtradas, np.ones(max_ventanas), mode="valid")
+        mejor_inicio = int(np.argmax(suma_movil))
+        ventanas_sel = ventanas_filtradas[mejor_inicio : mejor_inicio + max_ventanas]
+        audio_filtrado = ventanas_sel.reshape(-1)
+    else:
+        audio_filtrado = recortado[indices_activos].reshape(-1)
+
+    if isinstance(audio, np.ndarray) and audio.dtype == np.int16:
+        return np.clip(audio_filtrado, -32768, 32767).astype(np.int16)
+    return audio_filtrado
+
+
 class VozDueno:
     """Controlador de verificación de voz del dueño y autorización de acciones."""
 
@@ -148,10 +216,12 @@ class VozDueno:
             return
 
         try:
-            emb = extraer_embedding(audio)
+            audio_limpio = filtrar_voz_activa(audio)
+            dur_filtrada = len(audio_limpio) / 16000.0 if audio_limpio is not None else duracion
+            emb = extraer_embedding(audio_limpio)
             sim = calcular_similitud(emb, self.vector_dueno)
-            # Log exacto requerido: [voz_dueno] similitud=0.xx umbral=0.xx
-            print(f"[voz_dueno] similitud={sim:.2f} umbral={self.umbral:.2f} duracion={duracion:.2f}s camara={camara_ok}", flush=True)
+            # Log exacto: [voz_dueno] similitud=0.xx umbral=0.xx duracion=X.XXs filtrado=X.XXs camara=True/False
+            print(f"[voz_dueno] similitud={sim:.2f} umbral={self.umbral:.2f} duracion={duracion:.2f}s filtrado={dur_filtrada:.2f}s camara={camara_ok}", flush=True)
 
             # Doble factor: si la cámara ve al dueño, es válido aunque el puntaje de voz sea bajo
             es_dueno = (sim >= self.umbral) or camara_ok

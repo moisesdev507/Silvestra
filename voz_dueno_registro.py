@@ -89,6 +89,9 @@ def grabar_frase_4s(app, segundos=4.0, rate=16000):
         raise RuntimeError("No se pudo adquirir el candado del micrófono tras 4.0 s")
 
     try:
+        if hasattr(app.oido, "liberar_microfono"):
+            app.oido.liberar_microfono()
+
         bloque = int(rate * 0.1)
         total_bloques = int(segundos * 10)
         trozos = []
