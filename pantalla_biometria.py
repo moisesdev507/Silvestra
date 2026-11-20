@@ -93,6 +93,14 @@ def obtener_estado_biometria(app):
     else:
         identidad = "espera"
 
+    try:
+        import modos_sistema
+        modo_act = modos_sistema.obtener_modo_activo(app)
+        modo_eti = modos_sistema.MODOS_CONFIG.get(modo_act, {}).get("etiqueta", "Normal")
+    except Exception:
+        modo_act = "normal"
+        modo_eti = "Normal"
+
     return {
         "identidad": identidad,
         "solo_dueno": solo_dueno,
@@ -102,6 +110,8 @@ def obtener_estado_biometria(app):
         "camara_dueno": cam_dueno,
         "muestras_voz": contar_muestras_voz(app),
         "muestras_cara": contar_muestras_cara(app),
+        "modo_activo": modo_act,
+        "modo_etiqueta": modo_eti,
     }
 
 

@@ -11,6 +11,7 @@ ACCIONES_PERMITIDAS = {
     "toggle_solo_dueno": "Alterna modo exclusivo solo dueño",
     "reforzar_mi_voz": "Refuerza el banco biométrico de voz",
     "reforzar_voz": "Refuerza el banco biométrico de voz",
+    "activar_modo": "Cambia el modo del sistema",
 }
 
 MAX_COMANDO_CHARS = 500
@@ -134,6 +135,22 @@ def manejar_biometria(handler, app, gestor, ruta=None):
             gestor.registrar_evento("Refuerzo voz solicitado")
         codigo = 200 if ok else 429
         _json_respuesta(handler, codigo, {"ok": ok, "mensaje": msg, "biometria": bio})
+        return
+
+    if "modo" in ruta_str or accion in ("modo", "activar_modo"):
+        import modos_sistema
+        modo_pedir = body.get("modo", "")
+        ok, msg, info = modos_sistema.activar_modo(app, modo_pedir, origen="tablet")
+        bio = pantalla_biometria.obtener_estado_biometria(app)
+        if gestor:
+            eti = info.get("etiqueta", modo_pedir) if info else modo_pedir
+            gestor.registrar_evento(f"Modo: {eti}")
+        _json_respuesta(handler, 200 if ok else 400, {
+            "ok": ok,
+            "mensaje": msg,
+            "modo_activo": info.get("modo", "normal") if info else "normal",
+            "biometria": bio
+        })
         return
 
     # Consulta de estado biométrico

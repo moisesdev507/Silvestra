@@ -237,7 +237,7 @@ def verificar_modulos_clave():
         "pantalla", "hud", "escenario", "telegram_puente", "diario",
         "recordatorios", "cuidado", "propuestas", "voz_dueno",
         "control_pc", "control_laptop", "correcciones", "resumen",
-        "aprendizaje", "pantalla_remota", "presencia", "proveedores",
+        "aprendizaje", "modos_sistema", "pantalla_remota", "presencia", "proveedores",
         "respaldo", "conversacion"
     ]
     for m in modulos_sistema:

@@ -106,4 +106,8 @@ CATEGORIAS_ACCIONES = {
         {"respaldo", "respaldar", "copia de seguridad", "backup", "guardar copia", "hacer backup", "hacer respaldo"},
         {"crear_respaldo"}
     ),
+    "modos": (
+        {"modo", "modos", "programacion", "codigo", "programar", "estudio", "estudiar", "concentracion", "enfoque", "noche", "nocturno", "descanso", "normal"},
+        {"activar_modo"}
+    ),
 }

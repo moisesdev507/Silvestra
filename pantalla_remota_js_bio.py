@@ -49,7 +49,47 @@ JS_BIOMETRIA = """
         btnSolo.className = 'btn-bio';
       }
     }
+
+    if (b.modo_activo) {
+      document.querySelectorAll('.btn-mode').forEach(function(btn) {
+        if (btn.getAttribute('data-modo') === b.modo_activo) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+    }
   };
+
+  let _modoPending = false;
+  function cambiarModo(modo) {
+    if (_modoPending) return;
+    const fb = document.getElementById('bioFb');
+    _modoPending = true;
+    if (fb) { fb.textContent = 'ACTIVANDO...'; fb.style.color = 'var(--gold)'; }
+    fetch('/api/panel/modo?token=' + encodeURIComponent(token), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion: 'activar_modo', modo: modo })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.biometria) {
+        window.actualizarBiometria(d.biometria);
+      }
+      if (fb) {
+        fb.textContent = d.ok ? ('✔ ' + (d.mensaje || 'Modo listo')) : '✖ ERROR';
+        fb.style.color = d.ok ? 'var(--green)' : '#f87171';
+      }
+    })
+    .catch(function() {
+      if (fb) { fb.textContent = '✖ SIN CONEXIÓN'; fb.style.color = '#f87171'; }
+    })
+    .finally(function() {
+      _modoPending = false;
+      setTimeout(function() { if (fb) fb.textContent = ''; }, 3000);
+    });
+  }
 
   function toggleSoloDueno() {
     if (_soloDuenoPending) return;
@@ -119,6 +159,13 @@ JS_BIOMETRIA = """
   if (bSolo) bSolo.addEventListener('click', toggleSoloDueno);
   const bRef = document.getElementById('btnReforzarVoz');
   if (bRef) bRef.addEventListener('click', solicitarReforzarVoz);
+
+  document.querySelectorAll('.btn-mode').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const modo = this.getAttribute('data-modo');
+      if (modo) cambiarModo(modo);
+    });
+  });
 
 })();
 """

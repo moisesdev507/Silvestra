@@ -659,4 +659,42 @@ main.hud-grid {
   opacity: 0.5;
   cursor: not-allowed;
 }
+.bio-modes-label {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.8px;
+  color: var(--cyan);
+  margin: 6px 0 3px 0;
+}
+.bio-modes-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.btn-mode {
+  min-height: 44px;
+  padding: 6px 2px;
+  background: rgba(0, 240, 255, 0.05);
+  border: 1px solid var(--border-dim);
+  color: var(--text-muted);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  transition: all 0.18s ease;
+}
+.btn-mode:active {
+  transform: scale(0.96);
+}
+.btn-mode.active {
+  background: rgba(0, 240, 255, 0.22);
+  color: #fff;
+  border-color: var(--cyan);
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.4);
+}
 """

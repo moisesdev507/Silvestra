@@ -80,6 +80,7 @@ from cara_qt import Cara
 from cerebro import Cerebro
 import memoria
 from memoria import Memoria
+import modos_sistema
 from oido import Oido
 from voz import Voz
 
@@ -138,6 +139,7 @@ class Silvestra:
         correcciones.instalar(self)
         self.resumen = resumen.instalar(self)
         self.aprendizaje = aprendizaje.instalar(self)
+        modos_sistema.instalar(self)
         self.pantalla_remota = pantalla_remota.instalar(self)
         self.presencia = presencia.instalar(self)
         proveedores.instalar(self)

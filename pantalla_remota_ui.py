@@ -94,6 +94,13 @@ PAGINA_JARVIS_HTML = f"""<!DOCTYPE html>
           <button id="btnSoloDueno" class="btn-bio" title="Alternar modo exclusivo solo dueño">Solo Dueño: OFF</button>
           <button id="btnReforzarVoz" class="btn-bio btn-bio-sec" title="Reforzar voz con última muestra">Reforzar voz</button>
         </div>
+        <div class="bio-modes-label">// MODOS OPERATIVOS</div>
+        <div class="bio-modes-grid">
+          <button class="btn-mode active" data-modo="normal" title="Modo normal estándar">Normal</button>
+          <button class="btn-mode" data-modo="programacion" title="Modo programación: solo dueño, VS Code y código">Código</button>
+          <button class="btn-mode" data-modo="estudio" title="Modo estudio: solo dueño, volumen 45% y enfoque">Estudio</button>
+          <button class="btn-mode" data-modo="noche" title="Modo noche: solo dueño, volumen 25% y bajo perfil">Noche</button>
+        </div>
         <div id="bioFb" class="console-fb" style="margin-top:3px"></div>
       </div>
 
