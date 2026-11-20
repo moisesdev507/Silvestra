@@ -1,13 +1,19 @@
-import io
 import re
 import time
 import threading
-import wave
 from collections import deque
 
 import config
 from config import MODELO_VOZ
-from oido_flujo import FALSAS, FlujoMicrofono, es_transcripcion_dudosa, evaluar_clip_audio
+from oido_flujo import (
+    FALSAS,
+    FlujoMicrofono,
+    crear_buffer_wav,
+    es_transcripcion_dudosa,
+    evaluar_clip_audio,
+    preparar_audio_int16,
+    validar_calidad_whisper,
+)
 
 
 class Oido:
@@ -112,10 +118,10 @@ class Oido:
         rec_vosk = None
         comandos_corte = ("espera", "ya", "para", "silencio", "callate", "alto", "stop")
 
-        espera_silencio = float(getattr(config, "ESPERA_SILENCIO_SEGUNDOS", 0.55))
-        max_silencio = max(7, int(espera_silencio / 0.05))
+        espera_silencio = max(1.10, float(getattr(config, "ESPERA_SILENCIO_SEGUNDOS", 1.15)))
+        max_silencio = max(20, int(espera_silencio / 0.05))
         vad_adaptativo = getattr(config, "VAD_ADAPTATIVO", True)
-        max_silencio_adaptativo = max(8, int(0.45 / 0.05))
+        max_silencio_adaptativo = max(16, int(0.85 / 0.05))
         ganancia = float(getattr(config, "GANANCIA_MICROFONO", 1.2))
 
         try:
@@ -139,7 +145,8 @@ class Oido:
                     continue
                 ambiente.append(float(np.abs(datos).mean()))
             piso_ruido = sum(ambiente) / len(ambiente) if ambiente else 100.0
-            umbral = max(180.0, piso_ruido * 2.6)
+            umbral_inicio = max(180.0, piso_ruido * 2.4)
+            umbral_continuacion = max(125.0, piso_ruido * 1.6)
 
             idx_ultimo_habla = 0
 
@@ -198,22 +205,30 @@ class Oido:
                                         idx_ultimo_habla = len(trozos)
                         except Exception:
                             pass
-                elif nivel > umbral:
-                    if not hablo:
+                elif not hablo:
+                    if nivel > umbral_inicio:
                         trozos.extend(previo)
-                    hablo = True
-                    silencio = 0
-                    frames_voz += 1
-                    self.t_fin_habla = time.time()
-                    idx_ultimo_habla = len(trozos)
-                elif hablo:
-                    silencio += 1
+                        hablo = True
+                        silencio = 0
+                        frames_voz += 1
+                        self.t_fin_habla = time.time()
+                        idx_ultimo_habla = len(trozos)
+                    else:
+                        espera += 1
+                        previo.append(datos.copy())
+                        # Actualización adaptativa suave del piso de ruido en reposo
+                        piso_ruido = piso_ruido * 0.95 + nivel * 0.05
+                        umbral_inicio = max(180.0, piso_ruido * 2.4)
+                        umbral_continuacion = max(125.0, piso_ruido * 1.6)
                 else:
-                    espera += 1
-                    previo.append(datos.copy())
-                    # Actualización adaptativa suave del piso de ruido en reposo
-                    piso_ruido = piso_ruido * 0.95 + nivel * 0.05
-                    umbral = max(180.0, piso_ruido * 2.6)
+                    # Ya hablando: umbral_continuacion más permisivo para silabas suaves
+                    if nivel > umbral_continuacion:
+                        silencio = 0
+                        frames_voz += 1
+                        self.t_fin_habla = time.time()
+                        idx_ultimo_habla = len(trozos)
+                    else:
+                        silencio += 1
 
                 if hablo:
                     trozos.append(datos.copy())
@@ -223,7 +238,7 @@ class Oido:
                         terminado = True
                     elif (
                         vad_adaptativo
-                        and len(trozos) >= 16
+                        and len(trozos) >= 28
                         and silencio >= max_silencio_adaptativo
                         and nivel < (piso_ruido * 1.35)
                     ):
@@ -256,32 +271,14 @@ class Oido:
             return None
 
         audio_raw = np.concatenate(trozos_utiles)
-
-        # Ganancia, supresión de offset DC y normalización de volumen a -3dBFS
-        audio_f = audio_raw.astype(np.float32) * ganancia
-        audio_f = audio_f - np.mean(audio_f)
-        max_v = float(np.max(np.abs(audio_f)))
-        if max_v > 50.0:
-            escala = min(3.5, 24000.0 / max_v)
-            audio_f = audio_f * escala
-        audio = np.clip(audio_f, -32767, 32767).astype(np.int16)
+        audio = preparar_audio_int16(audio_raw, ganancia=ganancia)
 
         self.ultimo_audio = audio
         self.duracion_ultimo_audio = len(audio) / float(rate)
-
-        buffer = io.BytesIO()
-        with wave.open(buffer, "wb") as w:
-            w.setnchannels(1)
-            w.setsampwidth(2)
-            w.setframerate(rate)
-            w.writeframes(audio.tobytes())
+        buffer = crear_buffer_wav(audio, rate=rate)
 
         vocab_nombres = self.vocabulario() if callable(self.vocabulario) else ""
-        prompt_whisper = (
-            f"Conversación en español de Panamá con Silvestra y Moisés. {vocab_nombres}. "
-            "Comandos y acciones: silencio, para, cancelar, recordar, recordatorio, "
-            "resumen, pantalla, cámara, hora, fecha, Telegram, YouTube, PC, laptop, código, Python, tareas."
-        )
+        prompt_whisper = f"Silvestra, Moisés. {vocab_nombres}".strip()
 
         r = None
         t0 = time.time()
@@ -291,6 +288,7 @@ class Oido:
                 model=MODELO_VOZ,
                 language="es",
                 response_format="verbose_json",
+                temperature=0.0,
                 prompt=prompt_whisper,
                 timeout=10.0,
             )
@@ -314,6 +312,10 @@ class Oido:
             if f in t_low:
                 print(f"[oido] transcripcion='{texto}' descartada motivo=alucinacion_whisper('{f}')", flush=True)
                 return None
+        valida, motivo_whisper = validar_calidad_whisper(r, texto)
+        if not valida:
+            print(f"[oido] transcripcion='{texto}' descartada motivo={motivo_whisper}", flush=True)
+            return None
         if es_transcripcion_dudosa(r):
             print(f"[oido] transcripcion='{texto}' descartada motivo=dudoso_alta_probabilidad_sin_voz", flush=True)
             return None

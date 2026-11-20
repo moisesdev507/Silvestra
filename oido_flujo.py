@@ -42,6 +42,84 @@ def es_transcripcion_dudosa(r):
     return False
 
 
+def validar_calidad_whisper(r, texto=""):
+    """Valida la calidad y confianza de la transcripción devuelta por Whisper.
+
+    Retorna (valido: bool, motivo: str).
+    Descarta si todos los segmentos tienen no_speech_prob > 0.72 O
+    (no_speech_prob > 0.55 y avg_logprob < -1.15).
+    Tolera con seguridad objetos con atributos o dicts, y retorna (True, 'ok') si no hay segmentos.
+    """
+    if not r:
+        return True, "sin_respuesta"
+
+    segs = getattr(r, "segments", None)
+    if segs is None and isinstance(r, dict):
+        segs = r.get("segments")
+    if not segs:
+        return True, "ok"
+
+    def _val(s, clave):
+        if isinstance(s, dict):
+            return s.get(clave)
+        return getattr(s, clave, None)
+
+    nsp_list = []
+    logp_list = []
+    for s in segs:
+        nsp = _val(s, "no_speech_prob")
+        logp = _val(s, "avg_logprob")
+        if nsp is not None:
+            try:
+                nsp_list.append(float(nsp))
+            except (ValueError, TypeError):
+                pass
+        if logp is not None:
+            try:
+                logp_list.append(float(logp))
+            except (ValueError, TypeError):
+                pass
+
+    if not nsp_list and not logp_list:
+        return True, "ok"
+
+    if nsp_list and all(p > 0.72 for p in nsp_list):
+        max_nsp = max(nsp_list)
+        return False, f"baja_confianza_whisper(todos_no_speech_prob_alto={max_nsp:.2f})"
+
+    if nsp_list and logp_list and len(nsp_list) == len(logp_list):
+        if all(p > 0.55 and lp < -1.15 for p, lp in zip(nsp_list, logp_list)):
+            max_p = max(nsp_list)
+            min_lp = min(logp_list)
+            return False, f"baja_confianza_whisper(no_speech={max_p:.2f}_avg_logprob={min_lp:.2f})"
+
+    return True, "ok"
+
+
+def preparar_audio_int16(audio_raw, ganancia=1.2):
+    """Aplica ganancia, suprime offset DC y normaliza pico a -3dBFS."""
+    audio_f = audio_raw.astype(np.float32) * ganancia
+    audio_f = audio_f - np.mean(audio_f)
+    max_v = float(np.max(np.abs(audio_f)))
+    if max_v > 50.0:
+        escala = min(3.5, 24000.0 / max_v)
+        audio_f = audio_f * escala
+    return np.clip(audio_f, -32767, 32767).astype(np.int16)
+
+
+def crear_buffer_wav(audio_int16, rate=16000):
+    """Genera un buffer io.BytesIO con encabezado WAV PCM 16-bit mono."""
+    import io
+    import wave
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(audio_int16.tobytes())
+    return buf
+
+
 def evaluar_clip_audio(trozos_utiles, frames_voz, duracion_bloque=0.05):
     """Evalúa si el segmento capturado tiene suficiente voz y energía antes de Whisper.
 

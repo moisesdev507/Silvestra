@@ -49,14 +49,14 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - Rostro reactivo con mirada suave (`camara.py`), microexpresiones, parpadeo y aro facial (celeste/amarillo).
 - Interrupción por voz (barge-in <500ms), filtro de eco y exclusión mutua de streams de audio (sin 0xc0000374).
 - Síntesis en streaming (`cerebro_parser.py`) y voz panameña con `voz_reproductor.py` thread-safe.
-- Reconocimiento ágil con Whisper (VAD adaptativo 0.45s, prompt contextual), filtro de alucinaciones, Vosk offline, flujo persistente anti-crash 0xc0000374 con guarda anti-eco y descarte previo de clips cortos/ruido (`oido_flujo.py`).
+- Whisper determinista (temp 0.0, prompt limpio), VAD con histéresis (inicio 2.4x / continuación 1.6x), silencio 1.15s (adaptativo 0.85s), filtro de baja confianza (validar_calidad_whisper), Vosk offline, flujo persistente anti-crash 0xc0000374 y guarda anti-eco (`oido_flujo.py`).
 - Prompt compacto (<1350 tokens) con inyección selectiva (`cerebro_categorias.py`) y multillm en cascada con Keep-Alive.
 - Memoria duradera con fechas, filtro estricto anti-meta y desduplicación semántica (`memoria_filtro.py`).
 - Acciones por voz: recuerdos, recordatorios persistentes, proveedores, control de escucha y modo estudio.
 - Control de laptop por niveles (libre, peligroso exclusivo por Telegram con código y prohibido con auditoría).
 - Respaldo automático fuera de Git (`respaldo.py`) con rotación a 10 archivos en Documentos sin claves.
 - HUD Jarvis tablet a pantalla completa (100dvh horizontal, orbe Canvas, telemetría CPU/RAM/batería, recordatorios, notas, modo privado, SSE y supresión de ruido socket).
-- Biometría de voz CAM++ multi-muestra (`voz_dueno.py`, `voz_dueno_banco.py` y `voz_dueno_registro.py` con 8 frases variadas), banco hasta 25 muestras en `voz_dueno.npy` con rotación FIFO (8 anclas base fijas), preprocesamiento uniforme (VAD + pico -3dBFS + DC offset), scoring top-2 promedio (N>=3), tolerancia en comandos cortos (0.8s-1.8s), doble factor cámara, dos modos de seguridad (Solo Dueño e Invitado) y acción interactiva `reforzar_mi_voz`.
+- Biometría CAM++ multi-muestra (`voz_dueno*.py`, 8 frases), banco hasta 25 muestras en `voz_dueno.npy` con rotación FIFO (8 anclas fijas), scoring top-2, tolerancia en comandos cortos, doble factor cámara, modos Solo Dueño/Invitado y acción `reforzar_mi_voz`.
 - Suite de prueba de humo (`prueba_humo.py`) y arquitectura modular (todos los archivos <= 15 KB).
 
 ## 5. Tareas pendientes y pospuestas
