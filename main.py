@@ -153,6 +153,13 @@ class Silvestra:
         proveedores.instalar(self)
         respaldo.instalar(self)
         conversacion.instalar(self)
+        try:
+            import contexto_motor
+            self.contexto_motor = contexto_motor.obtener_motor_contexto(self)
+            self.contexto_motor.iniciar()
+        except Exception as e:
+            print(f"[contexto] Error al iniciar motor: {e}", flush=True)
+            self.contexto_motor = None
 
         self.cara.root.after(100, self.revisar_cola)
 
@@ -287,7 +294,18 @@ class Silvestra:
                 print(f"[eventos] Error reprogramando revisar_cola: {e}", flush=True)
 
     def iniciar(self):
-        self.cara.iniciar()
+        try:
+            self.cara.iniciar()
+        finally:
+            self.detener()
+
+    def detener(self):
+        """Detiene de forma limpia los motores y subprocesos al cerrar la aplicación."""
+        if hasattr(self, "contexto_motor") and self.contexto_motor:
+            try:
+                self.contexto_motor.detener()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

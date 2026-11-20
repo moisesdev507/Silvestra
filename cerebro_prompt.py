@@ -174,6 +174,14 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         pass
     tok_corr = max(0, int(len(corr_texto) / 3.6))
 
+    ctx_texto = ""
+    try:
+        import contexto_prompt
+        ctx_texto = contexto_prompt.generar_directiva_contexto()
+    except Exception:
+        pass
+    tok_contexto = max(0, int(len(ctx_texto) / 3.6))
+
     desc_acciones = describir_acciones_compactas(texto_actual)
     aviso_invitado = ""
     if es_invitado:
@@ -218,11 +226,11 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
     hist_podado = historial_reciente or []
     tok_hist = max(0, int(sum(len(h.get("content", "")) for h in hist_podado) / 3.6))
 
-    tok_total = tok_alma + tok_memoria + tok_perfil + tok_corr + tok_inst + tok_hist
+    tok_total = tok_alma + tok_memoria + tok_perfil + tok_corr + tok_contexto + tok_inst + tok_hist
     ahorro = max(0, int(100 * (1 - tok_total / max(1, tokens_base))))
     print(
         f"[tiempo] prompt_desglose alma={tok_alma} memoria={tok_memoria} perfil={tok_perfil} "
-        f"correcciones={tok_corr} historial={tok_hist} instrucciones={tok_inst} total={tok_total}",
+        f"correcciones={tok_corr} contexto={tok_contexto} historial={tok_hist} instrucciones={tok_inst} total={tok_total}",
         flush=True,
     )
     print(f"[tiempo] prompt_tokens={tok_total} anterior={tokens_base} ahorro={ahorro}%", flush=True)
@@ -242,6 +250,8 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
             bloques.append(dir_nat)
     except Exception:
         pass
+    if ctx_texto:
+        bloques.append(ctx_texto)
     if perfil_texto:
         bloques.append(f"Perfil del usuario:\n{perfil_texto}")
     if corr_texto:
