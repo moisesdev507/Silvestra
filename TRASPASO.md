@@ -24,7 +24,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 ### Módulos principales
 - **`main.py`**: Punto de entrada, ciclo principal y orquestación con PyQt5.
 - **`cara_qt.py` / `cara_dibujo.py` / `cara_movimiento.py` / `burbuja.py`**: Interfaz visual (rostro animado, mirada suave, paseo y boca sincronizada).
-- **`oido.py`**: Micrófono (`sounddevice`), VAD ágil (0.55s), barge-in, normalización y Whisper/Vosk.
+- **`oido.py` / `oido_flujo.py` / `oido_vad.py`**: Captura persistente anti-crash 0xc0000374, Silero VAD neuronal 16 kHz, anti-eco inteligente, barge-in y Whisper/Vosk.
 - **`voz.py` / `voz_reproductor.py` / `voz_cache.py`**: Síntesis `edge-tts` modulada, reproductor thread-safe SDL/mixer, RMS labial, corte rápido barge-in y caché.
 - **`cerebro.py` / `cerebro_prompt.py` / `cerebro_parser.py`**: Prompt (<2000 tokens), streaming y emociones/acciones.
 - **`proveedores.py` / `proveedores_cadenas.py` / `sesion_http.py`**: Multi-LLM en cascada con pool HTTP Keep-Alive persistente y cooldown por modelo.
@@ -49,7 +49,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - Rostro reactivo con mirada suave (`camara.py`), microexpresiones, parpadeo y aro facial (celeste/amarillo).
 - Interrupción por voz (barge-in <500ms), filtro de eco y exclusión mutua de streams de audio (sin 0xc0000374).
 - Síntesis en streaming (`cerebro_parser.py`) y voz panameña con `voz_reproductor.py` thread-safe.
-- Whisper determinista (temp 0.0, prompt limpio), VAD con histéresis (inicio 2.4x / continuación 1.6x), silencio 1.15s (adaptativo 0.85s), filtro de baja confianza (validar_calidad_whisper), Vosk offline, flujo persistente anti-crash 0xc0000374 y guarda anti-eco (`oido_flujo.py`).
+- Detección de voz neuronal con Silero VAD (`oido_vad.py` a 16 kHz, sin medidor de volumen casero ni filtro de 0.75s, admite frases cortas >=0.30s), anti-eco inteligente (guarda solo tras hablar), Whisper determinista (temp 0.0), filtro de baja confianza (`validar_calidad_whisper`), Vosk offline, flujo persistente anti-crash 0xc0000374 y tolerancia de silencios en `eventos.py`.
 - Prompt compacto (<1350 tokens) con inyección selectiva (`cerebro_categorias.py`) y multillm en cascada con Keep-Alive.
 - Memoria duradera con fechas, filtro estricto anti-meta y desduplicación semántica (`memoria_filtro.py`).
 - Acciones por voz: recuerdos, recordatorios persistentes, proveedores, control de escucha y modo estudio.

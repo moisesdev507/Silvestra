@@ -21,6 +21,9 @@ MODELOS = {
     "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx": [
         "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx",
     ],
+    "silero_vad.onnx": [
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
+    ],
 }
 
 

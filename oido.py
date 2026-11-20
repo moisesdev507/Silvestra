@@ -1,7 +1,7 @@
 import re
 import time
 import threading
-from collections import deque
+import numpy as np
 
 import config
 from config import MODELO_VOZ
@@ -10,10 +10,10 @@ from oido_flujo import (
     FlujoMicrofono,
     crear_buffer_wav,
     es_transcripcion_dudosa,
-    evaluar_clip_audio,
     preparar_audio_int16,
     validar_calidad_whisper,
 )
+from oido_vad import DetectorVozSilero
 
 
 class Oido:
@@ -32,6 +32,7 @@ class Oido:
         self.t_fin_habla = time.time()
         self.t_texto = time.time()
         self._flujo = FlujoMicrofono(rate=16000, blocksize=int(16000 * 0.05))
+        self._vad = DetectorVozSilero(sample_rate=16000)
         self._escuchando_activo = False
 
     def liberar_microfono(self):
@@ -102,83 +103,65 @@ class Oido:
         return None
 
     def _escuchar(self, corto=False, app=None):
-        """Devuelve el texto, o None si nadie habló. VAD ágil con corte optimizado y flujo persistente."""
-        try:
-            import numpy as np
-        except ImportError:
-            raise RuntimeError("Me falta instalar numpy.")
-
+        """Captura audio usando Silero VAD neuronal a 16 kHz y transcribe con Whisper/Vosk."""
         rate = 16000
-        trozos = []
-        previo = deque(maxlen=4)
-        hablo = False
-        silencio = 0
-        espera = 0
-        frames_voz = 0
-        rec_vosk = None
-        comandos_corte = ("espera", "ya", "para", "silencio", "callate", "alto", "stop")
-
-        espera_silencio = max(1.10, float(getattr(config, "ESPERA_SILENCIO_SEGUNDOS", 1.15)))
-        max_silencio = max(20, int(espera_silencio / 0.05))
-        vad_adaptativo = getattr(config, "VAD_ADAPTATIVO", True)
-        max_silencio_adaptativo = max(16, int(0.85 / 0.05))
         ganancia = float(getattr(config, "GANANCIA_MICROFONO", 1.2))
+        comandos_corte = ("espera", "ya", "para", "silencio", "callate", "alto", "stop")
+        rec_vosk = None
+
+        tiempo_espera_max = 8.0 if not corto else 4.0
+        max_habla_segundos = 15.0
 
         try:
             self._flujo.asegurar_flujo()
 
-            # Esperar si la voz de Silvestra aún está sonando y drenar
+            # Anti-eco inteligente: guarda de ~350 ms solo cuando la voz de Silvestra estuvo activa
+            hablaba_ella = False
             if app is not None and hasattr(app, "voz") and hasattr(app.voz, "ocupada"):
                 while app.voz.ocupada():
+                    hablaba_ella = True
                     self._flujo.drenar()
-                    time.sleep(0.05)
+                    time.sleep(0.04)
 
-            # Ventana de guarda anti-eco: descarta la reverberación y tail del parlante
-            self._flujo.aplicar_guarda_antieco(bloques=9, pausa_inicial=0.40)
+            if hablaba_ella:
+                self._flujo.aplicar_guarda_antieco(bloques=7, pausa_inicial=0.35)
+            else:
+                self._flujo.drenar()
 
-            ambiente = []
-            intentos_amb = 0
-            while len(ambiente) < 6 and intentos_amb < 20:
-                intentos_amb += 1
-                datos = self._flujo.leer(timeout=0.08)
-                if datos is None:
-                    continue
-                ambiente.append(float(np.abs(datos).mean()))
-            piso_ruido = sum(ambiente) / len(ambiente) if ambiente else 100.0
-            umbral_inicio = max(180.0, piso_ruido * 2.4)
-            umbral_continuacion = max(125.0, piso_ruido * 1.6)
-
-            idx_ultimo_habla = 0
+            self._vad.reset()
+            t_inicio = time.time()
+            t_habla_inicio = None
+            hablo = False
 
             while True:
                 if app is not None and (not getattr(app, "escuchando", True) or not getattr(app, "conversacion", True)):
                     break
-                datos = self._flujo.leer(timeout=0.1)
+
+                datos = self._flujo.leer(timeout=0.08)
+                ahora = time.time()
+
                 if datos is None:
-                    espera += 1
-                    if espera >= 160:
+                    if not hablo and (ahora - t_inicio >= tiempo_espera_max):
+                        break
+                    if hablo and t_habla_inicio and (ahora - t_habla_inicio >= max_habla_segundos):
+                        self._vad.flush()
                         break
                     continue
-                nivel = float(np.abs(datos).mean())
+
+                # Barge-in rápido con Vosk si la voz suena en paralelo
                 barge_in_habilitado = getattr(config, "BARGE_IN_ACTIVO", False)
                 hablando_ella = bool(app and hasattr(app, "voz") and app.voz.ocupada())
 
                 if hablando_ella:
                     if not barge_in_habilitado:
-                        previo.clear()
-                        trozos.clear()
-                        hablo = False
-                        silencio = 0
                         time.sleep(0.01)
                         continue
-
                     if rec_vosk is None:
                         try:
                             rec_vosk = self._obtener_reconocedor_vosk()
                             rec_vosk.Reset()
                         except Exception:
                             rec_vosk = None
-
                     if rec_vosk is not None:
                         try:
                             rec_vosk.AcceptWaveform(datos.tobytes())
@@ -186,93 +169,71 @@ class Oido:
                             m = re.search(r'"partial"\s*:\s*"([^"]+)"', parcial_raw)
                             if m:
                                 palabras = m.group(1).strip().lower()
-                                if palabras:
-                                    es_cmd = any(c in palabras.split() for c in comandos_corte)
-                                    if es_cmd:
-                                        motivo = "comando"
-                                        t0_corte = time.time()
-                                        if hasattr(app.voz, "detener"):
-                                            app.voz.detener()
-                                        dt_corte_ms = (time.time() - t0_corte) * 1000
-                                        print(f"[interrupcion] motivo={motivo} tiempo_corte={dt_corte_ms:.1f}ms", flush=True)
-                                        if hasattr(app, "cola"):
-                                            app.cola.put(("interrupcion", motivo))
-                                        if not hablo:
-                                            trozos.extend(previo)
-                                        hablo = True
-                                        silencio = 0
-                                        self.t_fin_habla = time.time()
-                                        idx_ultimo_habla = len(trozos)
+                                if palabras and any(c in palabras.split() for c in comandos_corte):
+                                    if hasattr(app.voz, "detener"):
+                                        app.voz.detener()
+                                    if hasattr(app, "cola"):
+                                        app.cola.put(("interrupcion", "comando"))
                         except Exception:
                             pass
-                elif not hablo:
-                    if nivel > umbral_inicio:
-                        trozos.extend(previo)
-                        hablo = True
-                        silencio = 0
-                        frames_voz += 1
-                        self.t_fin_habla = time.time()
-                        idx_ultimo_habla = len(trozos)
-                    else:
-                        espera += 1
-                        previo.append(datos.copy())
-                        # Actualización adaptativa suave del piso de ruido en reposo
-                        piso_ruido = piso_ruido * 0.95 + nivel * 0.05
-                        umbral_inicio = max(180.0, piso_ruido * 2.4)
-                        umbral_continuacion = max(125.0, piso_ruido * 1.6)
-                else:
-                    # Ya hablando: umbral_continuacion más permisivo para silabas suaves
-                    if nivel > umbral_continuacion:
-                        silencio = 0
-                        frames_voz += 1
-                        self.t_fin_habla = time.time()
-                        idx_ultimo_habla = len(trozos)
-                    else:
-                        silencio += 1
 
-                if hablo:
-                    trozos.append(datos.copy())
-                    # Detección de fin de habla optimizada con VAD adaptativo
-                    terminado = False
-                    if silencio >= max_silencio:
-                        terminado = True
-                    elif (
-                        vad_adaptativo
-                        and len(trozos) >= 28
-                        and silencio >= max_silencio_adaptativo
-                        and nivel < (piso_ruido * 1.35)
-                    ):
-                        terminado = True
-                    elif len(trozos) > (80 if corto else 300):
-                        terminado = True
-                    if terminado:
+                # Alimentar bloques int16 al VAD neuronal
+                self._vad.alimentar(datos)
+
+                if not hablo:
+                    if self._vad.detectando_voz():
+                        hablo = True
+                        t_habla_inicio = ahora
+                        self.t_fin_habla = ahora
+                    elif (ahora - t_inicio) >= tiempo_espera_max:
                         break
-                elif espera >= 160:
-                    break
+                else:
+                    self.t_fin_habla = ahora
+                    if self._vad.hay_segmento_completo():
+                        break
+                    if t_habla_inicio and (ahora - t_habla_inicio >= max_habla_segundos):
+                        self._vad.flush()
+                        break
+
+            if hablo and not self._vad.hay_segmento_completo():
+                self._vad.flush()
+
         except Exception as e:
             raise RuntimeError("No pude usar el micrófono: " + str(e)[:120])
 
         self.t_fin_escucha = time.time()
 
-        if not hablo:
+        if not self._vad.hay_segmento_completo():
             self.ultimo_audio = None
             self.duracion_ultimo_audio = 0.0
             return None
 
-        # Recortar silencios sobrantes finales
-        trozos_utiles = trozos[: min(len(trozos), idx_ultimo_habla + 4)]
-
-        # Filtro estricto anti-clips basura / eco antes de llamar a Whisper
-        valido, dur_clip, rms_crudo, motivo = evaluar_clip_audio(trozos_utiles, frames_voz)
-        if not valido:
-            print(f"[oido] Clip descartado por corto/eco: {dur_clip:.2f}s rms={rms_crudo:.1f} ({motivo})", flush=True)
+        seg_float = self._vad.extraer_segmento()
+        if seg_float is None or len(seg_float) == 0:
             self.ultimo_audio = None
             self.duracion_ultimo_audio = 0.0
             return None
 
-        audio_raw = np.concatenate(trozos_utiles)
-        audio = preparar_audio_int16(audio_raw, ganancia=ganancia)
+        duracion = len(seg_float) / float(rate)
+        audio_int16 = (np.clip(seg_float, -1.0, 1.0) * 32767.0).astype(np.int16)
+        rms = float(np.sqrt(np.mean(audio_int16.astype(np.float32) ** 2))) if len(audio_int16) > 0 else 0.0
 
+        # Filtro de Silero VAD (permite frases cortas >= 0.30s)
+        if duracion < 0.30:
+            print(f"[oido] silero_segmento descartado: duracion={duracion:.2f}s < 0.30s rms={rms:.1f}", flush=True)
+            self.ultimo_audio = None
+            self.duracion_ultimo_audio = 0.0
+            return None
+
+        if rms < 60.0:
+            print(f"[oido] silero_segmento descartado: rms={rms:.1f} < 60 (silencio digital)", flush=True)
+            self.ultimo_audio = None
+            self.duracion_ultimo_audio = 0.0
+            return None
+
+        print(f"[oido] silero_segmento={duracion:.2f}s rms={rms:.1f}", flush=True)
+
+        audio = preparar_audio_int16(audio_int16, ganancia=ganancia)
         self.ultimo_audio = audio
         self.duracion_ultimo_audio = len(audio) / float(rate)
         buffer = crear_buffer_wav(audio, rate=rate)

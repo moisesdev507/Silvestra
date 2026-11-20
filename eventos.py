@@ -106,6 +106,7 @@ def atender_evento(app, tipo, texto):
 
     elif tipo == "alternar_conversacion":
         motivo = texto or "evento"
+        app.silencios = 0
         if not app.conversacion:
             app.alternar_conversacion(motivo=motivo)
 
@@ -245,7 +246,7 @@ def atender_evento(app, tipo, texto):
                 (hasattr(app, "escenario") and app.escenario and app.escenario.isVisible())
                 or getattr(app, "presentacion_activa", False)
             )
-            limite = 5 if en_demo else 2
+            limite = 5 if en_demo else 3
             if app.silencios >= limite:
                 app.conversacion = False
                 app.decir("Me quedo callada. Avísame cuando quieras hablar.", 3500)
