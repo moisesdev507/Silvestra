@@ -111,6 +111,7 @@ class Silvestra:
             self.renacer,
             self.pedir_descanso,
         )
+        self.cara.app = self
         self.cara._ref_voz = self.voz
         self.cara.poner_viva(bool(self.memoria.nombre))
         memoria.instalar(self)

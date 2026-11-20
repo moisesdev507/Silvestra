@@ -55,10 +55,43 @@ class CaraMovimientoMixin:
         self.seguir_hasta = time.time() + segundos
         self.sincronizar = True
 
-    def bailar(self, segundos=4):
+    def bailar(self, estilo="aleatorio", segundos=35, con_musica=True, consulta_usuario=None, app=None):
+        """Inicia una de las coreografías rítmicas con música opcional o detiene el baile."""
+        import cara_baile
         self._tocar()
-        self.baile_hasta = time.time() + segundos
+        gestor = getattr(self, "_gestor_baile", None)
+        if gestor is None:
+            gestor = cara_baile.obtener_gestor_baile()
+            self._gestor_baile = gestor
+
         self.sincronizar = True
+        self.fx = float(self.x())
+        self.fy = float(self.y())
+
+        app_ref = app or getattr(self, "app", None) or getattr(self, "_ref_app", None)
+        ok, msg = gestor.iniciar(
+            estilo=estilo,
+            segundos=segundos,
+            app=app_ref,
+            con_musica=con_musica,
+            consulta_usuario=consulta_usuario,
+        )
+        if ok:
+            self.baile_hasta = gestor.baile_hasta
+        else:
+            self.baile_hasta = 0.0
+            self.baile_tilt = 0.0
+        return ok, msg
+
+    def parar_baile(self):
+        """Detiene la coreografía actual y devuelve la cara a su posición base."""
+        import cara_baile
+        gestor = getattr(self, "_gestor_baile", None)
+        if gestor:
+            app_ref = getattr(self, "app", None) or getattr(self, "_ref_app", None)
+            gestor.detener(app=app_ref)
+        self.baile_hasta = 0.0
+        self.baile_tilt = 0.0
 
     def _activo(self):
         ahora = time.time()
@@ -92,38 +125,62 @@ class CaraMovimientoMixin:
                 break
         self.destino = (x, y)
 
+    def _actualizar_tilt(self, vx=0.0):
+        tilt_target = max(-12.0, min(12.0, -vx * 1.6)) if abs(vx) > 0.05 else 0.0
+        tilt_act = getattr(self, "tilt", 0.0)
+        self.tilt = tilt_act + (tilt_target - tilt_act) * 0.22
+        if abs(self.tilt) < 0.02:
+            self.tilt = 0.0
+
     def _poner(self, x, y):
+        vx = x - getattr(self, "_fx_prev", x)
+        self._fx_prev = x
+        self._actualizar_tilt(vx)
         self.move(int(x), int(y))
 
     def _mover(self):
         ahora = time.time()
         if ahora < self._libre_hasta:
+            self._actualizar_tilt(0.0)
             return
         if not self._puede_mover():
             self.destino = None
             self.sincronizar = True
             self.mx = 0
             self._libre_hasta = ahora + 0.3
+            self._actualizar_tilt(0.0)
             return
         if self.sincronizar:
             self.fx = float(self.x())
             self.fy = float(self.y())
+            self._fx_prev = self.fx
             self.sincronizar = False
             if ahora < self.paseo_hasta:
                 self.pausa_hasta = 0.0
             else:
                 self.pausa_hasta = ahora + random.uniform(*self.PRIMERA_PAUSA)
 
-        # Baile
+        ancho, alto = self._pantalla()
+
+        # Baile con gestor de coreografías
         if ahora < self.baile_hasta:
-            fase = math.sin(ahora * 9)
-            self._poner(self.fx + 25 * fase, self.fy - 10 * abs(fase))
+            import cara_baile
+            gestor = getattr(self, "_gestor_baile", None)
+            if gestor is None:
+                gestor = cara_baile.obtener_gestor_baile()
+                self._gestor_baile = gestor
+            dx, dy, tilt, emo = gestor.actualizar_fisica(ahora, self.fx, self.fy, ancho, alto, TAM)
+            self.baile_tilt = tilt
+            if hasattr(self, "fijar_emocion") and emo != "neutral":
+                self.fijar_emocion(emo)
+            self.move(int(self.fx + dx), int(self.fy + dy))
             return
+
         if self.baile_hasta:
             self.baile_hasta = 0.0
+            self.baile_tilt = 0.0
+            self._actualizar_tilt(0.0)
             self._poner(self.fx, self.fy)
-
-        ancho, alto = self._pantalla()
 
         # Seguir al mouse
         if ahora < self.seguir_hasta:
@@ -140,6 +197,7 @@ class CaraMovimientoMixin:
                 self._poner(self.fx, self.fy)
             else:
                 self.mx = 0
+                self._actualizar_tilt(0.0)
             return
         self.seguir_hasta = 0.0
 
@@ -147,6 +205,7 @@ class CaraMovimientoMixin:
         if self.destino is None:
             if ahora < self.pausa_hasta:
                 self._libre_hasta = ahora + 0.2
+                self._actualizar_tilt(0.0)
                 return
             self._elegir_destino()
         dx = self.destino[0] - self.fx
@@ -159,6 +218,7 @@ class CaraMovimientoMixin:
             pausa = self.PAUSA_ORDEN if ahora < self.paseo_hasta else self.PAUSA
             self.pausa_hasta = ahora + random.uniform(*pausa)
             self._libre_hasta = ahora + 0.2
+            self._actualizar_tilt(0.0)
             return
         paso = min(dist, max(2.5, dist * 0.06))
         self.fx += dx / dist * paso

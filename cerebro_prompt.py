@@ -202,7 +202,7 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         "Regla anti-invención estricta: jamás inventes vivencias ni datos falsos. "
         f"Si no recuerdas algo o {m.creador} no te lo ha contado, di honestamente que no lo recuerdas sin inventar.\n"
         "Privacidad: captura y cámara solo cuando lo pidan. Jamás repitas ni guardes claves, contraseñas o tokens.\n"
-        "Para las acciones con texto usa: ACCION: nombre | detalle (ej: ACCION: poner_recordatorio | en 2 minutos | sacar comida; ACCION: buscar | tema; ACCION: activar_modo | normal/programacion/estudio/noche).\n"
+        "Para las acciones con texto usa: ACCION: nombre | detalle (ej: ACCION: poner_recordatorio | en 2 minutos | sacar comida; ACCION: buscar | tema; ACCION: activar_modo | normal/programacion/estudio/noche; ACCION: bailar | groove/salsa/fiesta/parar).\n"
         "Cuando ejecutes una ACCION, la RESPUESTA debe ser solo una confirmación brevísima y natural (ej: 'Listo.', 'Ya está en pantalla.', 'Abierto.').\n"
         "EMOCIONES DISPONIBLES: neutral, alegre, calida, seria, preocupada, animada.\n\n"
         "FORMATO OBLIGATORIO:\n"

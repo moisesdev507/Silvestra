@@ -6,6 +6,8 @@ import time
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QCursor, QPainter, QPen, QRadialGradient
 
+import cara_baile
+
 TAM = 250               # tamaño de la ventana de la cara
 ESC = TAM / 280.0       # escala del dibujo
 CIAN = QColor(79, 209, 197)
@@ -120,8 +122,12 @@ def pintar(self):
         p.translate(c, c + y_resp + y_asentir)
         p.scale(resp_escala, resp_escala)
 
+        tilt_mov = getattr(self, "tilt", 0.0)
+        tilt_baile = getattr(self, "baile_tilt", 0.0)
         if bailando:
-            p.rotate(6 * math.sin(t * 9))
+            p.rotate(tilt_baile or (6.0 * math.sin(t * 9)))
+        elif abs(tilt_mov) > 0.1:
+            p.rotate(tilt_mov)
         elif inclinacion:
             p.rotate(inclinacion)
 
@@ -133,15 +139,33 @@ def pintar(self):
         p.setBrush(QBrush(g))
         p.drawEllipse(QPointF(0, 0), 135, 135)
 
-        # Anillos de luz
-        vel = 160 if pensando else (100 if bailando else 40)
-        pulso = 0.5 + 0.5 * math.sin(t * (9 if self.hablando else 2.2))
-        for radio, grosor, sentido, largo in [(118, 3.0, 1.0, 110), (106, 2.2, -1.4, 70), (128, 1.6, 0.7, 50)]:
-            pluma = QPen(con_alpha(color, 140 + 90 * pulso), grosor)
+        # Anillos HUD reactivos por modo operativo y ritmo
+        modo_act = getattr(getattr(self, "app", None), "modo_activo", None)
+        if not modo_act:
+            try:
+                import modos_sistema
+                modo_act = modos_sistema.obtener_modo_activo()
+            except Exception:
+                modo_act = "normal"
+
+        c_a1, c_a2, vel_a, pulso_a = cara_baile.obtener_estilo_anillos(modo_act, bailando, t)
+        if pensando:
+            vel_a = 160.0
+        elif not self.viva:
+            c_a1 = GRIS
+            c_a2 = GRIS
+
+        for radio, grosor, sentido, largo, use_c2 in [
+            (118, 3.0, 1.0, 110, False),
+            (106, 2.2, -1.4, 70, True),
+            (128, 1.6, 0.7, 50, False),
+        ]:
+            c_sel = c_a2 if use_c2 else c_a1
+            pluma = QPen(con_alpha(c_sel, 140 + 90 * pulso_a), grosor)
             pluma.setCapStyle(Qt.RoundCap)
             p.setPen(pluma)
             p.setBrush(Qt.NoBrush)
-            ini = (t * vel * sentido) % 360
+            ini = (t * vel_a * sentido) % 360
             rect = QRectF(-radio, -radio, radio * 2, radio * 2)
             for k in range(3):
                 p.drawArc(rect, int((ini + k * 120) * 16), int(largo * 16))
@@ -167,26 +191,40 @@ def pintar(self):
         p.drawEllipse(QPointF(0, 0), 6, 6)
         p.restore()
 
-        # Hacia dónde mira: seguimiento suave de rostro (cámara) o cursor con micro-sacadas
+        # Hacia dónde mira: seguimiento suave de rostro (cámara) o cursor con límites naturales
         ref_cam = getattr(self, "_ref_camara", None)
         rostro_pos = getattr(ref_cam, "ult_pos_rostro", None) if ref_cam else None
         t_rostro = getattr(ref_cam, "t_ult_pos_rostro", 0.0) if ref_cam else 0.0
 
-        if rostro_pos and (ahora - t_rostro < 3.0) and not pensando and self.viva:
-            # Rostro detectado: movimiento pequeño y natural hacia el dueño (invertido en X por espejo de cámara)
+        if rostro_pos and (ahora - t_rostro < 3.0) and not pensando and self.viva and not bailando:
+            # Rostro detectado por cámara: movimiento hacia el dueño
             rx, ry = rostro_pos
-            dx = max(-1.0, min(1.0, -rx)) * 0.8
-            dy = max(-1.0, min(1.0, ry)) * 0.7
-        else:
+            dx = max(-1.0, min(1.0, -rx)) * 0.85
+            dy = max(-1.0, min(1.0, ry)) * 0.75
+        elif (self.escuchando or self.hablando) and not pensando and self.viva:
+            # Al escuchar o hablar, centra la mirada al frente
+            dx, dy = 0.0, 0.0
+        elif not pensando and self.viva and not bailando:
+            # Seguimiento suave del cursor acotado dentro de los límites del ojo
             cur = QCursor.pos()
             ctr = self.mapToGlobal(QPointF(c, c).toPoint())
-            dx = max(-1.0, min(1.0, (cur.x() - ctr.x()) / 500.0))
-            dy = max(-1.0, min(1.0, (cur.y() - ctr.y()) / 500.0))
+            raw_dx = (cur.x() - ctr.x()) / 420.0
+            raw_dy = (cur.y() - ctr.y()) / 350.0
+            dist_sq = (raw_dx / 1.0) ** 2 + (raw_dy / 0.8) ** 2
+            if dist_sq > 1.0:
+                dist = math.sqrt(dist_sq)
+                dx = raw_dx / dist
+                dy = (raw_dy / dist) * 0.8
+            else:
+                dx = raw_dx
+                dy = raw_dy
+        else:
+            dx, dy = 0.0, 0.0
 
         if not pensando and self.viva:
             if ahora >= self.prox_micro_sac:
-                self.micro_sac_x = random.uniform(-1.5, 1.5)
-                self.micro_sac_y = random.uniform(-1.0, 1.0)
+                self.micro_sac_x = random.uniform(-1.2, 1.2)
+                self.micro_sac_y = random.uniform(-0.8, 0.8)
                 self.prox_micro_sac = ahora + random.uniform(2.5, 5.5)
         else:
             self.micro_sac_x = 0.0
@@ -197,9 +235,9 @@ def pintar(self):
         if pensando:
             dx, dy = 0.5 * math.sin(t * 2), -0.7
 
-        # Transición suave (factor 0.09) para mirada fluida, natural y no brusca
-        self.ojo_x += ((dx * 7.0 + self.micro_sac_x) - self.ojo_x) * 0.09
-        self.ojo_y += ((dy * 5.0 + self.micro_sac_y) - self.ojo_y) * 0.09
+        # Transición suave (factor 0.12) para mirada fluida y orgánica sin saltos
+        self.ojo_x += ((dx * 7.5 + self.micro_sac_x) - self.ojo_x) * 0.12
+        self.ojo_y += ((dy * 5.2 + self.micro_sac_y) - self.ojo_y) * 0.12
 
         # Parpadeo natural cada 2.5 a 6 s con variación de duración y parpadeo doble
         if self.parpadeo_ini is None and ahora >= self.prox_parpadeo:
@@ -294,5 +332,14 @@ def pintar(self):
                     p.drawArc(QRectF(-w_boca / 2.0, 26, w_boca, h_boca), int(200 * 16), int(140 * 16))
                 else:
                     p.drawArc(QRectF(-w_boca / 2.0, 38 - h_boca, w_boca, h_boca), int(20 * 16), int(140 * 16))
+
+        # Partículas musicales cuando baila
+        if bailando:
+            gestor_b = getattr(self, "_gestor_baile", None)
+            if gestor_b is None:
+                gestor_b = cara_baile.obtener_gestor_baile()
+                self._gestor_baile = gestor_b
+            gestor_b.actualizar_particulas(ahora)
+            gestor_b.dibujar_particulas(p)
     finally:
         p.end()

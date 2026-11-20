@@ -82,6 +82,7 @@ class Cara(CaraMovimientoMixin, QWidget):
         self.forzado_destino = False
         self.seguir_hasta = 0.0
         self.baile_hasta = 0.0
+        self.baile_tilt = 0.0
         self._libre_hasta = 0.0
         self.arrastre = None
         self.ojo_x = 0.0
@@ -136,9 +137,21 @@ class Cara(CaraMovimientoMixin, QWidget):
         acciones.registrar("ir_esquina_izquierda", lambda: self.ir_a("izquierda"), "va a la esquina inferior izquierda")
         acciones.registrar("ir_centro", lambda: self.ir_a("centro"), "va al centro de la pantalla")
         acciones.registrar("seguir_mouse", self.seguir_mouse, "sigue el cursor del mouse un rato (úsala si te piden que te siga)")
-        acciones.registrar("bailar", self.bailar, "baila unos segundos")
+        acciones.registrar(
+            "bailar",
+            self.ejecutar_baile,
+            "baila coreografías (groove, salsa, fiesta o parar) con música opcional. Escribe: ACCION: bailar | estilo",
+            con_texto=True,
+        )
 
         self.show()
+
+    def ejecutar_baile(self, arg=None):
+        """Ejecuta una coreografía interpretando argumentos de voz o acción."""
+        import cara_baile
+        estilo, con_musica, cancion = cara_baile.parsear_comando_baile(arg)
+        app_ref = getattr(self, "app", None) or getattr(self, "_ref_app", None)
+        return self.bailar(estilo=estilo, segundos=35, con_musica=con_musica, app=app_ref, consulta_usuario=cancion)
 
     # ---------- Utilidades ----------
     def _pantalla(self):

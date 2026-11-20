@@ -63,7 +63,7 @@ CATEGORIAS_ACCIONES = {
         {"presentarse", "cerrar_escenario"}
     ),
     "movimiento": (
-        {"pasear", "camina", "caminar", "muevete", "mover", "quieta", "esquina", "centro", "mouse", "raton", "baila", "bailar", "sigueme"},
+        {"pasear", "camina", "caminar", "muevete", "mover", "quieta", "esquina", "centro", "mouse", "raton", "baila", "bailar", "baile", "salsa", "fiesta", "groove", "sigueme"},
         {"pasear", "quedarse_quieta", "ir_esquina_derecha", "ir_esquina_izquierda", "ir_centro", "seguir_mouse", "bailar"}
     ),
     "biometria_voz": (

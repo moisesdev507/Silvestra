@@ -1085,6 +1085,18 @@ Para mantener todos los archivos bajo el límite de 15 KB, `cerebro.py` se divid
   - Se añadieron `PALABRAS_EXCLUIDAS` (silencio, silenciosa, silaba, etc.) y prefijos estrictos (`silvest`, `sylvest`, `silvi`).
   - `alternar_conversacion` registra ahora el motivo explícito en el log: `[conversacion] alternar_conversacion motivo=... nuevo_estado=...`.
 
+### 6. Expresividad Visual, Mirada Orgánica, HUD Reactivo y Coreografías de Baile (`cara_baile.py`)
+- **Seguimiento Orgánico de Mirada**:
+  - Mirada acotada de forma elíptica dentro del contorno ocular (`cara_dibujo.py`), centrada al hablar o escuchar, y con micro-sacadas suaves en reposo.
+- **Inclinación Física Proporcional (`tilt`)**:
+  - Inclinación suave calculada a partir de la velocidad horizontal de desplazamiento (`vx`), inclinando orgánicamente hasta ±12° al caminar o seguir el mouse, y retornando a 0° al detenerse.
+- **Anillos HUD Reactivos**:
+  - Color, rotación y pulso sincronizados con el modo activo (`normal`, `programacion`, `estudio`, `noche`) y estilo neón acelerado durante el baile.
+- **3 Coreografías de Baile con Música y Partículas**:
+  - Estilos `groove`, `salsa` y `fiesta` con física procedural rítmica independiente.
+  - Generación de partículas musicales neón (`♪`, `♫`, `♩`, `✦`) flotantes hacia arriba con desvanecimiento alfa.
+  - Reproducción automática en segundo plano de música de YouTube según el ritmo (`control_laptop.musica_youtube` / `control_pc.buscar_youtube`), deteniéndose al parar el baile.
+
 ## Límites conocidos
 - El temporizador de estudio Pomodoro se pierde si se cierra la app (los recordatorios ya sobreviven al cierre de forma persistente en `recordatorios.json`).
 - Los gestos asumen mano derecha con los dedos hacia arriba.
