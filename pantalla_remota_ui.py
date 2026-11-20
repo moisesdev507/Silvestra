@@ -80,6 +80,20 @@ PAGINA_JARVIS_HTML = f"""<!DOCTYPE html>
         <div style="font-size:10px; color:var(--text-muted); font-family:var(--font-mono)">VAD Adaptativo // Edge-TTS es-PA</div>
       </div>
 
+      <div class="hud-card">
+        <div class="card-header">
+          <span class="card-title">ACCIONES RÁPIDAS</span>
+          <span style="font-size:9px; color:var(--gold); font-family:var(--font-mono)">CTRL</span>
+        </div>
+        <div class="action-grid">
+          <button class="btn-action" onclick="ejecutarAccion('tablet_modo_privado')" title="Ocultar datos sensibles">🔒 PRIVADO</button>
+          <button class="btn-action" onclick="ejecutarAccion('tablet_modo_normal')" title="Mostrar datos normales">🔓 NORMAL</button>
+          <button class="btn-action gold" onclick="ejecutarAccion('crear_respaldo')" title="Generar respaldo de datos">💾 RESPALDO</button>
+          <button class="btn-action gold" onclick="ejecutarAccion('ocultar_tarjeta')" title="Limpiar tarjeta principal">✖ TARJETA</button>
+        </div>
+        <div id="accionFb" class="console-fb" style="margin-top:4px"></div>
+      </div>
+
       <div class="hud-card" style="flex:1; display:flex; flex-direction:column; justify-content:center">
         <div class="card-header" style="margin-bottom:3px">
           <span class="card-title">CONDICIÓN CLIMÁTICA</span>
@@ -106,6 +120,15 @@ PAGINA_JARVIS_HTML = f"""<!DOCTYPE html>
       <div class="stream-box">
         <div class="stream-label">// ÚLTIMA TRANSMISIÓN DE VOZ</div>
         <div id="streamSub" class="stream-text">Sistema en línea. Esperando órdenes.</div>
+      </div>
+
+      <div class="console-box">
+        <div class="console-label">// CONSOLA // ENVIAR COMANDO A SILVESTRA</div>
+        <div class="console-row">
+          <input id="consoleInput" class="console-input" type="text" placeholder="Escribe un mensaje..." maxlength="500" autocomplete="off" autocorrect="off" spellcheck="false">
+          <button class="console-send" onclick="enviarComando()">▶ ENVIAR</button>
+        </div>
+        <div id="consoleFb" class="console-fb"></div>
       </div>
 
       <div class="dynamic-card">

@@ -10,6 +10,7 @@ import urllib.parse
 
 import acciones
 import estado
+import pantalla_remota_api as _api
 from pantalla_remota_datos import recolectar_estado_completo
 from pantalla_remota_qr import VentanaQR
 from pantalla_remota_ui import PAGINA_JARVIS_HTML
@@ -158,6 +159,42 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
 
         self.send_response(404)
         self.end_headers()
+
+    def do_OPTIONS(self):
+        """Responde preflight CORS para POST desde la tablet."""
+        url_parsed = urllib.parse.urlparse(self.path)
+        query = urllib.parse.parse_qs(url_parsed.query)
+        if url_parsed.path.startswith("/api/panel/"):
+            _api.manejar_options(self)
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        """Maneja endpoints POST seguros: /api/panel/comando y /api/panel/accion."""
+        url_parsed = urllib.parse.urlparse(self.path)
+        query = urllib.parse.parse_qs(url_parsed.query)
+
+        # Clientes remotos deben autenticarse; localhost se permite sin token
+        ip = self.client_address[0]
+        es_local = ip in ("127.0.0.1", "::1")
+        if not es_local and not self._validar_token(query):
+            self.send_response(403)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write("Acceso denegado: token inválido.".encode("utf-8"))
+            return
+
+        gestor = getattr(self.server, "gestor", None)
+        app = getattr(self.server, "app", None)
+
+        if url_parsed.path == "/api/panel/comando":
+            _api.manejar_comando(self, app, gestor)
+        elif url_parsed.path == "/api/panel/accion":
+            _api.manejar_accion(self, app, gestor)
+        else:
+            self.send_response(404)
+            self.end_headers()
 
 
 class GestorPantallaRemota:

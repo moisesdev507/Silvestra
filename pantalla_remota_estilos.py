@@ -463,4 +463,118 @@ main.hud-grid {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Acciones Rápidas */
+.action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.btn-action {
+  background: rgba(0, 240, 255, 0.07);
+  border: 1px solid var(--border);
+  color: var(--cyan);
+  padding: 5px 4px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.18s;
+  line-height: 1.3;
+}
+
+.btn-action:hover, .btn-action:active {
+  background: var(--cyan);
+  color: #050811;
+  box-shadow: var(--cyan-glow);
+}
+
+.btn-action.gold {
+  color: var(--gold);
+  border-color: var(--gold-dim);
+  background: rgba(255, 209, 102, 0.07);
+}
+
+.btn-action.gold:hover, .btn-action.gold:active {
+  background: var(--gold);
+  color: #050811;
+  box-shadow: 0 0 10px rgba(255, 209, 102, 0.5);
+}
+
+/* Consola de texto */
+.console-box {
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 72px;
+}
+
+.console-label {
+  font-size: 9px;
+  letter-spacing: 1.2px;
+  color: var(--gold);
+  font-family: var(--font-mono);
+}
+
+.console-row {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.console-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 7px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+  min-width: 0;
+}
+
+.console-input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 6px rgba(255, 209, 102, 0.3);
+}
+
+.console-send {
+  background: rgba(255, 209, 102, 0.12);
+  border: 1px solid var(--gold);
+  color: var(--gold);
+  padding: 4px 10px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  transition: all 0.18s;
+}
+
+.console-send:hover, .console-send:active {
+  background: var(--gold);
+  color: #050811;
+}
+
+.console-fb {
+  font-size: 9px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  min-height: 12px;
+  letter-spacing: 0.5px;
+}
 """

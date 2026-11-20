@@ -284,5 +284,54 @@ JS_JARVIS = """
     .catch(() => {});
 
   iniciarSSE();
+
+  // 7. Consola interactiva: enviar comando a Silvestra
+  let _cmdPending = false;
+  function enviarComando() {
+    if (_cmdPending) return;
+    const inp = document.getElementById('consoleInput');
+    const fb = document.getElementById('consoleFb');
+    if (!inp) return;
+    const texto = inp.value.trim();
+    if (!texto) return;
+    _cmdPending = true;
+    if (fb) { fb.textContent = 'ENVIANDO...'; fb.style.color = 'var(--gold)'; }
+    fetch(`/api/panel/comando?token=${encodeURIComponent(token)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texto })
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (fb) { fb.textContent = d.ok ? '✔ ENVIADO' : ('✖ ' + (d.error || 'Error')); fb.style.color = d.ok ? 'var(--green)' : '#f87171'; }
+      if (d.ok) inp.value = '';
+    })
+    .catch(() => { if (fb) { fb.textContent = '✖ SIN CONEXIÓN'; fb.style.color = '#f87171'; } })
+    .finally(() => { _cmdPending = false; setTimeout(() => { if (fb) fb.textContent = ''; }, 3500); });
+  }
+
+  const ci = document.getElementById('consoleInput');
+  if (ci) {
+    ci.addEventListener('keydown', function(e) { if (e.key === 'Enter') { e.preventDefault(); enviarComando(); } });
+  }
+
+  // 8. Acciones rápidas de la tablet
+  let _accionPending = false;
+  function ejecutarAccion(nombre) {
+    if (_accionPending) return;
+    const fb = document.getElementById('accionFb');
+    _accionPending = true;
+    if (fb) { fb.textContent = 'EJECUTANDO...'; fb.style.color = 'var(--gold)'; }
+    fetch(`/api/panel/accion?token=${encodeURIComponent(token)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion: nombre })
+    })
+    .then(r => r.json())
+    .then(d => { if (fb) { fb.textContent = d.ok ? ('✔ ' + nombre.toUpperCase()) : ('✖ ' + (d.error || 'Error')); fb.style.color = d.ok ? 'var(--green)' : '#f87171'; } })
+    .catch(() => { if (fb) { fb.textContent = '✖ SIN CONEXIÓN'; fb.style.color = '#f87171'; } })
+    .finally(() => { _accionPending = false; setTimeout(() => { if (fb) fb.textContent = ''; }, 3500); });
+  }
+
 })();
 """

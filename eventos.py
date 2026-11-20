@@ -246,6 +246,13 @@ def atender_evento(app, tipo, texto):
             else:
                 app.escuchar()
 
+    elif tipo == "texto_tablet":
+        # Texto enviado desde la consola del panel HUD de la tablet
+        app.origen_entrada_actual = "tablet"
+        if hasattr(app, "iniciativa"):
+            app.iniciativa.interaccion()
+        app.enviar(texto)
+
     elif tipo == "fallo":
         app._dejar_de_escuchar()
         app.conversacion = False
