@@ -67,8 +67,8 @@ CATEGORIAS_ACCIONES = {
         {"pasear", "quedarse_quieta", "ir_esquina_derecha", "ir_esquina_izquierda", "ir_centro", "seguir_mouse", "bailar"}
     ),
     "biometria_voz": (
-        {"mi voz", "biometria", "calibrar", "registrar voz", "verificacion", "identificar", "solo dueno", "modo solo dueno"},
-        {"registrar_mi_voz", "calibrar_voz", "activar_verificacion_voz", "desactivar_verificacion_voz", "activar_modo_solo_dueno", "desactivar_modo_solo_dueno"}
+        {"mi voz", "biometria", "calibrar", "registrar voz", "verificacion", "identificar", "solo dueno", "modo solo dueno", "reforzar voz", "reforzar mi voz", "aprende mi voz"},
+        {"registrar_mi_voz", "calibrar_voz", "reforzar_mi_voz", "activar_verificacion_voz", "desactivar_verificacion_voz", "activar_modo_solo_dueno", "desactivar_modo_solo_dueno"}
     ),
     "atencion": (
         {"atenta", "palabra clave", "despierta", "presencia", "iniciativa", "espontanea", "hablame"},

@@ -35,6 +35,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - **`pantalla_remota.py` / `pantalla_remota_ui.py` / `pantalla_remota_datos.py`**: Servidor y HUD Jarvis en tiempo real para tablet.
 - **`respaldo.py`**: Copia de seguridad zip fuera de Git (`~/Documents/Respaldos_Silvestra`) con rotación a 10 archivos sin claves.
 - **`presencia.py` / `camara.py`**: Presencia y seguimiento facial con MediaPipe.
+- **`voz_dueno.py` / `voz_dueno_banco.py` / `voz_dueno_registro.py`**: Biometría vocal CAM++ con banco multi-muestra (hasta 25), scoring top-2, aprendizaje `reforzar_mi_voz`, doble factor y modos de seguridad.
 - **`prueba_humo.py`**: Suite de validación rápida de sintaxis, reglas de 15 KB y módulos clave.
 
 ### Reglas de oro de desarrollo
@@ -55,7 +56,7 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 - Control de laptop por niveles (libre, peligroso exclusivo por Telegram con código y prohibido con auditoría).
 - Respaldo automático fuera de Git (`respaldo.py`) con rotación a 10 archivos en Documentos sin claves.
 - HUD Jarvis tablet a pantalla completa (100dvh horizontal, orbe Canvas, telemetría CPU/RAM/batería, recordatorios, notas, modo privado, SSE y supresión de ruido socket).
-- Biometría de voz CAM++ (`voz_dueno.py`, umbral calibrado a 0.42 con tolerancia en comandos cortos y padding 60ms), doble factor cámara, dos modos de seguridad (Solo Dueño que ignora a terceros e Invitado Inteligente que responde amable bloqueando memoria y acciones) y fix para consola tablet.
+- Biometría de voz CAM++ multi-muestra (`voz_dueno.py`, `voz_dueno_banco.py` y `voz_dueno_registro.py` con 8 frases variadas), banco hasta 25 muestras en `voz_dueno.npy` con rotación FIFO (8 anclas base fijas), preprocesamiento uniforme (VAD + pico -3dBFS + DC offset), scoring top-2 promedio (N>=3), tolerancia en comandos cortos (0.8s-1.8s), doble factor cámara, dos modos de seguridad (Solo Dueño e Invitado) y acción interactiva `reforzar_mi_voz`.
 - Suite de prueba de humo (`prueba_humo.py`) y arquitectura modular (todos los archivos <= 15 KB).
 
 ## 5. Tareas pendientes y pospuestas

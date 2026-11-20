@@ -10,14 +10,21 @@ import numpy as np
 
 import estado
 import voz_dueno
+from voz_dueno_banco import (
+    preparar_audio_biometria,
+    guardar_banco,
+    calcular_similitud_banco,
+)
 
 FRASES_REGISTRO = [
     "Silvestra, prepara el escenario para la presentación de la universidad.",
     "Enciende la luz del salón y dime qué hora tienes registrada.",
     "Recuérdame revisar el código del proyecto mañana temprano.",
     "Cuéntame qué estuviste pensando hoy en tu diario personal.",
-    "Moisés está programando en la computadora mientras me acompañas.",
-    "Verifica que el panel inteligente esté listo para la demostración.",
+    "Pon la tablet.",
+    "Qué hora es.",
+    "Silvestra abre YouTube.",
+    "Activa el modo privado.",
 ]
 
 FRASES_CALIBRACION_DUENO = [
@@ -144,7 +151,12 @@ def _capturar_lote(app, frases, prefijo_burbuja, prefijo_voz="Frase", reintentos
                         continue
 
                 try:
-                    emb = voz_dueno.extraer_embedding(audio)
+                    audio_limpio, dur_f = preparar_audio_biometria(audio)
+                    if audio_limpio is None or len(audio_limpio) < 4000:
+                        if intento < reintentos and not _cancelar_operacion:
+                            comunicar(app, "Fue muy corto o silencioso. Repitamos esta frase.", f"⚠️ Repite {prefijo_burbuja} {i + 1}:\n«{frase}»", esperar=True, timeout=6.0)
+                            continue
+                    emb = voz_dueno.extraer_embedding(audio_limpio)
                     embeddings.append(emb)
                     exito = True
                     comunicar(app, "Bien.", f"{prefijo_burbuja} {i + 1} de {total}:\n✅ Capturada.", esperar=True, timeout=3.0)
@@ -190,7 +202,7 @@ def iniciar_registro(app, vd):
                 pass
 
         try:
-            intro_v = "Vamos a registrar tu voz, Moisés. Te pediré leer 6 frases cortas. Empecemos."
+            intro_v = "Vamos a registrar tu voz, Moisés. Te pediré leer 8 frases variadas. Empecemos."
             intro_b = "🎙️ REGISTRO DE VOZ (Moisés)\nLee cada frase.\n[Esc] o di 'cancelar' para salir."
             if not comunicar(app, intro_v, intro_b, esperar=True, timeout=10.0):
                 return
@@ -202,11 +214,8 @@ def iniciar_registro(app, vd):
                 return
 
             if embeddings and len(embeddings) == len(FRASES_REGISTRO):
-                promedio = np.mean(embeddings, axis=0)
-                norm = np.linalg.norm(promedio)
-                if norm > 1e-6:
-                    promedio /= norm
-                np.save(voz_dueno.ARCHIVO_VOZ, promedio)
+                banco = np.array(embeddings, dtype=np.float32)
+                guardar_banco(voz_dueno.ARCHIVO_VOZ, banco)
                 vd.recargar_vector()
 
                 datos = estado.cargar()
@@ -214,8 +223,8 @@ def iniciar_registro(app, vd):
                 estado.guardar(datos)
                 vd.activa = True
 
-                print(f"[voz_dueno_registro] Vector guardado en {voz_dueno.ARCHIVO_VOZ}", flush=True)
-                comunicar(app, "¡Excelente, Moisés! Tu voz ha sido registrada y la verificación quedó activada.", "✅ ¡Voz registrada con éxito!\nVerificación activada.")
+                print(f"[voz_dueno_registro] Banco de {len(banco)} muestras guardado en {voz_dueno.ARCHIVO_VOZ}", flush=True)
+                comunicar(app, "¡Excelente, Moisés! Tu voz ha sido registrada en el banco biométrico y la verificación quedó activada.", "✅ ¡Voz registrada con éxito!\nBanco biométrico activado.")
             else:
                 comunicar(app, "No pude captar todas las frases con claridad. Lo intentamos de nuevo más tarde.", "Registro no completado.")
         except Exception as e:
@@ -263,7 +272,7 @@ def iniciar_calibracion(app, vd):
         app.conversacion = False
 
         try:
-            if vd.vector_dueno is None:
+            if vd.banco_dueno is None:
                 comunicar(app, "Primero necesitas registrar tu voz con 'registrar mi voz'.", "Voz no registrada.")
                 return
 
@@ -278,12 +287,12 @@ def iniciar_calibracion(app, vd):
                 comunicar(app, "No se completaron las muestras de calibración.", "Calibración no completada.")
                 return
 
-            sims_d = [voz_dueno.calcular_similitud(e, vd.vector_dueno) for e in embs_d]
+            sims_d = [calcular_similitud_banco(e, vd.banco_dueno)[0] for e in embs_d]
 
             comunicar(app, "Ahora, pide a otra persona que lea 10 frases para comparar.", "⚖️ CALIBRACIÓN (Invitado)\nLee cada frase.\n[Esc] para cancelar.")
             embs_o = _capturar_lote(app, FRASES_CALIBRACION_OTRO, "Calibración (Invitado)", "Invitado, frase")
 
-            sims_o = [voz_dueno.calcular_similitud(e, vd.vector_dueno) for e in embs_o] if embs_o else [0.28, 0.35, 0.41, 0.32, 0.44, 0.38, 0.30, 0.46, 0.33, 0.39]
+            sims_o = [calcular_similitud_banco(e, vd.banco_dueno)[0] for e in embs_o] if embs_o else [0.28, 0.35, 0.41, 0.32, 0.44, 0.38, 0.30, 0.46, 0.33, 0.39]
 
             min_d, max_d = min(sims_d), max(sims_d)
             min_o, max_o = min(sims_o), max(sims_o)
