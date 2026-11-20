@@ -192,11 +192,15 @@ class Silvestra:
         if nombre == "descansar":
             self.pedir_descanso()
             return
-        ok, mensaje = acciones.ejecutar(nombre, arg)
-        if not ok:
-            self.cara.decir(mensaje, 4000)
-            if hasattr(self, "propuestas") and self.propuestas:
-                self.propuestas.detectar_carencia_accion(nombre)
+        try:
+            ok, mensaje = acciones.ejecutar(nombre, arg)
+            if not ok:
+                self.cara.decir(mensaje, 4000)
+                if hasattr(self, "propuestas") and self.propuestas:
+                    self.propuestas.detectar_carencia_accion(nombre)
+        except Exception as e:
+            print(f"[main] Excepción ejecutando acción '{nombre}': {e}", flush=True)
+            self.cara.decir("Hubo un fallo al ejecutar esa orden.", 3500)
 
     # ---------- Descansar y despertar ----------
     def pedir_descanso(self):

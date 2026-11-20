@@ -212,6 +212,14 @@ def instalar(app):
     d = Diario(app)
     acciones.registrar("leer_diario", lambda arg=None: d.leer_diario(), "lee en voz alta la última entrada del diario personal de Silvestra")
     acciones.registrar("borrar_diario", lambda arg=None: d.borrar_diario(), "borra por completo el diario personal de Silvestra")
-    acciones.registrar("escribir_diario", lambda arg=None: d.escribir_entrada(forzar=True), "fuerza la escritura de una entrada en el diario")
-    acciones.registrar("probar_mensaje_manana", lambda arg=None: d.enviar_mensaje_manana(forzar=True), "fuerza el envío del mensaje matutino a Telegram")
+    acciones.registrar(
+        "escribir_diario",
+        lambda arg=None: threading.Thread(target=d.escribir_entrada, kwargs={"forzar": True}, daemon=True).start(),
+        "fuerza la escritura de una entrada en el diario",
+    )
+    acciones.registrar(
+        "probar_mensaje_manana",
+        lambda arg=None: threading.Thread(target=d.enviar_mensaje_manana, kwargs={"forzar": True}, daemon=True).start(),
+        "fuerza el envío del mensaje matutino a Telegram",
+    )
     return d

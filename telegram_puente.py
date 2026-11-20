@@ -302,8 +302,13 @@ def instalar(app):
     puente = TelegramPuente(app)
 
     def accion_avisar(arg=None):
-        if arg:
-            puente.avisar_celular(arg, forzar=True)
+        if not arg:
+            return
+        def _hilo():
+            ok = puente.avisar_celular(arg, forzar=True)
+            if not ok:
+                app.cola.put(("frase", "No pude enviar el mensaje a Telegram."))
+        threading.Thread(target=_hilo, daemon=True, name="TelegramAvisar").start()
 
     def accion_captura(arg=None):
         if not puente.chat_id_autorizado:
@@ -320,7 +325,13 @@ def instalar(app):
     acciones.registrar(
         "avisar_celular",
         accion_avisar,
-        "envía un mensaje o recordatorio al celular de su dueño por Telegram. Escribe: ACCION: avisar_celular | mensaje",
+        "envía un mensaje al celular de su dueño por Telegram. Escribe: ACCION: avisar_celular | mensaje",
+        con_texto=True,
+    )
+    acciones.registrar(
+        "enviar_mensaje_telegram",
+        accion_avisar,
+        "envía un mensaje de texto a Telegram. Escribe: ACCION: enviar_mensaje_telegram | mensaje",
         con_texto=True,
     )
     acciones.registrar(

@@ -83,11 +83,15 @@ def interpretar(linea):
 def ejecutar(nombre, arg=None):
     """Devuelve (ok, mensaje). Ignora todo lo que no esté en la lista."""
     if nombre in VIVAS:
-        if nombre in CON_TEXTO:
-            VIVAS[nombre][0](arg)
-        else:
-            VIVAS[nombre][0]()
-        return True, "Listo."
+        try:
+            if nombre in CON_TEXTO:
+                VIVAS[nombre][0](arg)
+            else:
+                VIVAS[nombre][0]()
+            return True, "Listo."
+        except Exception as e:
+            print(f"[acciones] Error ejecutando acción viva '{nombre}': {e}", flush=True)
+            return False, f"Hubo un error al ejecutar {nombre}."
     if nombre not in ACCIONES:
         return False, "Eso todavía no sé hacerlo."
     funcion, necesita_texto, _ = ACCIONES[nombre]

@@ -24,6 +24,7 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - **`acciones.py`**: Registro central de capacidades del sistema (`acciones.registrar`).
 - **`recordatorios.py` / `hilos.py`**: Recordatorios por voz e hilos con caducidad automática (>3 días o fecha vencida).
 - **`modos_sistema.py`**: 4 modos (`normal`, `programacion`, `estudio`, `noche`) en `estado.json`, voz y tablet HUD.
+- **`telegram_puente*.py` / `cuidado.py`**: Puente Telegram Bot API, envío asíncrono en hilos daemon (`avisar_celular`, `enviar_mensaje_telegram`, `enviar_nota_voz` <2ms) eliminando bloqueos en Qt ("Python no responde").
 - **`control_*.py`**: Control por niveles (libre, peligroso con código y prohibido), VS Code y multimedia.
 - **`pantalla_remota*.py` / `pantalla_biometria.py`**: HUD Jarvis tablet, telemetría en vivo y blindaje táctil de 3s.
 - **`presencia.py` / `camara*.py`**: Detección facial YuNet + SFace multi-muestra (hasta 20) y enrolamiento por Telegram.
@@ -52,6 +53,7 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - HUD Jarvis tablet con telemetría en vivo, switch Solo Dueño y selector de 4 modos.
 - 4 modos (`normal`, `programacion`, `estudio`, `noche`) con persistencia en `estado.json` y prompt dinámico.
 - Biometría vocal CAM++ (25 muestras) y facial YuNet+SFace (20 muestras) con entrenamiento por Telegram.
+- Acciones de Telegram y notas de voz 100% asíncronas en hilos daemon (`avisar_celular`, `enviar_nota_voz` <2ms), eliminando congelamiento de Qt y aviso "Python no responde".
 - Suite `prueba_humo.py` 100% PASS y arquitectura modular (todos los `.py` <= 15 KB).
 
 ## 5. Tareas pendientes y pospuestas

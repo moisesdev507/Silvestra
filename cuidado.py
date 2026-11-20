@@ -26,7 +26,12 @@ def sintetizar_audio_mp3(texto, emocion="preocupada"):
                 if t.get("type") == "audio":
                     datos += t.get("data", b"")
             return bytes(datos)
-        return asyncio.run(asyncio.wait_for(_crear(), 12))
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(asyncio.wait_for(_crear(), 12))
+        finally:
+            loop.close()
     except Exception as e:
         print(f"[cuidado] Error audio: {e}", flush=True)
         return None
@@ -204,8 +209,19 @@ class Cuidado:
 
 def instalar(app):
     cui = Cuidado(app)
+
+    def _accion_nota_voz(arg=None):
+        def _hilo():
+            res = cui.enviar_nota_voz(arg)
+            app.cola.put(("hablar", res))
+        threading.Thread(target=_hilo, daemon=True, name="CuidadoNotaVoz").start()
+
+    def _accion_chequeo(arg=None):
+        paso = int(arg) if arg and arg.strip() in ("1", "2", "3") else 1
+        threading.Thread(target=cui._ejecutar_chequeo, args=(paso, "la prueba"), daemon=True, name="CuidadoChequeo").start()
+
     acciones.registrar("registrar_salida", lambda arg=None: app.cola.put(("hablar", cui.registrar_salida(arg))), "anota salida y hora estimada de regreso. Escribe: ACCION: registrar_salida | hora", con_texto=True)
     acciones.registrar("cancelar_salida", lambda arg=None: app.cola.put(("hablar", cui.cancelar_salida("orden") or "No tenías salida activa.")), "cancela salida y confirma regreso")
-    acciones.registrar("enviar_nota_voz", lambda arg=None: app.cola.put(("hablar", cui.enviar_nota_voz(arg))), "envía nota de voz a Telegram. Escribe: ACCION: enviar_nota_voz | mensaje", con_texto=True)
-    acciones.registrar("probar_chequeo", lambda arg=None: cui._ejecutar_chequeo(int(arg) if arg and arg.strip() in ("1", "2", "3") else 1, "la prueba"), "prueba chequeo (1, 2 o 3)", con_texto=True)
+    acciones.registrar("enviar_nota_voz", _accion_nota_voz, "envía nota de voz a Telegram. Escribe: ACCION: enviar_nota_voz | mensaje", con_texto=True)
+    acciones.registrar("probar_chequeo", _accion_chequeo, "prueba chequeo (1, 2 o 3)", con_texto=True)
     return cui

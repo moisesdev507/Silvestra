@@ -47,8 +47,8 @@ CATEGORIAS_ACCIONES = {
         {"estudiar", "parar_estudio", "examen", "anotar_nota", "leer_notas"}
     ),
     "telegram": (
-        {"telegram", "celular", "mensaje", "aviso", "avisar", "telefono", "movil", "nota de voz"},
-        {"avisar_celular", "enviar_captura", "enviar_foto_camara", "enviar_nota_voz"}
+        {"telegram", "celular", "mensaje", "aviso", "avisar", "telefono", "movil", "nota de voz", "mandame", "enviame", "mandar mensaje", "enviar mensaje"},
+        {"avisar_celular", "enviar_mensaje_telegram", "enviar_captura", "enviar_foto_camara", "enviar_nota_voz"}
     ),
     "cuidado": (
         {"salgo", "salida", "voy", "calle", "cuidado", "regreso", "vuelvo", "afuera", "chequeo"},
