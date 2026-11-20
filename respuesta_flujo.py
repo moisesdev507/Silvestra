@@ -29,11 +29,15 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     carril, motivo = cerebro_enrutador.decidir_carril(texto, modo_activo=modo, pro_disponible=pro_disp)
     print(f"[enrutador] carril={carril} motivo={motivo}", flush=True)
 
+    def _on_emocion(emo):
+        if app and hasattr(app, "cola") and app.cola:
+            app.cola.put(("emocion", emo))
+
     crudo = None
     if carril == "pro":
         try:
             crudo = cerebro_enrutador.completar_pro_flujo(
-                mensajes, al_frase=al_frase, on_primer_token=on_primer_token
+                mensajes, al_frase=al_frase, on_primer_token=on_primer_token, on_emocion=_on_emocion
             )
         except Exception as e:
             print(f"[enrutador] fallback_pro->rapido motivo={e}", flush=True)
@@ -41,7 +45,9 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
 
     if crudo is None:
         try:
-            crudo = proveedores.completar_flujo(mensajes, al_frase, tarea=tarea, on_primer_token=on_primer_token)
+            crudo = proveedores.completar_flujo(
+                mensajes, al_frase, tarea=tarea, on_primer_token=on_primer_token, on_emocion=_on_emocion
+            )
         except Exception as e:
             print(f"[respuesta_flujo] Excepción en streaming: {e}. Usando respuesta local.", flush=True)
             try:
@@ -62,4 +68,18 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
             aprendizaje.registrar_interaccion(texto, respuesta, emocion)
         except Exception as e:
             print(f"[aprendizaje] Error al registrar interacción: {e}", flush=True)
+
+        turnos_u = sum(1 for m in getattr(cerebro, "historial", []) if m.get("role") == "user")
+        if turnos_u > 0 and turnos_u % 3 == 0 and hasattr(cerebro, "memoria") and hasattr(cerebro.memoria, "extraer_hechos_conversacion"):
+            import threading
+            pedir_fn = getattr(cerebro, "_pedir", None)
+            if pedir_fn is None:
+                import proveedores as prov_mod
+                pedir_fn = lambda msgs, tarea="charla": prov_mod.completar(msgs, tarea=tarea)
+            threading.Thread(
+                target=cerebro.memoria.extraer_hechos_conversacion,
+                args=(list(cerebro.historial[-6:]), pedir_fn),
+                daemon=True,
+                name="MemoriaExtraerFlujo"
+            ).start()
     return respuesta, accion, emocion

@@ -50,6 +50,14 @@ def es_confirmacion_rutinaria(texto):
 def atender_evento(app, tipo, texto):
     """Procesa un evento extraído de app.cola."""
     if tipo == "frase":
+        if isinstance(texto, (tuple, list)):
+            frase_txt = str(texto[0])
+            frase_emo = texto[1] if len(texto) > 1 else None
+        else:
+            frase_txt = str(texto)
+            frase_emo = None
+        if frase_emo and hasattr(app, "cara") and app.cara:
+            app.cara.fijar_emocion(frase_emo)
         if getattr(app, "musica_activa", False):
             try:
                 import control_laptop
@@ -57,15 +65,20 @@ def atender_evento(app, tipo, texto):
             except Exception:
                 pass
         if hasattr(app, "escenario") and app.escenario and app.escenario.isVisible():
-            app.escenario.actualizar_subtitulo(texto)
+            app.escenario.actualizar_subtitulo(frase_txt)
         if app.flujo is None:
             app.texto_flujo = ""
             t_fin = getattr(app, "t_fin_habla", None)
             metricas = getattr(app, "metricas_turno", None)
-            app.flujo = app.voz.flujo(lambda: app.cola.put(("fin_voz", None)), t_fin_habla=t_fin, metricas=metricas)
-        app.texto_flujo = (app.texto_flujo + " " + texto).strip()
-        app.flujo.agregar(texto)
-        app.cara.decir(app.texto_flujo, None)
+            app.flujo = app.voz.flujo(
+                lambda: app.cola.put(("fin_voz", None)),
+                emocion=frase_emo or "neutral",
+                t_fin_habla=t_fin,
+                metricas=metricas,
+            )
+        app.texto_flujo = (app.texto_flujo + " " + frase_txt).strip()
+        app.flujo.agregar(frase_txt, emocion=frase_emo)
+        app.cara.decir(app.texto_flujo, None, emocion=frase_emo)
 
     elif tipo == "escenario_subtitulo":
         if hasattr(app, "escenario") and app.escenario:

@@ -125,7 +125,7 @@ def completar(mensajes, tarea="charla", timeout=20):
     return pc.respuesta_emergencia_local()
 
 
-def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=5.0, on_primer_token=None):
+def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=5.0, on_primer_token=None, on_emocion=None):
     """Interfaz unificada para streaming con conmutación limpia y control de calidad."""
     candidatos = proveedores_disponibles(tarea)
     texto, prov_g, mod_g = ps.completar_flujo(
@@ -139,6 +139,7 @@ def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=5.0, on
         lanzar_reintento_fn=_lanzar_reintento,
         timeout_espera=timeout_paralelo,
         on_primer_token=on_primer_token,
+        on_emocion=on_emocion,
     )
     global _ultimo_proveedor
     _ultimo_proveedor = prov_g

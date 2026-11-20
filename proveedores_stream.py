@@ -5,7 +5,7 @@ import threading
 import time
 import requests
 
-from cerebro_parser import _cortar, _respuesta_parcial, separar
+from cerebro_parser import _cortar, _respuesta_parcial, separar, extraer_emocion_parcial
 import calidad_respuesta as cr
 import proveedores_cadenas as pc
 from sesion_http import obtener_sesion
@@ -105,7 +105,7 @@ def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_ca
     cola_salida.put(("error", nombre, RuntimeError(f"Todos los modelos de {nombre} fallaron")))
 
 
-def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marcar_enfriamiento_fn, registrar_fn, lanzar_reintento_fn, timeout_espera=2.5, on_primer_token=None):
+def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marcar_enfriamiento_fn, registrar_fn, lanzar_reintento_fn, timeout_espera=2.5, on_primer_token=None, on_emocion=None):
     """Ejecuta el streaming asegurando 1 sola llamada principal, sin carreras descontroladas y con control de calidad."""
     if not candidatos:
         registrar_fn("cerebro sin proveedores para streaming: modo emergencia con voz")
@@ -172,6 +172,7 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
         crudo, emitido = "", 0
         frases_emitidas = 0
         descartado_por_calidad = False
+        emo_detectada = None
 
         while True:
             try:
@@ -182,6 +183,15 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
                 if t_item == "chunk":
                     chunk = item[2]
                     crudo += chunk
+                    if emo_detectada is None:
+                        emo_detectada = extraer_emocion_parcial(crudo)
+                        if emo_detectada:
+                            registrar_fn(f"cerebro emocion_temprana={emo_detectada}")
+                            if callable(on_emocion):
+                                try:
+                                    on_emocion(emo_detectada)
+                                except Exception:
+                                    pass
                     parcial = _respuesta_parcial(crudo)
                     if parcial is not None:
                         frases, emitido = _cortar(parcial, emitido)
@@ -198,7 +208,8 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
                                     descartado_por_calidad = True
                                     break
                             if callable(al_frase):
-                                al_frase(f_limpia)
+                                item_envio = (f_limpia, emo_detectada) if emo_detectada else f_limpia
+                                al_frase(item_envio)
                             frases_emitidas += 1
                     if descartado_por_calidad:
                         break
@@ -214,11 +225,13 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
         # Emitir fragmentos finales pendientes
         parcial = _respuesta_parcial(crudo)
         if parcial is None:
-            txt = separar(crudo)[0]
+            txt, _, _, emo_fin = separar(crudo)
             if txt and frases_emitidas == 0:
                 ok_txt, mot_txt = cr.analizar_calidad_texto(txt)
                 if ok_txt and callable(al_frase):
-                    al_frase(forzar_utf8_fn(txt))
+                    emo_usar = emo_detectada or emo_fin
+                    item_envio = (forzar_utf8_fn(txt), emo_usar) if emo_usar else forzar_utf8_fn(txt)
+                    al_frase(item_envio)
                     frases_emitidas += 1
                 elif not ok_txt:
                     registrar_fn(f"filtro_calidad texto final rechazado en {nombre_p} ({mod_activo}): '{txt}' motivo={mot_txt}")
@@ -237,7 +250,8 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
                         descartado_por_calidad = True
                         break
                 if callable(al_frase):
-                    al_frase(f_limpia)
+                    item_envio = (f_limpia, emo_detectada) if emo_detectada else f_limpia
+                    al_frase(item_envio)
                 frases_emitidas += 1
 
         if descartado_por_calidad:

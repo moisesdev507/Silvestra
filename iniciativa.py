@@ -80,11 +80,12 @@ class Iniciativa:
                 {"role": "user", "content": "Genera tu comentario espontáneo."},
             ])
             limpio = frase.replace("*", "").replace("\n", " ").strip("\"' ")
-            if limpio and self.app.puede_hablar_sola():
+            if limpio:
                 self.ultima_iniciativa = time.time()
-                self.app.decir(limpio)
-        except Exception:
-            pass
+                if hasattr(self.app, "cola") and self.app.cola:
+                    self.app.cola.put(("hablar", (limpio, "calida")))
+        except Exception as e:
+            print(f"[iniciativa] Error generando comentario: {e}", flush=True)
 
 
 def instalar(app):

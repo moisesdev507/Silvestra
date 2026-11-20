@@ -200,7 +200,7 @@ def completar_pro(mensajes, tarea="charla", timeout=15.0):
     raise RuntimeError("Respuesta inesperada de OpenRouter.")
 
 
-def completar_pro_flujo(mensajes, al_frase=None, on_primer_token=None, timeout=15.0):
+def completar_pro_flujo(mensajes, al_frase=None, on_primer_token=None, on_emocion=None, timeout=15.0):
     """Envía la solicitud al modelo Pro con streaming de tokens y emisión de frases."""
     cfg = obtener_configuracion_pro()
     prov = cfg["proveedor"]
@@ -212,11 +212,12 @@ def completar_pro_flujo(mensajes, al_frase=None, on_primer_token=None, timeout=1
 
     from sesion_http import obtener_sesion
     sesion = obtener_sesion()
-    from cerebro_parser import _cortar, _respuesta_parcial
+    from cerebro_parser import _cortar, _respuesta_parcial, extraer_emocion_parcial
 
     crudo = ""
     emitido = 0
     primer_token_notificado = False
+    emo_detectada = None
 
     if prov == "anthropic":
         url = "https://api.anthropic.com/v1/messages"
@@ -268,12 +269,16 @@ def completar_pro_flujo(mensajes, al_frase=None, on_primer_token=None, timeout=1
                             if callable(on_primer_token):
                                 on_primer_token()
                         crudo += texto_chunk
+                        if emo_detectada is None:
+                            emo_detectada = extraer_emocion_parcial(crudo)
+                            if emo_detectada and callable(on_emocion):
+                                on_emocion(emo_detectada)
                         parcial = _respuesta_parcial(crudo)
                         if parcial is not None and callable(al_frase):
                             frases, emitido = _cortar(parcial, emitido)
                             for f in frases:
                                 if f.strip():
-                                    al_frase(f.strip())
+                                    al_frase((f.strip(), emo_detectada) if emo_detectada else f.strip())
             except Exception:
                 continue
     else:
@@ -316,12 +321,16 @@ def completar_pro_flujo(mensajes, al_frase=None, on_primer_token=None, timeout=1
                             if callable(on_primer_token):
                                 on_primer_token()
                         crudo += texto_chunk
+                        if emo_detectada is None:
+                            emo_detectada = extraer_emocion_parcial(crudo)
+                            if emo_detectada and callable(on_emocion):
+                                on_emocion(emo_detectada)
                         parcial = _respuesta_parcial(crudo)
                         if parcial is not None and callable(al_frase):
                             frases, emitido = _cortar(parcial, emitido)
                             for f in frases:
                                 if f.strip():
-                                    al_frase(f.strip())
+                                    al_frase((f.strip(), emo_detectada) if emo_detectada else f.strip())
             except Exception:
                 continue
 

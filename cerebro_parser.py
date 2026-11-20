@@ -59,7 +59,7 @@ def extraer_emocion_parcial(crudo):
     """Extrae tempranamente la emoción si el modelo la emite al principio del streaming."""
     if not crudo:
         return None
-    m = re.search(r"\bEMOCI[OÓ]N\s*:\s*([a-zA-Záéíóúñ]+)", crudo, re.I)
+    m = re.search(r"\*{0,2}EMOCI[OÓ]N\*{0,2}\s*:\s*([a-zA-Záéíóúñ]+)", crudo, re.I)
     if m:
         try:
             from voz import normalizar_emocion
