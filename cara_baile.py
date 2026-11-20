@@ -116,21 +116,22 @@ class GestorBaile:
     def _lanzar_musica(self, app, estilo, consulta_personalizada=None):
         self.musica_lanzada = True
         consulta = consulta_personalizada or CONSULTAS_MUSICA.get(estilo, CONSULTAS_MUSICA["groove"])
+        s_app = getattr(app, "silvestra_app", None) or getattr(app, "_ref_app", None) or app
 
         def _hilo_musica():
             try:
-                if app is not None:
+                if s_app is not None:
                     import control_laptop
-                    control_laptop.musica_youtube(app, consulta)
+                    control_laptop.musica_youtube(s_app, consulta)
                 else:
                     import urllib.parse
                     import webbrowser
                     webbrowser.open("https://www.youtube.com/results?search_query=" + urllib.parse.quote(consulta))
             except Exception as e:
                 try:
-                    if app is not None:
+                    if s_app is not None:
                         import control_pc
-                        control_pc.buscar_youtube(app, consulta)
+                        control_pc.buscar_youtube(s_app, consulta)
                     else:
                         import urllib.parse
                         import webbrowser
@@ -141,14 +142,18 @@ class GestorBaile:
         threading.Thread(target=_hilo_musica, daemon=True).start()
 
     def _detener_musica(self, app):
+        s_app = getattr(app, "silvestra_app", None) or getattr(app, "_ref_app", None) or app
+
         def _hilo_parar():
             try:
-                import control_laptop
-                control_laptop.multimedia(app, "pausa")
+                if s_app is not None:
+                    import control_laptop
+                    control_laptop.multimedia(s_app, "pausa")
             except Exception:
                 try:
-                    import control_pc
-                    control_pc.controlar_musica(app, "pausa")
+                    if s_app is not None:
+                        import control_pc
+                        control_pc.controlar_musica(s_app, "pausa")
                 except Exception:
                     pass
 

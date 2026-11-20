@@ -140,11 +140,12 @@ def pintar(self):
         p.drawEllipse(QPointF(0, 0), 135, 135)
 
         # Anillos HUD reactivos por modo operativo y ritmo
-        modo_act = getattr(getattr(self, "app", None), "modo_activo", None)
+        silvestra = getattr(self, "silvestra_app", None) or getattr(self, "_ref_app", None)
+        modo_act = getattr(silvestra, "modo_activo", None)
         if not modo_act:
             try:
                 import modos_sistema
-                modo_act = modos_sistema.obtener_modo_activo()
+                modo_act = modos_sistema.obtener_modo_activo(silvestra)
             except Exception:
                 modo_act = "normal"
 

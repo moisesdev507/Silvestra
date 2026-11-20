@@ -55,6 +55,8 @@ class Cara(CaraMovimientoMixin, QWidget):
         app.setQuitOnLastWindowClosed(False)
         super().__init__()
         self.app = app
+        self.silvestra_app = None
+        self._ref_app = None
         self.root = _Raiz()
 
         self.hablando = False
@@ -150,7 +152,7 @@ class Cara(CaraMovimientoMixin, QWidget):
         """Ejecuta una coreografía interpretando argumentos de voz o acción."""
         import cara_baile
         estilo, con_musica, cancion = cara_baile.parsear_comando_baile(arg)
-        app_ref = getattr(self, "app", None) or getattr(self, "_ref_app", None)
+        app_ref = getattr(self, "silvestra_app", None) or getattr(self, "_ref_app", None)
         return self.bailar(estilo=estilo, segundos=35, con_musica=con_musica, app=app_ref, consulta_usuario=cancion)
 
     # ---------- Utilidades ----------

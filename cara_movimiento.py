@@ -68,7 +68,7 @@ class CaraMovimientoMixin:
         self.fx = float(self.x())
         self.fy = float(self.y())
 
-        app_ref = app or getattr(self, "app", None) or getattr(self, "_ref_app", None)
+        app_ref = app or getattr(self, "silvestra_app", None) or getattr(self, "_ref_app", None)
         ok, msg = gestor.iniciar(
             estilo=estilo,
             segundos=segundos,
@@ -88,7 +88,7 @@ class CaraMovimientoMixin:
         import cara_baile
         gestor = getattr(self, "_gestor_baile", None)
         if gestor:
-            app_ref = getattr(self, "app", None) or getattr(self, "_ref_app", None)
+            app_ref = getattr(self, "silvestra_app", None) or getattr(self, "_ref_app", None)
             gestor.detener(app=app_ref)
         self.baile_hasta = 0.0
         self.baile_tilt = 0.0
