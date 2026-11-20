@@ -1,41 +1,27 @@
-"""Procesamiento multimedia para el puente de Telegram de Silvestra.
+"""Gestor de medios, notas de voz, fotos y capturas para Telegram en Silvestra."""
+from __future__ import annotations
 
-Maneja notas de voz entrantes (Whisper + Edge-TTS), análisis de fotos con visión
-multimodal y envío de capturas/cámara con filtros de privacidad y límites de seguridad.
-Todo opera 100% en memoria (sin guardar archivos en disco).
-"""
 import base64
 import io
 import re
 import threading
 import time
-import requests
+from typing import Any, Optional
 from PIL import Image, ImageGrab
+import requests
 
-import config
+from telegram_medios_proc import (
+    sanitizar_privacidad,
+    transcribir_audio,
+    analizar_imagen_vision,
+    verificar_privacidad_pantalla,
+)
 
 MAX_BYTES_ARCHIVO = 10 * 1024 * 1024  # 10 MB
 MAX_IMAGENES_HORA = 20
 
 
-def sanitizar_privacidad(texto):
-    """Elimina tokens, claves de API, rutas locales y archivos de configuración."""
-    if not texto:
-        return ""
-    s = str(texto)
-    s = re.sub(r"gsk_[A-Za-z0-9_-]{20,}", "[CLAVE_PROTEGIDA]", s)
-    s = re.sub(r"sk-or-v1-[A-Za-z0-9_-]{20,}", "[CLAVE_PROTEGIDA]", s)
-    s = re.sub(r"sk-[A-Za-z0-9_-]{20,}", "[CLAVE_PROTEGIDA]", s)
-    s = re.sub(r"AQ\.[A-Za-z0-9_-]{20,}", "[CLAVE_PROTEGIDA]", s)
-    s = re.sub(r"\d{8,12}:[A-Za-z0-9_-]{25,50}", "[TOKEN_PROTEGIDO]", s)
-    s = re.sub(r"[A-Za-z]:\\[^\s\"'\n<>*|?]+", "[RUTA_LOCAL]", s)
-    s = re.sub(r"/(?:[\w.-]+/)+[\w.-]+", "[RUTA_LOCAL]", s)
-    s = re.sub(r"(?i)\bconfig\.py\b", "[configuración]", s)
-    s = re.sub(r"(?i)\.env\b", "[configuración]", s)
-    return s
-
-
-def descargar_archivo_telegram(token, file_id, max_tam=MAX_BYTES_ARCHIVO):
+def descargar_archivo_telegram(token: str, file_id: str, max_tam: int = MAX_BYTES_ARCHIVO) -> tuple[Optional[bytes], Optional[str]]:
     """Descarga un archivo de Telegram directamente a memoria."""
     url_info = f"https://api.telegram.org/bot{token}/getFile?file_id={file_id}"
     try:
@@ -57,161 +43,16 @@ def descargar_archivo_telegram(token, file_id, max_tam=MAX_BYTES_ARCHIVO):
         return None, str(e)
 
 
-def transcribir_audio(app, audio_bytes, nombre="nota.ogg"):
-    """Transcribe un archivo de voz/audio en memoria usando Whisper de Groq."""
-    try:
-        r = app.cliente.audio.transcriptions.create(
-            file=(nombre, audio_bytes),
-            model=getattr(config, "MODELO_VOZ", "whisper-large-v3-turbo"),
-            language="es",
-            prompt="Conversación en español.",
-            timeout=15.0,
-        )
-        return (r.text or "").strip()
-    except Exception as e:
-        print(f"[telegram_medios] Whisper falló: {e}", flush=True)
-        return None
-
-
-def _post_vision(url, clave, modelo, data_url, sistema, consulta, timeout=20):
-    """Llamada a endpoints compatibles OpenAI para visión multimodal."""
-    try:
-        headers = {"Authorization": f"Bearer {clave}", "Content-Type": "application/json"}
-        cuerpo = {
-            "model": modelo,
-            "messages": [
-                {"role": "system", "content": sistema},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": consulta},
-                        {"type": "image_url", "image_url": {"url": data_url}},
-                    ],
-                },
-            ],
-            "max_tokens": 300,
-            "temperature": 0.6,
-        }
-        r = requests.post(url, headers=headers, json=cuerpo, timeout=timeout)
-        if r.status_code == 200:
-            txt = r.json()["choices"][0]["message"].get("content")
-            if txt:
-                return txt.strip()
-    except Exception as e:
-        print(f"[telegram_medios] Visión en {modelo} falló: {e}", flush=True)
-    return None
-
-
-def _consultar_vision_multillm(app, data_url, sistema, consulta):
-    """Consulta modelos de visión con failover: Groq -> Google Gemini -> OpenRouter."""
-    # 1. Groq Vision
-    modelos_groq = [config.MODELO_VISION] + [m for m in getattr(config, "MODELOS_VISION", []) if m != config.MODELO_VISION]
-    for m in modelos_groq:
-        try:
-            r = app.cliente.chat.completions.create(
-                model=m,
-                messages=[
-                    {"role": "system", "content": sistema},
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": consulta},
-                            {"type": "image_url", "image_url": {"url": data_url}},
-                        ],
-                    },
-                ],
-                max_tokens=300,
-                temperature=0.6,
-                timeout=20.0,
-            )
-            if r.choices and r.choices[0].message.content:
-                print(f"[tiempo] telegram_vision proveedor=Groq modelo={m}", flush=True)
-                return r.choices[0].message.content.strip()
-        except Exception as e:
-            print(f"[telegram_medios] Groq vision {m} falló: {e}", flush=True)
-
-    # 2. Respaldo Google Gemini
-    clave_g = getattr(config, "CLAVE_GOOGLE", "").strip()
-    if clave_g:
-        url_g = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-        for mod in ["gemini-flash-lite-latest", "gemini-3-flash-preview", "gemini-flash-latest"]:
-            txt = _post_vision(url_g, clave_g, mod, data_url, sistema, consulta, 20)
-            if txt:
-                print(f"[tiempo] telegram_vision proveedor=Google modelo={mod}", flush=True)
-                return txt
-
-    # 3. Respaldo OpenRouter
-    clave_or = getattr(config, "CLAVE_OPENROUTER", "").strip()
-    if clave_or:
-        url_or = "https://openrouter.ai/api/v1/chat/completions"
-        txt = _post_vision(url_or, clave_or, "nvidia/nemotron-3.5-super-vl:free", data_url, sistema, consulta, 25)
-        if txt:
-            print(f"[tiempo] telegram_vision proveedor=OpenRouter", flush=True)
-            return txt
-    return None
-
-
-def analizar_imagen_vision(app, foto_bytes, pregunta=None):
-    """Reduce la imagen en memoria y consulta al modelo de visión."""
-    try:
-        img = Image.open(io.BytesIO(foto_bytes))
-        max_dim = 1280
-        if img.width > max_dim or img.height > max_dim:
-            esc = min(max_dim / img.width, max_dim / img.height)
-            img = img.resize((max(1, int(img.width * esc)), max(1, int(img.height * esc))), Image.Resampling.LANCZOS)
-        buf = io.BytesIO()
-        img.convert("RGB").save(buf, format="JPEG", quality=70)
-        data_url = f"data:image/jpeg;base64,{base64.b64encode(buf.getvalue()).decode('utf-8')}"
-    except Exception as e:
-        print(f"[telegram_medios] Error procesando imagen en memoria: {e}", flush=True)
-        return "No pude abrir o procesar la imagen enviada."
-
-    consulta = (pregunta or "").strip() or "describe esta imagen y dime si ves algún problema"
-    nombre = getattr(app.memoria, "nombre", "Silvestra")
-    creador = getattr(app.memoria, "creador", "Moisés")
-    sistema = (
-        f"Eres {nombre}, asistente creada por {creador} en Panamá.\n"
-        "Estás viendo una imagen que te enviaron por Telegram.\n"
-        "Responde de forma concisa, cálida y natural en español de Panamá (1 a 3 frases).\n"
-        "Regla de privacidad: jamás leas ni repitas contraseñas, claves, tokens ni números de tarjetas visibles en la foto."
-    )
-    resp = _consultar_vision_multillm(app, data_url, sistema, consulta)
-    if not resp:
-        return "No pude analizar la imagen en este momento, por favor intenta de nuevo."
-    return resp.replace("*", "").replace("- ", "").replace("\n", " ").strip("\"' ")
-
-
-def verificar_privacidad_pantalla(app, b64_jpeg):
-    """Comprueba si una captura de pantalla contiene claves o contraseñas visibles."""
-    sistema = (
-        "Eres un analizador estricto de seguridad informática y privacidad.\n"
-        "Revisa la captura de pantalla y determina si muestra contraseñas, claves secretas, "
-        "tokens de autenticación (gsk_, sk-, etc.) o datos confidenciales expuestos en texto claro.\n"
-        "Regla obligatoria: si detectas contraseñas o claves secretas visibles, responde exactamente: PRIVADO: <motivo breve>.\n"
-        "Si no contiene ninguna contraseña ni clave secreta expuesta, responde exactamente: SEGURO."
-    )
-    res = _consultar_vision_multillm(
-        app,
-        f"data:image/jpeg;base64,{b64_jpeg}",
-        sistema,
-        "¿Contiene esta pantalla contraseñas o claves secretas expuestas?",
-    )
-    if res and res.upper().startswith("PRIVADO"):
-        print(f"[telegram] Captura de pantalla bloqueada por privacidad: {res}", flush=True)
-        return False
-    return True
-
-
 class GestorMediosTelegram:
     """Administra recepción de notas de voz, fotos y envío de capturas/cámara."""
 
-    def __init__(self, puente):
+    def __init__(self, puente: Any):
         self.puente = puente
         self.app = puente.app
-        self.historial_imagenes_enviadas = []
+        self.historial_imagenes_enviadas: list[float] = []
         self._bloqueo_limite = threading.Lock()
 
-    def _puede_enviar_imagen(self):
+    def _puede_enviar_imagen(self) -> bool:
         """Aplica la cuota de máximo 20 imágenes enviadas por hora."""
         with self._bloqueo_limite:
             ahora = time.time()
@@ -221,7 +62,7 @@ class GestorMediosTelegram:
             self.historial_imagenes_enviadas.append(ahora)
             return True
 
-    def enviar_foto(self, chat_id, foto_bytes, caption=None, tipo="imagen"):
+    def enviar_foto(self, chat_id: int, foto_bytes: bytes, caption: Optional[str] = None, tipo: str = "imagen") -> bool:
         """Envía una foto en memoria por Telegram y registra en log sin tocar disco."""
         if not self._puede_enviar_imagen():
             print(f"[telegram] Envío bloqueado: límite de {MAX_IMAGENES_HORA} imágenes/hora alcanzado.", flush=True)
@@ -233,21 +74,21 @@ class GestorMediosTelegram:
 
         url = f"https://api.telegram.org/bot{self.puente.token}/sendPhoto"
         files = {"photo": ("imagen.jpg", foto_bytes, "image/jpeg")}
-        data = {"chat_id": chat_id}
+        data: dict[str, Any] = {"chat_id": chat_id}
         if caption:
             data["caption"] = sanitizar_privacidad(caption)
 
         try:
             r = requests.post(url, files=files, data=data, timeout=30)
             if r.status_code == 200:
-                print(f"[telegram] Imagen enviada tipo={tipo} chat_id={chat_id} ({len(foto_bytes)} bytes, sin guardar en disco)", flush=True)
+                print(f"[telegram] Imagen enviada tipo={tipo} chat_id={chat_id} ({len(foto_bytes)} bytes)", flush=True)
                 return True
             print(f"[telegram] Error enviando imagen tipo={tipo}: status={r.status_code}", flush=True)
         except Exception as e:
             print(f"[telegram] Excepción enviando imagen tipo={tipo}: {e}", flush=True)
         return False
 
-    def procesar_nota_voz(self, msg):
+    def procesar_nota_voz(self, msg: dict[str, Any]) -> None:
         """Procesa nota de voz entrante con Whisper y responde con Edge-TTS + texto."""
         chat_id = msg.get("chat", {}).get("id")
         audio_info = msg.get("voice") or msg.get("audio")
@@ -276,7 +117,6 @@ class GestorMediosTelegram:
             except Exception:
                 pass
 
-        # Seguridad: la nota de voz es pregunta conversacional, no ejecuta órdenes de sistema
         try:
             resp, *resto = self.app.cerebro.responder(texto)
             emocion_resp = resto[1] if len(resto) > 1 else (resto[0] if resto else "calida")
@@ -295,7 +135,7 @@ class GestorMediosTelegram:
 
         self.app.cola.put(("telegram_burbuja", f"[Nota de voz]: {texto}\n{resp_sani}"))
 
-    def procesar_foto(self, msg):
+    def procesar_foto(self, msg: dict[str, Any]) -> None:
         """Procesa una foto entrante con el modelo de visión multimodal."""
         chat_id = msg.get("chat", {}).get("id")
         fotos = msg.get("photo", [])
@@ -334,7 +174,7 @@ class GestorMediosTelegram:
 
         self.app.cola.put(("telegram_burbuja", f"[Foto]: {resp_sani}"))
 
-    def enviar_captura_pantalla(self, chat_id, avisar_en_voz=False):
+    def enviar_captura_pantalla(self, chat_id: int, avisar_en_voz: bool = False) -> None:
         """Captura la pantalla en memoria, verifica privacidad y la envía a Telegram."""
         if not self._puede_enviar_imagen():
             self.puente._enviar_telegram(chat_id, f"Alcancé el límite de {MAX_IMAGENES_HORA} imágenes por hora.")
@@ -353,7 +193,8 @@ class GestorMediosTelegram:
             self.puente._enviar_telegram(chat_id, "No pude tomar la captura de pantalla.")
             return
 
-        if not verificar_privacidad_pantalla(self.app, b64):
+        es_segura, motivo = verificar_privacidad_pantalla(self.app, b64)
+        if not es_segura:
             self.puente._enviar_telegram(
                 chat_id,
                 "Moisés, detecté que la pantalla contiene claves o contraseñas, así que por seguridad no te envié la captura.",
@@ -366,7 +207,7 @@ class GestorMediosTelegram:
         if ok and avisar_en_voz:
             self.app.cola.put(("hablar", "Te acabo de enviar la captura de mi pantalla a tu Telegram."))
 
-    def enviar_foto_camara(self, chat_id, avisar_en_voz=False):
+    def enviar_foto_camara(self, chat_id: int, avisar_en_voz: bool = False) -> None:
         """Captura un fotograma de la cámara en memoria y lo envía a Telegram."""
         if not self._puede_enviar_imagen():
             self.puente._enviar_telegram(chat_id, f"Alcancé el límite de {MAX_IMAGENES_HORA} imágenes por hora.")

@@ -7,8 +7,10 @@ import threading
 import time
 
 import acciones
+import persistencia_segura as ps
 
 RUTA_JSON = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recordatorios.json")
+_bloqueo_disco = threading.RLock()
 
 
 def _obtener_tz():
@@ -25,21 +27,14 @@ def _ahora_tz():
 
 
 def _cargar():
-    if not os.path.exists(RUTA_JSON):
-        return []
-    try:
-        with open(RUTA_JSON, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return []
+    with _bloqueo_disco:
+        res = ps.cargar_json_seguro(RUTA_JSON, [])
+        return res if isinstance(res, list) else []
 
 
 def _guardar(datos):
-    try:
-        with open(RUTA_JSON, "w", encoding="utf-8") as f:
-            json.dump(datos, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print(f"[recordatorios] Error guardando JSON: {e}", flush=True)
+    with _bloqueo_disco:
+        return ps.guardar_json_atomico(RUTA_JSON, datos if isinstance(datos, list) else [])
 
 
 def formatear_hora_es(dt):

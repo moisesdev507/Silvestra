@@ -13,14 +13,10 @@ def verificar_compilacion_y_tamanos():
     excesivos = []
     errores_sintaxis = []
     
-    LEGACY_CONOCIDOS = {"resumen.py", "telegram_medios.py", "cara.py"}
     for ruta in archivos_py:
         tam = os.path.getsize(ruta)
-        nombre = os.path.basename(ruta)
-        if tam > 15360 and nombre not in LEGACY_CONOCIDOS:
+        if tam > 15360:
             excesivos.append((ruta, tam))
-        elif tam > 15360:
-            print(f"AVISO: Archivo legacy conocido > 15 KB: {nombre} ({tam/1024:.2f} KB)")
         try:
             py_compile.compile(ruta, doraise=True)
         except Exception as e:

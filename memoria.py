@@ -11,6 +11,7 @@ import memoria_busqueda as mb
 import memoria_filtro as mf
 from memoria_filtro import PALABRAS_PRIVADAS
 import memoria_tiempo as mt
+import persistencia_segura as ps
 
 _memoria_instancia = None
 
@@ -51,24 +52,19 @@ class Memoria:
 
     def cargar(self):
         with self._bloqueo:
-            if os.path.exists(ARCHIVO_MEMORIA):
-                try:
-                    with open(ARCHIVO_MEMORIA, encoding="utf-8") as f:
-                        guardado = json.load(f)
-                except (OSError, ValueError):
-                    guardado = {}
+            guardado = ps.cargar_json_seguro(ARCHIVO_MEMORIA, {})
+            if isinstance(guardado, dict):
                 self.datos.update(guardado)
-                self.datos["nombre"] = limpiar_nombre(self.datos.get("nombre"))
-                self.datos["creador"] = limpiar_nombre(self.datos.get("creador"))
-                if not isinstance(self.datos.get("hechos"), list):
-                    self.datos["hechos"] = []
-                if not isinstance(self.datos.get("resumenes_tematicos"), dict):
-                    self.datos["resumenes_tematicos"] = {}
+            self.datos["nombre"] = limpiar_nombre(self.datos.get("nombre"))
+            self.datos["creador"] = limpiar_nombre(self.datos.get("creador"))
+            if not isinstance(self.datos.get("hechos"), list):
+                self.datos["hechos"] = []
+            if not isinstance(self.datos.get("resumenes_tematicos"), dict):
+                self.datos["resumenes_tematicos"] = {}
 
     def guardar(self):
         with self._bloqueo:
-            with open(ARCHIVO_MEMORIA, "w", encoding="utf-8") as f:
-                json.dump(self.datos, f, ensure_ascii=False, indent=2)
+            ps.guardar_json_atomico(ARCHIVO_MEMORIA, self.datos)
 
     def borrar(self):
         with self._bloqueo:
