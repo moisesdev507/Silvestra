@@ -3,6 +3,7 @@ import http.server
 import json
 import secrets
 import socket
+import sys
 import threading
 import time
 import urllib.parse
@@ -42,16 +43,47 @@ def obtener_ip_local():
                 pass
 
 
+class ServidorPantallaRemota(http.server.ThreadingHTTPServer):
+    """Servidor HTTP multihilo con supresión de trazas por desconexión normal de sockets."""
+
+    def handle_error(self, request, client_address):
+        """Silencia desconexiones habituales de clientes al cerrar pestañas o suspender la tablet."""
+        exc_type, exc_val, _ = sys.exc_info()
+        if exc_type in (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            return
+        if isinstance(exc_val, (OSError, socket.error)):
+            winerror = getattr(exc_val, "winerror", None) or getattr(exc_val, "errno", None)
+            if winerror in (10053, 10054, 10058, 32):
+                return
+        # Para otros errores reales no controlados, llamar al manejador por defecto
+        try:
+            super().handle_error(request, client_address)
+        except Exception:
+            pass
+
+
 class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
     """Manejador HTTP que valida token, sirve el HUD Jarvis y emite eventos en tiempo real."""
 
     def log_message(self, format, *args):
-        # Desactivar logs ruidosos por defecto en consola
+        # Desactivar logs por defecto en consola para mantener el terminal limpio
         pass
 
     def _validar_token(self, query):
         token_cliente = query.get("token", [""])[0]
         return bool(token_cliente and token_cliente == self.server.token_autorizado)
+
+    def _notificar_conexion_tablet(self):
+        """Actualiza el registro de operaciones al conectarse una tablet real."""
+        gestor = getattr(self.server, "gestor", None)
+        if gestor and not getattr(gestor, "tablet_conectada", False):
+            gestor.tablet_conectada = True
+            with _lock:
+                gestor.ultimos_eventos = [
+                    e for e in gestor.ultimos_eventos
+                    if "Esperando conexión" not in e.get("texto", "")
+                ]
+            gestor.registrar_evento(f"Tablet conectada ({self.client_address[0]})")
 
     def do_GET(self):
         url_parsed = urllib.parse.urlparse(self.path)
@@ -65,6 +97,8 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
             log(f"Intento de acceso rechazado desde {self.client_address[0]}")
             return
 
+        self._notificar_conexion_tablet()
+
         # Ruta 1: Interfaz principal Jarvis
         if url_parsed.path in ("/", "/index.html"):
             contenido = PAGINA_JARVIS_HTML.encode("utf-8")
@@ -73,8 +107,11 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(contenido)))
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-            self.wfile.write(contenido)
-            log(f"Página Jarvis servida a cliente en {self.client_address[0]}")
+            try:
+                self.wfile.write(contenido)
+                log(f"Página Jarvis servida a cliente en {self.client_address[0]}")
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+                pass
             return
 
         # Ruta 2: Endpoint API JSON para estado completo y telemetría
@@ -87,7 +124,10 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-            self.wfile.write(contenido)
+            try:
+                self.wfile.write(contenido)
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+                pass
             return
 
         # Ruta 3: Flujo SSE en vivo
@@ -99,7 +139,7 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
 
-            log(f"Conexión de eventos SSE establecida desde {self.client_address[0]}")
+            log(f"Conexión SSE establecida desde {self.client_address[0]}")
             try:
                 while not self.server.detener_event.is_set():
                     datos = recolectar_estado_completo(self.server.app, self.server.gestor)
@@ -108,7 +148,7 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
                     self.wfile.write(msg)
                     self.wfile.flush()
                     time.sleep(0.2)
-            except (BrokenPipeError, ConnectionResetError):
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
                 pass
             except Exception as e:
                 log(f"Fin de flujo SSE con {self.client_address[0]}: {e}")
@@ -130,6 +170,7 @@ class GestorPantallaRemota:
         self._detener_event = threading.Event()
         self.ventana_qr = None
         self.tarjeta_principal = "SILVESTRA VIRTUAL INTERFACE // SISTEMA OPERATIVO"
+        self.tablet_conectada = False
         self.ultimos_eventos = [
             {"hora": time.strftime("%H:%M"), "texto": "Servidor HUD inicializado"},
             {"hora": time.strftime("%H:%M"), "texto": "Esperando conexión de tablet"},
@@ -150,9 +191,10 @@ class GestorPantallaRemota:
 
     def registrar_evento(self, texto):
         """Registra un evento visible en el terminal del panel Jarvis."""
-        self.ultimos_eventos.append({"hora": time.strftime("%H:%M"), "texto": texto})
-        if len(self.ultimos_eventos) > 10:
-            self.ultimos_eventos.pop(0)
+        with _lock:
+            self.ultimos_eventos.append({"hora": time.strftime("%H:%M"), "texto": texto})
+            if len(self.ultimos_eventos) > 8:
+                self.ultimos_eventos.pop(0)
 
     def obtener_url_completa(self):
         """Devuelve la URL accesible desde la red local para la tablet."""
@@ -166,7 +208,7 @@ class GestorPantallaRemota:
 
         self._detener_event.clear()
         try:
-            servidor = http.server.ThreadingHTTPServer(("0.0.0.0", self.puerto), PantallaRemotaHandler)
+            servidor = ServidorPantallaRemota(("0.0.0.0", self.puerto), PantallaRemotaHandler)
             servidor.token_autorizado = self.token
             servidor.detener_event = self._detener_event
             servidor.gestor = self
@@ -209,7 +251,7 @@ class GestorPantallaRemota:
         """Inicia la pantalla remota, copia la URL y abre la ventana con el código QR."""
         if arg and str(arg).strip():
             self.tarjeta_principal = str(arg).strip()
-            self.registrar_evento(f"Proyección: {self.tarjeta_principal[:24]}")
+            self.registrar_evento(f"Proyección: {self.tarjeta_principal[:22]}")
 
         ok = self.iniciar_servidor()
         d = estado.cargar()

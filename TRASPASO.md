@@ -45,24 +45,16 @@ Silvestra es una asistente personal / compañera con rostro virtual interactivo 
 5. **Configuración y claves:** Exclusivamente en `config.py` (ignorado en git). Plantilla pública en `config.example.py`.
 
 ## 4. Estado actual (lo que ya funciona)
-- Rostro animado reactivo con mirada suave (`camara.py`), microexpresiones y parpadeo natural.
-- Interrupción por voz (barge-in): corte instantáneo (<500ms) al decir "espera", "ya", "para", con filtro de eco.
-- Síntesis en streaming por oraciones completas (`cerebro_parser.py`) sin cortes en conectores.
-- Filtro estricto de alucinaciones de Whisper y descarte con log explícito (`oido.py`).
-- Saludo inicial contextual en el arranque seguro para el hilo Qt (`nacimiento.py`, `eventos.py`).
-- Prompt compacto (<1350 tokens) con inyección selectiva precisa (`cerebro_categorias.py`) y suite en `prueba_humo.py`.
-- Voz panameña natural con `voz_reproductor.py` thread-safe (RLock, buffers vivos, RMS labial y barge-in <500ms).
-- Reconocimiento con Whisper (VAD adaptativo 0.45s con caída de energía, prompt contextual) y respaldo Vosk.
-- Latencia: caché de perfil en RAM (<1ms), Groq ultra-rápido y muletillas inactivas por defecto.
-- Aro facial reactivo: celeste en reposo y amarillo al escuchar.
-- Audio thread-safe: exclusión mutua estricta de streams entre oido y palabra_clave (sin 0xc0000374).
-- Bucle de falsos disparos erradicado (`PALABRAS_EXCLUIDAS` en `palabra_clave.py`).
-- Enrutamiento inteligente a múltiples LLM con fallback, pool Keep-Alive y enfriamiento 429 exacto.
-- Memoria duradera con fechas, categorías y filtro de privacidad.
-- Acciones por voz: recuerdos, recordatorios persistentes, proveedores y control de escucha.
-- Control de laptop por niveles: libre (apps/sitios, volumen, música inmediata y ducking), peligroso exclusivo por Telegram (apagar, reiniciar con código local y verificación `ID_TELEGRAM_DUENO`) y prohibido con auditoría.
-- Respaldo automático fuera de Git (`respaldo.py`, acción `crear_respaldo`) con rotación a 10 archivos en Documentos sin claves.
-- Panel Jarvis en tiempo real para tablet (orbe reactivo, telemetría CPU/RAM/batería, recordatorios, notas y SSE).
+- Rostro reactivo con mirada suave (`camara.py`), microexpresiones, parpadeo y aro facial (celeste/amarillo).
+- Interrupción por voz (barge-in <500ms), filtro de eco y exclusión mutua de streams de audio (sin 0xc0000374).
+- Síntesis en streaming (`cerebro_parser.py`) y voz panameña con `voz_reproductor.py` thread-safe.
+- Reconocimiento ágil con Whisper (VAD adaptativo 0.45s, prompt contextual), filtro de alucinaciones y Vosk offline.
+- Prompt compacto (<1350 tokens) con inyección selectiva (`cerebro_categorias.py`) y multillm en cascada con Keep-Alive.
+- Memoria duradera con fechas, filtro estricto anti-meta y desduplicación semántica (`memoria_filtro.py`).
+- Acciones por voz: recuerdos, recordatorios persistentes, proveedores, control de escucha y modo estudio.
+- Control de laptop por niveles (libre, peligroso exclusivo por Telegram con código y prohibido con auditoría).
+- Respaldo automático fuera de Git (`respaldo.py`) con rotación a 10 archivos en Documentos sin claves.
+- HUD Jarvis tablet a pantalla completa (100dvh horizontal, orbe Canvas, telemetría CPU/RAM/batería, recordatorios, notas, modo privado, SSE y supresión de ruido socket).
 - Suite de prueba de humo (`prueba_humo.py`) y arquitectura modular (todos los archivos <= 15 KB).
 
 ## 5. Tareas pendientes y pospuestas
