@@ -99,8 +99,7 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - Cola Qt drenada en lotes acotados con reprogramación de 1 ms.
 - Movimiento y repintado suspendidos al minimizar o mostrar escritorio.
 
-## 6. Guía de prompts para Gemini (Antigravity)
-```text
-Lee PROYECTO.md, TRASPASO.md y archivos relevantes. Define alcance, reglas .py/TRASPASO,
-seguridad Qt, pruebas, tamaños exactos y actualización mínima de documentación.
-```
+### Fase 3 — Etapa 5 (inteligencia auditiva)
+- Clasificación espectral local, VAD opcional, eco TTS, historial temporal solo de metadatos y consultas recientes.
+- Permiso de micrófono, grabación continua y envío externo desactivados por defecto; propuestas de autonomía pasivas.
+- Suite sintética `test_inteligencia_auditiva.py`; heurística sin modelo neuronal dedicado.
