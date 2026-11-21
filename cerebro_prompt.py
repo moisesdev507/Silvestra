@@ -145,10 +145,10 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         hilos_res = hilos_res[:100].rsplit(" ", 1)[0] + "..."
 
     memoria_texto = (
-        f"Lo que sabes (fechas relativas al día en que se guardó):\n{hechos_str}\n"
+        f"[RECUERDOS HISTÓRICOS — PASADO]\nLo que sabes (fechas relativas al día en que se guardó):\n{hechos_str}\n"
         "Regla temporal: 'hoy'/'mañana' en un recuerdo son de su fecha guardada. Si el evento ya pasó, PROHIBIDO preguntar por él en futuro (ignóralo o pregunta cómo salió).\n"
         f"Ideas anotadas: {ideas_res}.\n"
-        f"Hilos pendientes: {hilos_res}."
+        f"Hilos pendientes: {hilos_res}.\n[FIN RECUERDOS HISTÓRICOS]"
     )
     tok_memoria = max(1, int(len(memoria_texto) / 3.6))
 
@@ -210,6 +210,9 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         "Regla anti-invención estricta: jamás inventes vivencias ni datos falsos. "
         f"Si no recuerdas algo o {m.creador} no te lo ha contado, di honestamente que no lo recuerdas sin inventar.\n"
         "Privacidad: captura y cámara solo cuando lo pidan. Jamás repitas ni guardes claves, contraseñas o tokens.\n"
+        "Los recuerdos de memoria a largo plazo son históricos (pasado) y NUNCA representan lo que está abierto ahora mismo. "
+        "Cuando el usuario pregunte qué aplicación, ventana o archivo está abierto en el presente (ahorita, ahora, en este momento), "
+        "responde EXCLUSIVAMENTE usando [ESTADO ACTUAL EN VIVO DE WINDOWS] e ignora aplicaciones o archivos mencionados en recuerdos pasados.\n"
         "Telegram: Tienes Telegram vinculado a tu dueño; si pide enviar un mensaje o nota de voz a su Telegram o celular, usa ACCION: avisar_celular | mensaje (o ACCION: enviar_nota_voz | mensaje). Jamás digas que no tienes acceso a Telegram.\n"
         "Para las acciones con texto usa: ACCION: nombre | detalle (ej: ACCION: avisar_celular | mensaje; ACCION: poner_recordatorio | en 2 minutos | sacar comida; ACCION: buscar | tema; ACCION: activar_modo | normal/programacion/estudio/noche; ACCION: bailar | groove/salsa/fiesta/parar).\n"
         "Cuando ejecutes una ACCION, la RESPUESTA debe ser solo una confirmación brevísima y natural (ej: 'Listo.', 'Ya está en pantalla.', 'Abierto.').\n"
@@ -235,7 +238,7 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
     )
     print(f"[tiempo] prompt_tokens={tok_total} anterior={tokens_base} ahorro={ahorro}%", flush=True)
 
-    bloques = [instrucciones_texto, alma_texto, memoria_texto]
+    bloques = [instrucciones_texto, alma_texto]
     try:
         import modos_sistema
         dir_modo = modos_sistema.directiva_prompt_modo()
@@ -252,6 +255,7 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         pass
     if ctx_texto:
         bloques.append(ctx_texto)
+    bloques.append(memoria_texto)
     if perfil_texto:
         bloques.append(f"Perfil del usuario:\n{perfil_texto}")
     if corr_texto:

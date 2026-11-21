@@ -56,7 +56,7 @@ class Cerebro:
         normal = unicodedata.normalize("NFKD", pregunta).encode("ascii", "ignore").decode("ascii")
         normal = " ".join(re.sub(r"[^a-z0-9 ]", " ", normal).split())
         visual = any(x in normal for x in (
-            "pantalla", "ventana", "aplicacion", "cambie", "cambio",
+            "pantalla", "ventana", "aplicacion", "archivo", "cambie", "cambio",
             "donde estoy", "que tengo", "ahora que", "a que parte", "a que ventana",
             "que estoy viendo", "que ves"))
         seguimiento = self._seguimiento_visual_pendiente and len(pregunta) <= 70
@@ -70,8 +70,10 @@ class Cerebro:
                 proceso = ventana.get("ejecutable") or "no disponible"
                 titulo = ("omitido por privacidad" if ventana.get("titulo_omitido")
                           else ventana.get("titulo") or "no disponible")
-                contexto_adicional = (f'Aplicación activa en Windows: {proceso} | Ventana: "{titulo}"'
-                    + "\nContexto multimodal reciente, evidencia observada: ventana externa: "
+                contexto_adicional = ("[ESTADO ACTUAL EN VIVO DE WINDOWS]\n"
+                    + f'Aplicación activa en Windows: {proceso} | Ventana: "{titulo}"'
+                    + "\n[FIN ESTADO ACTUAL EN VIVO DE WINDOWS]\n"
+                    + "Contexto multimodal reciente, evidencia observada: ventana externa: "
                     + str(ventana.get("titulo", "sin ventana externa conocida"))
                     + "; audio: " + str(datos.get("audio", "sin datos recientes"))
                     + "; situación: " + str(datos.get("situacion", "sin interpretación"))

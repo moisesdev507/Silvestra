@@ -11,9 +11,36 @@ from conversacion import alternar_conversacion
 from voz import Flujo, Voz
 from oido import Oido
 from calidad_respuesta import analizar_calidad_texto
+from cerebro import Cerebro
+from memoria_filtro import es_recuerdo_valido
 
 
 class TestReanudacionEscucha(unittest.TestCase):
+    def test_contexto_vivo_prevalece_y_ventanas_no_se_memorizan(self):
+        memoria = SimpleNamespace(
+            hechos=["El usuario está trabajando con Visual Studio Code en aprendizaje.py."],
+            datos={"resumenes_tematicos": {}}, nombre="Silvestra", creador="Moisés",
+            proposito="asistente personal")
+        app = SimpleNamespace(sistema_multimodal=SimpleNamespace(
+            consultar_entorno_actual=lambda *_: {"ventana": {
+                "ejecutable": "Antigravity IDE.exe", "titulo": "Proyecto_Silvestra - memoria_filtro.py"},
+                "audio": "sin observaciones", "situacion": "hecho observado",
+                "captura_pantalla": "no solicitada"}))
+        prompt = Cerebro(None, memoria, app=app).instrucciones("¿Qué archivo tengo abierto ahora?")
+        self.assertIn("[ESTADO ACTUAL EN VIVO DE WINDOWS]", prompt)
+        self.assertLess(prompt.index("[ESTADO ACTUAL EN VIVO DE WINDOWS]"),
+                        prompt.index("Lo que sabes (fechas relativas"))
+        regla = prompt[prompt.index("Los recuerdos de memoria a largo plazo"):]
+        self.assertIn("EXCLUSIVAMENTE usando [ESTADO ACTUAL EN VIVO DE WINDOWS]", regla)
+        self.assertIn("ignora aplicaciones o archivos mencionados en recuerdos pasados", regla)
+        self.assertIn("Antigravity IDE.exe", prompt)
+        self.assertIn("memoria_filtro.py", prompt)
+        for recuerdo in ("El usuario está usando Visual Studio Code ahora.",
+                         "El usuario tiene abierto el archivo aprendizaje.py."):
+            self.assertFalse(es_recuerdo_valido(recuerdo)[0], recuerdo)
+        self.assertTrue(es_recuerdo_valido(
+            "El usuario desarrolla proyectos de Python en Visual Studio Code.")[0])
+
     def test_alternar_con_tts_interrumpido_reanuda_captura(self):
         oido = object.__new__(Oido)
         oido.bloqueo = threading.RLock()
