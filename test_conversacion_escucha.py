@@ -68,7 +68,8 @@ class TestReanudacionEscucha(unittest.TestCase):
         self.assertIn("show", cara.llamadas)
         self.assertIn("showNormal", cara.contenedora.llamadas)
         self.assertTrue(all(x in cara.llamadas for x in ("raise_", "activateWindow", "update")))
-        self.assertTrue(all(x in panel.llamadas for x in ("show", "raise_", "activateWindow", "update")))
+        self.assertFalse(any(x in panel.llamadas for x in
+            ("show", "showNormal", "raise_", "activateWindow", "update")))
 
         eventos.atender_evento(app, "fin_voz", None)
         limite = time.time() + 1
@@ -76,6 +77,13 @@ class TestReanudacionEscucha(unittest.TestCase):
             time.sleep(.005)
         self.assertTrue(app.escuchando)
         self.assertTrue(cara.estado_escucha)
+        while not app.cola.empty():
+            app.cola.get_nowait()
+        conversacion.alternar_conversacion(app, "interfaz")
+        conversacion.alternar_conversacion(app, "interfaz")
+        self.assertFalse(any(app.cola.get_nowait()[0] == "restaurar_ventanas"
+            for _ in range(app.cola.qsize())))
+        self.assertFalse(panel.visible)
 
     def test_casa_tic_interrumpe_y_detiene_timer(self):
         reloj = SimpleNamespace(detener=0, stop=lambda: setattr(reloj, "detener", reloj.detener + 1))
@@ -159,7 +167,7 @@ class TestReanudacionEscucha(unittest.TestCase):
                 eventos.append(app.cola.get(timeout=0.01))
             except queue.Empty:
                 pass
-        self.assertEqual(eventos.count(("restaurar_ventanas", None)), 2)
+        self.assertEqual(eventos.count(("restaurar_ventanas", None)), 0)
         self.assertIn(("oido", "audio listo"), eventos)
         self.assertTrue(app.conversacion)
         self.assertTrue(app.escuchando)

@@ -148,14 +148,11 @@ def restaurar_ventana(ventana):
 
 
 def restaurar_ventanas(app):
-    """Restaura cara, contenedora y panel Casa desde el hilo principal de Qt."""
-    vistas = []
-    for ventana in (getattr(app, "cara", None), getattr(app, "casa", None)):
-        if ventana is None:
-            continue
-        contenedora = ventana.window()
-        for objetivo in (ventana, contenedora):
-            if objetivo is not None and all(objetivo is not v for v in vistas):
-                vistas.append(objetivo)
-    for ventana in vistas:
-        restaurar_ventana(ventana)
+    """Restaura solo el avatar y su ventana contenedora desde el hilo Qt."""
+    avatar = getattr(app, "cara", None)
+    if avatar is None:
+        return
+    contenedora = avatar.window()
+    restaurar_ventana(avatar)
+    if contenedora is not avatar:
+        restaurar_ventana(contenedora)

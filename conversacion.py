@@ -83,8 +83,6 @@ def alternar_conversacion(app, motivo="desconocido"):
     app.silencios = 0
     print(f"[conversacion] alternar_conversacion motivo='{motivo}' nuevo_estado={'escuchando' if app.conversacion else 'silencio'}", flush=True)
     if app.conversacion:
-        if hasattr(app, "cola"):
-            app.cola.put(("restaurar_ventanas", None))
         app.decir("Te escucho. Háblame.", 2500)
         escuchar(app)
     else:
