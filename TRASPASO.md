@@ -77,6 +77,11 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - Lectura, creación, modificación, copia, movimiento y renombrado dentro de raíces autorizadas.
 - Respaldo `.silvestra_respaldos`, escritura atómica y exclusión de respaldos en listados/búsquedas.
 
+### Fase 2 — Etapa 5 cerrada
+- Catálogo deny-by-default y identidad PID/creación/ruta para procesos Windows.
+- Inicio con `shell=False`, supervisión acotada y cierre normal mediante `WM_CLOSE`.
+- Sin shells arbitrarios ni cierre forzado; integración con permisos y motor concurrente.
+
 ## 6. Guía de prompts para Gemini (Antigravity)
 ```text
 Lee PROYECTO.md, TRASPASO.md y archivos relevantes. Define alcance, reglas .py/TRASPASO,
