@@ -55,6 +55,14 @@ class SensorContextoWindows:
             self._user32.GetForegroundWindow.argtypes = []
             self._user32.GetForegroundWindow.restype = wintypes.HWND
 
+            if hasattr(self._user32, "SendMessageTimeoutW"):
+                self._user32.SendMessageTimeoutW.argtypes = [
+                    wintypes.HWND, wintypes.UINT, wintypes.WPARAM,
+                    wintypes.LPARAM, wintypes.UINT, wintypes.UINT,
+                    ctypes.POINTER(wintypes.DWORD),
+                ]
+                self._user32.SendMessageTimeoutW.restype = wintypes.LPARAM
+
             self._user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
             self._user32.GetWindowTextLengthW.restype = ctypes.c_int
 
@@ -159,6 +167,22 @@ class SensorContextoWindows:
         except Exception:
             return ""
 
+    def _ventana_responde(self, hwnd: int) -> bool:
+        """Consulta WM_NULL con timeout corto, sin bloquear el hilo."""
+        if not hwnd:
+            return False
+        try:
+            resultado = wintypes.DWORD(0)
+            if not hasattr(self._user32, "SendMessageTimeoutW"):
+                return True
+            llamada = self._user32.SendMessageTimeoutW(
+                hwnd, 0x0000, 0, 0,
+                0x0002, 50, ctypes.byref(resultado),
+            )
+            return bool(llamada)
+        except Exception:
+            return False
+
     def _obtener_nombre_ejecutable(self, pid: int) -> str:
         """Obtiene el nombre base del ejecutable dado su PID."""
         if not pid or pid <= 0:
@@ -223,8 +247,14 @@ class SensorContextoWindows:
                 return None
 
             resultado: list[tuple[int, int, str, str]] = []
+            consultas = 0
+            max_consultas = 24
 
             def _enum_cb(hwnd: int, lparam: int) -> bool:
+                nonlocal consultas
+                if consultas >= max_consultas:
+                    return False
+                consultas += 1
                 try:
                     if self._user32.IsWindowVisible(hwnd) and not self._user32.IsIconic(hwnd):
                         if self._es_ventana_cloaked(hwnd):
@@ -265,21 +295,32 @@ class SensorContextoWindows:
         titulo = ""
         pid_val: int | None = None
         ejecutable = ""
+        ventana_sistema = False
 
         try:
             hwnd = self._user32.GetForegroundWindow()
             if hwnd:
                 hwnd_val = int(hwnd)
-                titulo = self._obtener_titulo_ventana(hwnd)
+                clase = self._obtener_clase_ventana(hwnd)
+                if clase not in CLASES_SISTEMA_DESCARTAR and self._ventana_responde(hwnd):
+                    titulo = self._obtener_titulo_ventana(hwnd)
 
-                pid = wintypes.DWORD(0)
-                self._user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-                if pid.value:
-                    pid_val = int(pid.value)
-                    ejecutable = self._obtener_nombre_ejecutable(pid.value)
+                    pid = wintypes.DWORD(0)
+                    self._user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                    if pid.value:
+                        pid_val = int(pid.value)
+                        ejecutable = self._obtener_nombre_ejecutable(pid.value)
+                else:
+                    ventana_sistema = True
+            else:
+                # Escritorio vacío o Win+D: no enumerar ni consultar procesos.
+                hwnd_val = None
+                titulo = ""
+                pid_val = None
+                ejecutable = ""
 
             # Fallback transparente si no se obtuvo ejecutable (ej. en hilos/subprocesos secundarios)
-            if not ejecutable:
+            if not ejecutable and not ventana_sistema and hwnd_val:
                 w_top = self._obtener_ventana_input_desktop()
                 if w_top:
                     h_top, p_top, exe_top, tit_top = w_top

@@ -76,7 +76,7 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - Credenciales protegidas y capturas PNG en sandbox.
 
 ### Fase 2 — Etapa 7 cerrada
-- Evidencia positiva obligatoria y recuperación limitada a idempotentes.
+- Evidencia positiva y recuperación limitada a idempotentes.
 
 ### Fase 2 — Etapa 8 cerrada
 - Orquestador global con modos restringido, supervisado y preautorizado.
@@ -87,13 +87,16 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - Liberación de referencias y puentes pasivos a contexto/HUD/autonomía.
 
 ### Fase 3 — Etapa 2 cerrada
-- Comprensión visual de PNG/JPEG/WebP y OCR desacoplado.
-- Privacidad remota, caché visual y límites de memoria.
+- Comprensión visual PNG/JPEG/WebP y OCR local.
 
 ### Fase 3 — Etapa 3 cerrada
 - Comparación local de fotogramas y contexto temporal acotado.
 - Fuente dual compatible con Camara y callable sintética.
 - Sin almacenamiento permanente ni envío externo por defecto.
+
+### Corrección UI — estabilidad al minimizar
+- Cola Qt drenada en lotes acotados con reprogramación de 1 ms.
+- Movimiento y repintado suspendidos al minimizar o mostrar escritorio.
 
 ## 6. Guía de prompts para Gemini (Antigravity)
 ```text

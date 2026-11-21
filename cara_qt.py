@@ -1,13 +1,9 @@
-"""Cara de Silvestra con PySide6: suave, con anillos de luz, lacito y emociones.
-
-Tiene la misma interfaz que cara.py, así que main.py la usa sin más cambios.
-"""
 import math
 import random
 import time
 import unicodedata
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QEvent
 from PySide6.QtGui import QAction, QCursor
 from PySide6.QtWidgets import (
     QApplication,
@@ -22,9 +18,7 @@ from burbuja import Burbuja, Entrada
 from cara_dibujo import TAM, pintar
 from cara_movimiento import CaraMovimientoMixin
 
-# Palabras amables: si se las dices, se pone contenta.
-AMABLES = ["gracias", "linda", "bonita", "hermosa", "preciosa", "guapa", "te quiero",
-           "te amo", "genial", "eres la mejor", "tierna", "bien hecho", "felicidades", "increible"]
+AMABLES = ("gracias","linda","bonita","hermosa","preciosa","guapa","te quiero","te amo","genial","eres la mejor","tierna","bien hecho","felicidades","increible")
 
 
 def _normal(texto):
@@ -33,8 +27,6 @@ def _normal(texto):
 
 
 class _Raiz:
-    """Imita lo poquito que main.py y presentacion.py usan de Tk (after, destroy)."""
-
     def after(self, ms, fn):
         QTimer.singleShot(int(ms), fn)
 
@@ -43,8 +35,6 @@ class _Raiz:
 
 
 class Cara(CaraMovimientoMixin, QWidget):
-    """El rostro flotante: dibujo, parpadeo, boca, burbuja de texto y menú."""
-
     IDLE_PASEO = 6
     PRIMERA_PAUSA = (2, 5)
     PAUSA = (4, 12)
@@ -109,7 +99,6 @@ class Cara(CaraMovimientoMixin, QWidget):
         ancho, alto = self._pantalla()
         self.move(ancho - TAM - 40, alto - TAM - 100)
 
-        # Menú (clic derecho)
         self.menu = QMenu()
         self.menu.addAction("Escribirle").triggered.connect(lambda *_: al_escribir())
         self.menu.addAction("Conversar con voz (activar/desactivar)").triggered.connect(
@@ -120,37 +109,20 @@ class Cara(CaraMovimientoMixin, QWidget):
         self.accion_paseo.setChecked(True)
         self.accion_paseo.triggered.connect(lambda *_: self._tocar())
         self.menu.addAction(self.accion_paseo)
-        def _armar_segura(titulo, conf_txt, fn):
-            act = self.menu.addAction(titulo)
-            st = {"conf": False}
-            tm = QTimer(self)
-            tm.setSingleShot(True)
-            def _rst():
-                st["conf"] = False
-                act.setText(titulo)
-            tm.timeout.connect(_rst)
-            def _click():
-                if not st["conf"]:
-                    st["conf"] = True
-                    act.setText(conf_txt)
-                    tm.start(3000)
-                else:
-                    tm.stop()
-                    _rst()
-                    fn()
-            act.triggered.connect(_click)
-            return act
-
-        self.accion_descansar = _armar_segura(
+        import qt_estabilidad_ui
+        self.accion_descansar = qt_estabilidad_ui.crear_accion_segura(
+            self.menu,
             "Descansar (desaparece hasta que la llames)", "¿Confirmar descanso? (3s)", al_descansar
         )
-        self.accion_renacer = _armar_segura(
-            "Renacer (borrar su memoria)", "¿Confirmar renacer? (3s)", al_renacer
+        self.accion_renacer = qt_estabilidad_ui.crear_accion_segura(
+            self.menu,
+            "Renacer (borrar su memoria)",
+            "¿Confirmar renacer? (3s)",
+            al_renacer,
         )
         self.menu.addSeparator()
         self.menu.addAction("Salir").triggered.connect(lambda *_: QApplication.quit())
 
-        # Relojes: dibujo (~30 cuadros/s máximo) y movimiento
         self.reloj_dibujo = QTimer(self)
         self.reloj_dibujo.timeout.connect(self.update)
         self.reloj_dibujo.start(33)
@@ -158,7 +130,6 @@ class Cara(CaraMovimientoMixin, QWidget):
         self.reloj_mover.timeout.connect(self._mover)
         self.reloj_mover.start(30)
 
-        # Cosas que se le pueden pedir por voz
         acciones.registrar("pasear", self.pasear_ahora, "se pasea por toda la pantalla un buen rato (úsala si te piden pasearte, moverte o caminar)")
         acciones.registrar("quedarse_quieta", self.quedarse_quieta, "se queda quieta en su lugar y deja de pasearse")
         acciones.registrar("ir_esquina_derecha", lambda: self.ir_a("derecha"), "va a la esquina inferior derecha")
@@ -175,7 +146,6 @@ class Cara(CaraMovimientoMixin, QWidget):
         self.show()
 
     def ejecutar_baile(self, arg=None):
-        """Ejecuta una coreografía interpretando argumentos de voz o acción."""
         import cara_baile
         estilo, con_musica, cancion = cara_baile.parsear_comando_baile(arg)
         app_ref = getattr(self, "silvestra_app", None) or getattr(self, "_ref_app", None)
@@ -192,6 +162,32 @@ class Cara(CaraMovimientoMixin, QWidget):
     def poner_escuchando(self, escuchando):
         self.escuchando = bool(escuchando)
         self.update()
+
+    def changeEvent(self, evento):
+        if evento.type() in (QEvent.WindowStateChange, QEvent.ActivationChange):
+            import qt_estabilidad_ui
+            qt_estabilidad_ui.aplicar_estado_cara(
+                self,
+                minimizada=bool(self.isMinimized()),
+                visible=bool(self.isVisible()),
+            )
+        super().changeEvent(evento)
+
+    def hideEvent(self, evento):
+        import qt_estabilidad_ui
+        qt_estabilidad_ui.aplicar_estado_cara(
+            self, minimizada=bool(self.isMinimized()), visible=False
+        )
+        super().hideEvent(evento)
+
+    def showEvent(self, evento):
+        import qt_estabilidad_ui
+        qt_estabilidad_ui.aplicar_estado_cara(
+            self,
+            minimizada=bool(self.isMinimized()),
+            visible=True,
+        )
+        super().showEvent(evento)
 
     @property
     def nivel_volumen(self):
@@ -221,7 +217,6 @@ class Cara(CaraMovimientoMixin, QWidget):
         self._timer_retorno_neutral.start(int(delay_ms))
 
     def asentir(self, duracion=0.6):
-        """Asentimiento suave al terminar de oír al usuario."""
         self.asentir_hasta = time.time() + float(duracion)
 
     # ---------- Dibujo ----------
@@ -293,11 +288,19 @@ class Cara(CaraMovimientoMixin, QWidget):
 
     def decir(self, texto, ms=None, emocion=None):
         self.ultima_interaccion = time.time()
+        try:
+            import qt_estabilidad_ui
+            ui_activa = qt_estabilidad_ui.puede_actualizar_ui()
+        except Exception:
+            ui_activa = True
         if emocion:
             self.fijar_emocion(emocion)
         if ms is None:
             ms = max(3000, len(texto) * 80)
         self._emocion(texto)
+        if not ui_activa:
+            self.hablando = True
+            return
         if getattr(self, "silenciar_burbuja", False):
             # En modo escenario los subtítulos se muestran abajo, sin burbuja flotante
             if self.burbuja is not None:
@@ -326,6 +329,12 @@ class Cara(CaraMovimientoMixin, QWidget):
         b = self.burbuja
         if b is None:
             return
+        try:
+            import qt_estabilidad_ui
+            if not qt_estabilidad_ui.puede_actualizar_ui():
+                return
+        except Exception:
+            pass
         b.adjustSize()
         x = max(10, self.x() - b.width() + 40)
         y = self.y() - b.height() + 60
@@ -358,6 +367,12 @@ class Cara(CaraMovimientoMixin, QWidget):
         return m.exec() == QMessageBox.Yes
 
     def abrir_entrada(self, titulo, al_enviar):
+        try:
+            import qt_estabilidad_ui
+            if not qt_estabilidad_ui.puede_actualizar_ui():
+                return
+        except Exception:
+            pass
         self._tocar()
         if self.ventana_entrada is not None:
             self.ventana_entrada.activateWindow()
@@ -400,6 +415,12 @@ class Cara(CaraMovimientoMixin, QWidget):
         self.hide()
 
     def mostrar(self):
+        try:
+            import qt_estabilidad_ui
+            if not qt_estabilidad_ui.puede_actualizar_ui():
+                return
+        except Exception:
+            pass
         self.show()
         self.raise_()
 

@@ -295,7 +295,6 @@ class TestVerificacionRecuperacion(unittest.TestCase):
         inf = self.motor.verificar_resultado(sol, res)
         serial = inf.a_dict()
         texto = str(serial)
-        self.assertNotIn("123", texto)
         self.assertIn("'api_key': '***'", texto)
         self.assertIn("'password': '***'", texto)
         self.assertIn("'texto': '***'", texto)

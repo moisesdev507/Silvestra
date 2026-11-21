@@ -108,6 +108,12 @@ class CaraMovimientoMixin:
         )
 
     def _puede_mover(self):
+        try:
+            import qt_estabilidad_ui
+            if not qt_estabilidad_ui.puede_actualizar_ui():
+                return False
+        except Exception:
+            pass
         if not (self.viva and self.ventana_entrada is None and self.isVisible()):
             return False
         if self._activo():
@@ -138,6 +144,12 @@ class CaraMovimientoMixin:
             self.tilt = 0.0
 
     def _poner(self, x, y):
+        try:
+            import qt_estabilidad_ui
+            if not qt_estabilidad_ui.puede_actualizar_ui():
+                return
+        except Exception:
+            pass
         vx = x - getattr(self, "_fx_prev", x)
         self._fx_prev = x
         self._actualizar_tilt(vx)

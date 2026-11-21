@@ -191,6 +191,9 @@ def atender_evento(app, tipo, texto):
                 app.cara.hide()
             else:
                 try:
+                    import qt_estabilidad_ui
+                    if not qt_estabilidad_ui.puede_actualizar_ui():
+                        return
                     app.cara.setWindowOpacity(0.0)
                     app.cara.show()
                     app.cara.raise_()
@@ -204,8 +207,13 @@ def atender_evento(app, tipo, texto):
 
                     _animar_aparicion(0.0)
                 except Exception:
-                    app.cara.show()
-                    app.cara.raise_()
+                    try:
+                        import qt_estabilidad_ui
+                        if qt_estabilidad_ui.puede_actualizar_ui():
+                            app.cara.show()
+                            app.cara.raise_()
+                    except Exception:
+                        pass
 
     elif tipo == "ejecutar_accion":
         app._t_accion_llm = 0

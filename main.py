@@ -277,19 +277,17 @@ class Silvestra:
     # ---------- Bucle de eventos ----------
     def revisar_cola(self):
         try:
-            while not self.cola.empty():
-                try:
-                    tipo, texto = self.cola.get_nowait()
-                except queue.Empty:
-                    break
-                try:
-                    eventos.atender_evento(self, tipo, texto)
-                except Exception as e:
-                    print(f"[eventos] Error atendiendo evento '{tipo}': {e}", flush=True)
-                    traceback.print_exc()
+            import qt_estabilidad_ui
+            procesados, queda = qt_estabilidad_ui.drenar_cola_acotada(
+                self.cola,
+                lambda tipo, texto: eventos.atender_evento(self, tipo, texto),
+                max_eventos=8,
+                presupuesto_ms=12.0,
+            )
         finally:
             try:
-                self.cara.root.after(100, self.revisar_cola)
+                demora = 1 if 'queda' in locals() and queda else 100
+                self.cara.root.after(demora, self.revisar_cola)
             except Exception as e:
                 print(f"[eventos] Error reprogramando revisar_cola: {e}", flush=True)
 
