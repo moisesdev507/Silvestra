@@ -1,75 +1,34 @@
-# TRASPASO DE PROYECTO — SILVESTRA
+# TRASPASO — SILVESTRA
 
-## 1. Quién es el dueño
-- **Nombre:** Moisés (Panamá, `America/Panama`, español informal).
-- **Perfil:** Principiante en programación (aprende sobre la marcha).
-- **Comunicación:** Directo, párrafos cortos y explicaciones sencillas para teléfono móvil.
+## Arquitectura y reglas
+Asistente personal Python/Windows con avatar PySide6, voz/escucha, percepción y Context Engine, memoria cognitiva, planificación, permisos y ejecución supervisada. La UI solo se toca desde Qt; los hilos secundarios comunican mediante `app.cola`/señales. Máximo 15,360 B por `.py`; máximo 6,656 B aquí. No exponer claves ni tokens. Las inferencias no son hechos ni autorizan acciones. Toda operación sensible requiere aprobación y permisos centrales.
 
-## 2. Metodología de trabajo
-1. **Flujo de dos IAs:** IA planificadora redacta el prompt exacto; Moisés lo ejecuta en Gemini (Antigravity); Gemini entrega reporte conciso; Moisés reporta de vuelta.
-2. **Reglas:** Honestidad técnica total, pruebas claras, commit previo y NUNCA pedir ni mostrar claves/tokens (`config.py`).
+## Componentes
+- `main.py`, `eventos.py`, `cara_*.py`: aplicación Qt, avatar y cola de eventos.
+- `voz*.py`, `oido*.py`, `audio_*.py`: TTS, reproducción/RMS, captura y VAD.
+- `cerebro*.py`, `respuesta_flujo.py`, `proveedores*.py`: conversación, prompt y proveedores.
+- `memoria*.py`, `persistencia_segura.py`: memoria cognitiva SQLite/FTS5, formación, recuperación, grafo, linaje, consolidación y olvido por usuario.
+- `contexto_*.py`, `multimodal_*.py`, `percepcion_*.py`, `vision_*.py`: contexto Windows y percepción pasiva; incertidumbre explícita, sin guardar capturas.
+- `razonamiento_*.py`, `planificacion_*.py`, `experiencia_*.py`: razonamiento, planes y aprendizaje trazable; no altera código, seguridad o permisos.
+- `ejecucion_*.py`, `permisos_*.py`, `acciones.py`: ejecución validada, permisos y registro de capacidades.
+- `iniciativa*.py`, `recordatorios.py`, `telegram_*.py`, `pantalla_remota*.py`: iniciativa cancelable, recordatorios, Telegram y HUD tablet.
 
-## 3. Silvestra y su arquitectura
-Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-MargaritaNeural` / SAPI) y escucha Whisper.
+## Fases cerradas
+- Fase 1: base de Silvestra, UI/voz, persistencia segura, Context Engine, iniciativa y planificador.
+- Fase 2: ejecución supervisada, permisos, sandbox y operaciones seguras.
+- Fase 3: percepción multimodal pasiva, visión/OCR, cámara y audio; fuentes privadas y desactivadas por defecto. Validación global; pruebas físicas pendientes.
+- Fase 4: memoria cognitiva SQLite/FTS5, formación, recuperación, grafo, mantenimiento, olvido y razonamiento de solo lectura. Ventanas actuales separadas de recuerdos históricos.
+- Fase 5: razonamiento, planificación y aprendizaje experiencial coordinados con ejecución/verificación. Requiere aprobación de plan, permisos y confirmación; aprendizaje no cambia políticas.
+- Voz–cara: sincronía con reproducción real/RMS por generación en `cara_sincronia.py`; Qt solo renderiza.
 
-### Módulos principales
-- **`main.py`**: Orquestación y ciclo principal PySide6.
-- **`cara_*.py` / `baile_audio.py` / `burbuja.py`**: Avatar (208 px), mirada reactiva, anillos HUD, 3 bailes y menú 3s.
-- **`naturalidad.py` / `correcciones.py`**: Continuidad conversacional y autocorrección viva persistente.
-- **`oido*.py`**: Stream persistente anti-crash, Silero VAD, feedback WAV y Whisper/Vosk.
-- **`voz*.py`**: Síntesis `edge-tts`, mixer thread-safe, RMS labial, corte barge-in y modulación emocional.
-- **`cerebro*.py`**: Prompt optimizado (<1350 tok), carril dual (`rapido`/`pro`), enrutador y acciones.
-- **`proveedores*.py` / `sesion_http.py`**: Multi-LLM en cascada con pool Keep-Alive y streaming emocional.
-- **`memoria*.py` / `persistencia_segura.py`**: Memoria duradera y persistencia JSON atómica (`NamedTemporaryFile` + `fsync` + `os.replace`).
-- **`acciones.py`**: Registro central de capacidades del sistema (`acciones.registrar`).
-- **`recordatorios.py` / `hilos.py`**: Recordatorios por voz y persistencia atómica con RLock.
-- **`modos_sistema.py`**: 4 modos (`normal`, `programacion`, `estudio`, `noche`) en `estado.json` y HUD.
-- **`iniciativa.py` / `iniciativa_contextual.py`**: Iniciativa contextual supervisable con cooldowns y revalidación.
-- **`contexto_*.py`**: Context Engine (Etapas 1-4): sensor Win32, agregador 3 niveles, prompt bridge y SSE HUD.
-- **`planificador*.py`**: Planificador de objetivos y tareas (Etapa 6): dependencias DFS, priorización y persistencia atómica.
-- **`resumen*.py`**: Resúmenes web y video modularizados (`resumen_web.py`, `resumen_media.py`).
-- **`telegram_*.py`**: Bot nativo y medios modularizados (`telegram_medios_proc.py`).
-- **`pantalla_remota*.py` / `pantalla_biometria.py`**: HUD tablet SSE, telemetría y blindaje táctil.
-- **`presencia.py` / `camara*.py` / `voz_dueno*.py`**: Biometría facial YuNet+SFace y vocal CAM++ multi-muestra.
-- **`prueba_humo.py`**: Suite estricta de sintaxis y límite <= 15 KB sin excepciones.
+## Fase 6 — Etapa 1
+Contratos versionados y sanitizados (`ecosistema_contratos*.py`), seis tipos de dispositivo, sesiones/scopes fail-closed y observaciones no ejecutables. Pruebas con datos sintéticos.
 
-### Reglas de oro de desarrollo
-1. **Tamaño máximo:** Ningún archivo debe superar los **15 KB** (~15,360 bytes). TRASPASO.md <= 6.5 KB.
-2. **Hilo principal Qt protegido:** Cero llamadas a Qt desde hilos secundarios (`app.cola` o señales).
-3. **I/O en hilos secundarios:** Red, LLMs, TTS y procesos pesados siempre en hilos daemon.
-4. **Acciones:** Toda capacidad se expone mediante `acciones.registrar(nombre, funcion, descripcion)`.
-5. **Configuración y claves:** Exclusivamente en `config.py` (ignorado en git).
+## Fase 6 — Etapa 2 (cierre)
+Integración segura del HUD y contratos del ecosistema. `ecosistema_almacen.py` mantiene un archivo independiente con reemplazo atómico; `ecosistema_gestor.py`/`ecosistema_sesiones.py` usan códigos de emparejamiento de un uso, hashes PBKDF2, sesiones expiran, latidos, revocación y scopes. El núcleo es único; clientes no reciben capacidades centrales. Cookies HttpOnly/SameSite; token y código no van en URL.
 
-## 4. Estado actual (Fase 1 cerrada)
-- PySide6, voz, cámara, Context Engine, HUD, iniciativa y planificador cerrados.
-- Persistencia atómica y prueba de humo estricta operativas.
+`ecosistema_puente.py` aplica allowlist de Origin, privacidad y separación Observation/CommandRequest/ApprovalRequest. Observaciones no ejecutan; operaciones van por `IntegracionCognitivaFase5`, `SistemaEjecucion` y `MotorPermisos`; aprobación en dispositivo autorizado y distinto al solicitante. Sin llamada remota directa a `acciones.ejecutar`.
 
-## 5. Estado Fase 2–3
-- Fase 2 (1–8): permisos, colas cancelables, sandbox, procesos/GUI seguros, evidencia y orquestación supervisada con DAG.
-- Fase 3 (1–4): percepción multimodal, visión/OCR, cámara temporal e interfaces Win32; pasiva, privada y sin persistencia de capturas.
-- Fase 3 (5–8): clasificación auditiva local, integración y correlación multimodal, interpretación temporal e integración global. Incertidumbre explícita; permisos de cámara/micrófono/envío externo apagados. Suite global disponible; pruebas físicas pendientes.
-- Qt: cola acotada, repintado suspendido al minimizar; al despertar restaura solo el avatar, no el panel Casa.
+`ecosistema_sse.py` ofrece replay con ID, buffer/conexiones/rate limit acotados y heartbeat. El servidor escucha solo loopback por defecto; acceso externo requiere TLS explícito y certificado válido. Modo privado filtra biometría, contexto, notas, recordatorios y telemetría personal antes de REST/SSE. Metadatos de dispositivo se conservan al entrar por `app.cola`. No se modifican los JSON de estado ni datos existentes; el almacén nuevo es `ecosistema_dispositivos.json`.
 
-## Fase 4 — Etapas 1–8
-Memoria cognitiva SQLite/FTS5: formación, recuperación, grafo, linaje, consolidación, olvido y razonamiento trazable. Aislamiento por usuario; consultas de razonamiento de solo lectura. Contexto Windows vivo separado de recuerdos históricos; regresión E2E validada en almacenamiento aislado.
-
-## Fase 5 — Etapa 1
-Motor determinista de razonamiento (`razonamiento_modelos.py`, `razonamiento_fuentes.py`, `razonamiento_evaluador.py`, `razonamiento_motor.py`) integrado en Cerebro. Reutiliza el paquete de memoria ya calculado; separa estado vivo, hechos explícitos, inferencias, hipótesis y conclusiones trazables. Cancelable, de solo lectura y sin acciones. Suite `test_razonamiento_inteligente_fase5_etapa1.py`; no iniciar Etapa 2 sin revisión.
-
-## Fase 5 — Etapa 2
-Planificación reutiliza el DAG de `planificador_modelo.py`; evaluación de alternativas/riesgos, progreso y replanificación incremental se guardan por usuario en la SQLite cognitiva. Cerebro solo genera planes ante pedidos explícitos. Recomendación, aprobación humana y autorización de ejecución son estados independientes; no hay ejecución autónoma.
-
-## Fase 5 — Etapa 3
-Aprendizaje experiencial trazable sobre SQLite cognitiva: patrones requieren 3 fuentes independientes. Verificación publica informes a un adaptador de fondo; razonamiento y planificación reciben lecciones históricas orientativas. Sin cambios automáticos a permisos/código.
-
-
-## Fase 5 — Etapa 4 (cierre)
-`integracion_cognitiva_fase5.py` comparte planificación, aprendizaje, ejecución controlada y verificación. La app conecta y cierra el coordinador; Cerebro reutiliza sus motores. Aprendizaje asíncrono deduplicado por usuario/plan/tarea; migración aditiva de experiencias previas. Preparación de ejecución exige aprobación del plan y permisos independientes; sin registro de herramientas no hay ejecución. Validación E2E A–G en `test_integracion_global_fase5_etapa4.py`. No inicia Fase 6.
-
-
-## Voz–cara
-La boca sigue el estado real y el RMS por generación (`cara_sincronia.py`); las cancelaciones limpian el estado y Qt solo renderiza.
-
-
-## Fase 6 Etapa 1
-Contratos versionados: API pública, validación/sanitización, mensajes y registro RAM. Scopes fail-closed; observaciones no ejecutables; pruebas sintéticas aisladas.
+Suite: `test_ecosistema_integracion_fase6_etapa2.py`. Etapa cerrada; no iniciar Fase 7 sin instrucción del usuario.

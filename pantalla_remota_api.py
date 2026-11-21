@@ -1,158 +1,160 @@
-"""Endpoints POST seguros para el HUD Jarvis de la tablet (consola y acciones rápidas)."""
+"""REST/SSE del HUD; la identidad y ejecución se delegan al puente seguro."""
+from concurrent.futures import ThreadPoolExecutor
+from threading import BoundedSemaphore
 import json
-import threading
 
-# Acciones permitidas desde la tablet: nombre_accion -> descripción breve
+from ecosistema_contratos import Scope, serializar_seguro
+from pantalla_remota_datos import recolectar_estado_completo
+
 ACCIONES_PERMITIDAS = {
-    "tablet_modo_privado": "Activa modo privado en la tablet",
-    "tablet_modo_normal": "Activa modo normal en la tablet",
-    "crear_respaldo": "Genera respaldo de datos del usuario",
-    "ocultar_tarjeta": "Limpia la tarjeta principal del HUD",
-    "toggle_solo_dueno": "Alterna modo exclusivo solo dueño",
-    "reforzar_mi_voz": "Refuerza el banco biométrico de voz",
-    "reforzar_voz": "Refuerza el banco biométrico de voz",
-    "activar_modo": "Cambia el modo del sistema",
+    "tablet_modo_privado", "tablet_modo_normal", "crear_respaldo",
+    "ocultar_tarjeta", "toggle_solo_dueno", "reforzar_mi_voz",
+    "reforzar_voz", "activar_modo",
 }
+_SENSIBLES = {"crear_respaldo", "toggle_solo_dueno", "reforzar_mi_voz",
+              "reforzar_voz", "activar_modo"}
+_POOL = ThreadPoolExecutor(2)
+_POOL_SLOTS = BoundedSemaphore(16)
 
-MAX_COMANDO_CHARS = 500
+
+def _respuesta(h, code, body, cookie=None):
+    raw = serializar_seguro(body).encode("utf-8")
+    h.send_response(code)
+    for k, v in h.server.gestor.puente.cors(h.headers.get("Origin", ""),
+            h.headers.get("Host", ""), h.server.tls).items(): h.send_header(k, v)
+    h.send_header("Content-Type", "application/json; charset=utf-8")
+    h.send_header("Cache-Control", "no-store")
+    h.send_header("Content-Length", str(len(raw)))
+    if cookie: h.send_header("Set-Cookie", cookie)
+    h.end_headers()
+    try: h.wfile.write(raw)
+    except OSError: pass
 
 
-def _json_respuesta(handler, codigo, datos):
-    """Envía una respuesta JSON al cliente HTTP."""
-    cuerpo = json.dumps(datos, ensure_ascii=False).encode("utf-8")
-    handler.send_response(codigo)
-    handler.send_header("Content-Type", "application/json; charset=utf-8")
-    handler.send_header("Content-Length", str(len(cuerpo)))
-    handler.send_header("Access-Control-Allow-Origin", "*")
-    handler.end_headers()
+def _origen(h, mutacion=False, cookie=False):
+    p = h.server.gestor.puente
+    return p.validar_origen(h.headers.get("Origin", ""), h.headers.get("Host", ""),
+                            h.server.tls, mutacion, cookie)
+
+
+def _identidad(h, scope=None):
+    p = h.server.gestor.puente; manager = h.server.gestor.ecosistema_gestor
+    if not _origen(h, True, bool(h.headers.get("Cookie"))): return None
+    cookie = manager.cookie_value(h.headers.get("Cookie"))
+    identity = p.autenticar(h.headers, cookie)
+    if identity and scope and not manager.autorizar(identity, scope): return None
+    if identity and not h.server.bus_sse.permitir_peticion(identity["device_id"]): return None
+    return identity
+
+
+def _body(h):
     try:
-        handler.wfile.write(cuerpo)
-    except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
-        pass
+        size = int(h.headers.get("Content-Length", 0))
+        if size <= 0 or size > 8192: return None
+        data = json.loads(h.rfile.read(size).decode("utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception: return None
 
 
-def _leer_body_json(handler):
-    """Lee y parsea el cuerpo JSON de un POST. Retorna dict o None."""
-    try:
-        largo = int(handler.headers.get("Content-Length", 0))
-        if largo <= 0 or largo > 8192:
-            return None
-        raw = handler.rfile.read(largo)
-        return json.loads(raw.decode("utf-8"))
-    except Exception:
-        return None
+def responder_sesion(h, identity):
+    _respuesta(h, 200, {"ok": True, "device_id": identity["device_id"],
+                        "tipo_dispositivo": identity["tipo_dispositivo"]})
 
 
-def manejar_options(handler):
-    """Responde preflight CORS para POST desde la tablet."""
-    handler.send_response(204)
-    handler.send_header("Access-Control-Allow-Origin", "*")
-    handler.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-    handler.send_header("Access-Control-Allow-Headers", "Content-Type")
-    handler.end_headers()
+def responder_estado(h, app, gestor):
+    datos = recolectar_estado_completo(app, gestor)
+    privado = gestor.ecosistema_gestor.modo_privado()
+    datos = gestor.puente.filtrar_estado(datos, privado)
+    _respuesta(h, 200, datos)
 
 
-def manejar_comando(handler, app, gestor):
-    """POST /api/panel/comando — envía texto al flujo normal de Silvestra."""
-    body = _leer_body_json(handler)
-    if not body or "texto" not in body:
-        _json_respuesta(handler, 400, {"error": "Se requiere campo 'texto' en el cuerpo JSON."})
-        return
-
-    texto = str(body["texto"]).strip()
-    if not texto:
-        _json_respuesta(handler, 400, {"error": "El campo 'texto' no puede estar vacío."})
-        return
-    if len(texto) > MAX_COMANDO_CHARS:
-        _json_respuesta(handler, 400, {"error": f"Texto demasiado largo (máx {MAX_COMANDO_CHARS} chars)."})
-        return
-
-    # Encolar de forma thread-safe al bucle de eventos de Silvestra
-    try:
-        app.cola.put(("texto_tablet", texto))
-        if gestor:
-            gestor.registrar_evento(f"Cmd tablet: {texto[:30]}")
-        _json_respuesta(handler, 200, {"ok": True, "encolado": texto[:60]})
-    except Exception as e:
-        _json_respuesta(handler, 500, {"error": f"Error interno al encolar: {e}"})
+def manejar_sse(h, identity, detener):
+    return h.server.bus_sse.servir_http(h, detener, h.server.gestor.puente, identity)
 
 
-def manejar_accion(handler, app, gestor):
-    """POST /api/panel/accion — ejecuta acción de la lista blanca."""
-    body = _leer_body_json(handler)
-    if not body or "accion" not in body:
-        _json_respuesta(handler, 400, {"error": "Se requiere campo 'accion' en el cuerpo JSON."})
-        return
-
-    nombre = str(body.get("accion", "")).strip()
-    if nombre not in ACCIONES_PERMITIDAS:
-        lista = list(ACCIONES_PERMITIDAS.keys())
-        _json_respuesta(handler, 400, {"error": f"Acción no permitida. Válidas: {lista}"})
-        return
-
-    def _ejecutar():
+def _lanzar(h, identity, command, approval=None):
+    if not _POOL_SLOTS.acquire(blocking=False): return False
+    bridge = h.server.gestor.puente; app = h.server.app
+    def run():
         try:
-            if nombre == "ocultar_tarjeta":
-                if gestor:
-                    gestor.tarjeta_principal = "SILVESTRA VIRTUAL INTERFACE // SISTEMA OPERATIVO"
-                    gestor.registrar_evento("Tarjeta principal reiniciada")
-                return
-            # Resto de acciones: delegar al gestor de acciones registrado
-            import acciones as _acc
-            ok, msg = _acc.ejecutar(nombre)
-            if gestor:
-                estado_txt = "OK" if ok else "ERROR"
-                gestor.registrar_evento(f"Acción {nombre}: {estado_txt}")
-        except Exception as ex:
-            print(f"[pantalla_remota_api] Error ejecutando {nombre}: {ex}", flush=True)
-
-    hilo = threading.Thread(target=_ejecutar, daemon=True, name=f"AccionTablet-{nombre}")
-    hilo.start()
-
-    if gestor:
-        gestor.registrar_evento(f"Acción solicitada: {nombre}")
-    _json_respuesta(handler, 200, {"ok": True, "accion": nombre, "desc": ACCIONES_PERMITIDAS[nombre]})
+            result = bridge.ejecutar_controlado(app, identity, command, approval)
+            bridge.bus.publicar({"message_id": command.message_id, **result}, "command_result")
+        finally: _POOL_SLOTS.release()
+    try: _POOL.submit(run); return True
+    except RuntimeError: _POOL_SLOTS.release(); return False
 
 
-def manejar_biometria(handler, app, gestor, ruta=None):
-    """POST /api/panel/biometria, /api/panel/solo_dueno o /api/panel/reforzar_voz."""
-    import pantalla_biometria
-    body = _leer_body_json(handler) or {}
-    accion = str(body.get("accion", "")).strip().lower()
-    ruta_str = str(ruta or "").lower()
+def manejar_options(h):
+    if not _origen(h, True, True): return _respuesta(h, 403, {"error": "origin_rejected"})
+    h.send_response(204)
+    for k, v in h.server.gestor.puente.cors(h.headers.get("Origin", ""), h.headers.get("Host", ""), h.server.tls).items(): h.send_header(k, v)
+    h.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+    h.send_header("Access-Control-Allow-Headers", "Authorization, X-Device-Token, Content-Type")
+    h.send_header("Access-Control-Max-Age", "300"); h.end_headers()
 
-    if "solo_dueno" in ruta_str or accion in ("toggle_solo_dueno", "solo_dueno"):
-        activar = body.get("activar")
-        bio = pantalla_biometria.toggle_solo_dueno(app, activar=activar)
-        if gestor:
-            gestor.registrar_evento(f"Solo Dueño: {'ON' if bio['solo_dueno'] else 'OFF'}")
-        _json_respuesta(handler, 200, {"ok": True, "accion": "solo_dueno", "biometria": bio})
-        return
 
-    if "reforzar_voz" in ruta_str or accion in ("reforzar_voz", "reforzar_mi_voz"):
-        ok, msg, bio = pantalla_biometria.disparar_reforzar_voz(app)
-        if gestor:
-            gestor.registrar_evento("Refuerzo voz solicitado")
-        codigo = 200 if ok else 429
-        _json_respuesta(handler, codigo, {"ok": ok, "mensaje": msg, "biometria": bio})
-        return
-
-    if "modo" in ruta_str or accion in ("modo", "activar_modo"):
-        import modos_sistema
-        modo_pedir = body.get("modo", "")
-        ok, msg, info = modos_sistema.activar_modo(app, modo_pedir, origen="tablet")
-        bio = pantalla_biometria.obtener_estado_biometria(app)
-        if gestor:
-            eti = info.get("etiqueta", modo_pedir) if info else modo_pedir
-            gestor.registrar_evento(f"Modo: {eti}")
-        _json_respuesta(handler, 200 if ok else 400, {
-            "ok": ok,
-            "mensaje": msg,
-            "modo_activo": info.get("modo", "normal") if info else "normal",
-            "biometria": bio
-        })
-        return
-
-    # Consulta de estado biométrico
-    bio = pantalla_biometria.obtener_estado_biometria(app)
-    _json_respuesta(handler, 200, {"ok": True, "biometria": bio})
+def manejar_post(h, app, gestor):
+    path = h.path.split("?", 1)[0]
+    if "?" in h.path: return _respuesta(h, 400, {"error": "query_credentials_forbidden"})
+    p = gestor.puente; manager = gestor.ecosistema_gestor
+    ip = h.client_address[0]
+    if path == "/api/emparejar":
+        if not _origen(h, True): return _respuesta(h, 403, {"error": "origin_rejected"})
+        if not h.server.bus_sse.permitir_peticion("pair:" + ip): return _respuesta(h, 429, {"error": "rate_limited"})
+        body = _body(h); result = manager.canjear_codigo(body.get("codigo") if body else None)
+        if not result: return _respuesta(h, 403, {"error": "pairing_rejected"})
+        cookie = manager.cookie_header(result["cookie"], secure=h.server.tls)
+        return _respuesta(h, 200, {"ok": True, "device_id": result["device_id"],
+            "tipo_dispositivo": result["tipo_dispositivo"]}, cookie)
+    if path == "/api/heartbeat":
+        identity = _identidad(h)
+        if not identity: return _respuesta(h, 403, {"error": "unauthorized"})
+        ok = manager.heartbeat(identity)
+        return _respuesta(h, 200 if ok else 401, {"ok": ok})
+    if path == "/api/panel/observacion":
+        identity = _identidad(h, Scope.SENSOR_SUBMIT)
+        if not identity: return _respuesta(h, 403, {"error": "sensor_scope_required"})
+        body = _body(h)
+        obs = p.observation(identity, (body or {}).get("observacion", {}))
+        app.cola.put(("ecosistema_observacion", obs.a_dict()))
+        return _respuesta(h, 202, {"ok": True, "message_id": obs.message_id, "ejecutable": False})
+    if path == "/api/panel/aprobar":
+        approval_identity = _identidad(h, Scope.OPERATION_APPROVE)
+        if not approval_identity: return _respuesta(h, 403, {"error": "approval_scope_required"})
+        body = _body(h); mid = str((body or {}).get("message_id", ""))
+        try: request_identity, cmd, approval = p.aprobar_pendiente(approval_identity, mid)
+        except (ValueError, PermissionError): return _respuesta(h, 403, {"error": "approval_rejected"})
+        if not _lanzar(h, request_identity, cmd, approval): return _respuesta(h, 429, {"error": "execution_queue_full"})
+        return _respuesta(h, 202, {"ok": True, "estado": "en_validacion_central", "message_id": mid})
+    body = _body(h) if path == "/api/panel/accion" else None
+    if path == "/api/panel/accion":
+        name = str((body or {}).get("accion", ""))
+        if name not in ACCIONES_PERMITIDAS: return _respuesta(h, 400, {"error": "action_not_allowed"})
+        if name in {"tablet_modo_privado", "tablet_modo_normal", "ocultar_tarjeta"}:
+            identity = _identidad(h, Scope.UI_CONTROL)
+            if not identity: return _respuesta(h, 403, {"error": "ui_scope_required"})
+            if name == "ocultar_tarjeta": gestor.ocultar_tarjeta()
+            else: manager.set_privado(name == "tablet_modo_privado")
+            return _respuesta(h, 200, {"ok": True, "accion": name})
+    identity = _identidad(h, Scope.OPERATION_REQUEST)
+    if not identity: return _respuesta(h, 403, {"error": "unauthorized_or_scope_missing"})
+    body = body if body is not None else _body(h)
+    if path == "/api/panel/comando":
+        text = str((body or {}).get("texto", "")).strip()
+        if not text or len(text) > 500: return _respuesta(h, 400, {"error": "invalid_text"})
+        command = p.command(identity, "conversacion_tablet", {"texto": text})
+        import ecosistema_eventos
+        if not ecosistema_eventos.encolar_turno(p, app, identity, text, command):
+            return _respuesta(h, 429, {"error": "turn_in_progress_or_queue_full"})
+        gestor.registrar_evento("Consulta recibida de dispositivo " + identity["device_id"][:8])
+        return _respuesta(h, 202, {"ok": True, "message_id": command.message_id})
+    if path == "/api/panel/accion":
+        name = str((body or {}).get("accion", ""))
+        cmd = p.command(identity, name, {"parametros": {}}, name in _SENSIBLES)
+        if cmd.payload["sensible"]:
+            pending = p.guardar_pendiente(identity, cmd)
+            p.bus.publicar({"device_id": identity["device_id"], "message_id": pending}, "approval_required")
+            return _respuesta(h, 202, {"ok": True, "estado": "pendiente_autorizacion", "message_id": pending})
+        if not _lanzar(h, identity, cmd): return _respuesta(h, 429, {"error": "execution_queue_full"})
+        return _respuesta(h, 202, {"ok": True, "estado": "en_validacion_central", "message_id": cmd.message_id})
+    return _respuesta(h, 404, {"error": "not_found"})

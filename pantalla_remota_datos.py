@@ -175,15 +175,15 @@ def obtener_reloj_fecha():
 
 def recolectar_estado_completo(app, gestor):
     """Agrega toda la información en vivo para el panel Jarvis sin tocar Qt."""
-    d_est = estado.cargar()
-    modo_privado = bool(d_est.get("tablet_modo_privado", False))
+    eco = getattr(gestor, "ecosistema_gestor", None)
+    modo_privado = bool(eco.modo_privado()) if eco else False
 
     cpu_pct, ram_pct, bat_info = obtener_telemetria_hardware()
 
     # Silvestra en vivo
     descansando = getattr(app, "descansando", False)
     escuchando = getattr(app, "escuchando", False)
-    pensando = getattr(getattr(app, "cara", None), "pensando", False)
+    pensando = bool(getattr(app, "pensando", False))
     hablando = False
     voz = getattr(app, "voz", None)
     if voz and hasattr(voz, "ocupada"):
@@ -203,7 +203,7 @@ def recolectar_estado_completo(app, gestor):
     else:
         estado_silv = "reposo"
 
-    emocion = getattr(getattr(app, "cara", None), "emocion_objetivo", "neutral") or "neutral"
+    emocion = getattr(app, "emocion_objetivo", "neutral") or "neutral"
     vol = float(getattr(voz, "nivel_volumen", 0.0) if voz else 0.0)
     subtitulo = getattr(app, "ultimo_dicho", "") if hablando else ""
 
@@ -231,6 +231,7 @@ def recolectar_estado_completo(app, gestor):
 
     # Biometría en vivo
     try:
+        if modo_privado: raise PermissionError("modo_privado")
         import pantalla_biometria
         bio_info = pantalla_biometria.obtener_estado_biometria(app)
     except Exception:
@@ -248,6 +249,7 @@ def recolectar_estado_completo(app, gestor):
     # Telemetría del Context Engine (Etapa 4)
     ctx_info = None
     try:
+        if modo_privado: raise PermissionError("modo_privado")
         import contexto_hud
         ctx_info = contexto_hud.obtener_telemetria_contexto(app)
     except Exception:

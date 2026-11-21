@@ -1,8 +1,8 @@
 """Servidor local HTTP y SSE para mostrar la interfaz Jarvis de Silvestra en una tablet."""
 import http.server
 import json
-import secrets
 import socket
+import ssl
 import sys
 import threading
 import time
@@ -14,6 +14,11 @@ import pantalla_remota_api as _api
 from pantalla_remota_datos import recolectar_estado_completo
 from pantalla_remota_qr import VentanaQR
 from pantalla_remota_ui import PAGINA_JARVIS_HTML
+from ecosistema_almacen import AlmacenEcosistema
+from ecosistema_contratos import Scope, TipoDispositivo
+from ecosistema_gestor import GestorEcosistema
+from ecosistema_puente import EcosistemaPuente
+from ecosistema_sse import BusSSE
 
 PUERTO_DEFECTO = 8765
 _lock = threading.Lock()
@@ -46,6 +51,7 @@ def obtener_ip_local():
 
 class ServidorPantallaRemota(http.server.ThreadingHTTPServer):
     """Servidor HTTP multihilo con supresión de trazas por desconexión normal de sockets."""
+    daemon_threads = True
 
     def handle_error(self, request, client_address):
         """Silencia desconexiones habituales de clientes al cerrar pestañas o suspender la tablet."""
@@ -70,9 +76,24 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
         # Desactivar logs por defecto en consola para mantener el terminal limpio
         pass
 
-    def _validar_token(self, query):
-        token_cliente = query.get("token", [""])[0]
-        return bool(token_cliente and token_cliente == self.server.token_autorizado)
+    def _identidad(self, scope, mutacion=False):
+        try:
+            identity = self.server.puente.autenticar(
+                self.headers, self.server.gestor.ecosistema_gestor.cookie_value(self.headers.get("Cookie")))
+            origin = self.headers.get("Origin", "")
+            if not self.server.puente.validar_origen(
+                    origin, self.headers.get("Host", ""), self.server.tls,
+                    mutacion, bool(self.headers.get("Cookie"))):
+                return None
+            if not self.server.gestor.ecosistema_gestor.autorizar(identity, scope): return None
+            if not self.server.bus_sse.permitir_peticion(identity["device_id"]): return None
+            self._notificar_conexion_tablet()
+            return identity
+        except Exception:
+            return None
+
+    def _denegar(self, code=403):
+        self.send_response(code); self.send_header("Cache-Control", "no-store"); self.end_headers()
 
     def _notificar_conexion_tablet(self):
         """Actualiza el registro de operaciones al conectarse una tablet real."""
@@ -87,116 +108,36 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
             gestor.registrar_evento(f"Tablet conectada ({self.client_address[0]})")
 
     def do_GET(self):
-        url_parsed = urllib.parse.urlparse(self.path)
-        query = urllib.parse.parse_qs(url_parsed.query)
-
-        if not self._validar_token(query):
-            self.send_response(403)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.end_headers()
-            self.wfile.write("Acceso denegado: token inválido o no suministrado.".encode("utf-8"))
-            log(f"Intento de acceso rechazado desde {self.client_address[0]}")
-            return
-
-        self._notificar_conexion_tablet()
-
-        # Ruta 1: Interfaz principal Jarvis
-        if url_parsed.path in ("/", "/index.html"):
+        parsed = urllib.parse.urlsplit(self.path)
+        if parsed.query: return self._denegar(400)
+        path = parsed.path
+        if path in ("/", "/index.html"):
             contenido = PAGINA_JARVIS_HTML.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(contenido)))
-            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
-            self.end_headers()
-            try:
-                self.wfile.write(contenido)
-                log(f"Página Jarvis servida a cliente en {self.client_address[0]}")
-            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
-                pass
-            return
-
-        # Ruta 2: Endpoint API JSON para estado completo y telemetría
-        if url_parsed.path == "/api/panel/estado":
-            datos = recolectar_estado_completo(self.server.app, self.server.gestor)
-            contenido = json.dumps(datos, ensure_ascii=False).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(contenido)))
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             try:
                 self.wfile.write(contenido)
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
                 pass
             return
-
-        # Ruta 3: Flujo SSE en vivo
-        if url_parsed.path == "/eventos":
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream")
-            self.send_header("Cache-Control", "no-cache")
-            self.send_header("Connection", "keep-alive")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-
-            log(f"Conexión SSE establecida desde {self.client_address[0]}")
-            try:
-                while not self.server.detener_event.is_set():
-                    datos = recolectar_estado_completo(self.server.app, self.server.gestor)
-                    payload = json.dumps(datos, ensure_ascii=False)
-                    msg = f"data: {payload}\n\n".encode("utf-8")
-                    self.wfile.write(msg)
-                    self.wfile.flush()
-                    time.sleep(0.2)
-            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
-                pass
-            except Exception as e:
-                log(f"Fin de flujo SSE con {self.client_address[0]}: {e}")
-            finally:
-                log(f"Conexión SSE cerrada desde {self.client_address[0]}")
-            return
-
-        self.send_response(404)
-        self.end_headers()
+        identity = self._identidad(Scope.STATE_READ)
+        if not identity: return self._denegar()
+        if path == "/api/sesion":
+            return _api.responder_sesion(self, identity)
+        if path == "/api/panel/estado":
+            return _api.responder_estado(self, self.server.app, self.server.gestor)
+        if path == "/eventos":
+            return _api.manejar_sse(self, identity, self.server.detener_event)
+        self.send_response(404); self.end_headers()
 
     def do_OPTIONS(self):
-        """Responde preflight CORS para POST desde la tablet."""
-        url_parsed = urllib.parse.urlparse(self.path)
-        query = urllib.parse.parse_qs(url_parsed.query)
-        if url_parsed.path.startswith("/api/panel/"):
-            _api.manejar_options(self)
-        else:
-            self.send_response(404)
-            self.end_headers()
+        _api.manejar_options(self)
 
     def do_POST(self):
-        """Maneja endpoints POST seguros: /api/panel/comando y /api/panel/accion."""
-        url_parsed = urllib.parse.urlparse(self.path)
-        query = urllib.parse.parse_qs(url_parsed.query)
-
-        # Clientes remotos deben autenticarse; localhost se permite sin token
-        ip = self.client_address[0]
-        es_local = ip in ("127.0.0.1", "::1")
-        if not es_local and not self._validar_token(query):
-            self.send_response(403)
-            self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.end_headers()
-            self.wfile.write("Acceso denegado: token inválido.".encode("utf-8"))
-            return
-
-        gestor = getattr(self.server, "gestor", None)
-        app = getattr(self.server, "app", None)
-
-        if url_parsed.path == "/api/panel/comando":
-            _api.manejar_comando(self, app, gestor)
-        elif url_parsed.path == "/api/panel/accion":
-            _api.manejar_accion(self, app, gestor)
-        elif url_parsed.path.startswith("/api/panel/"):
-            _api.manejar_biometria(self, app, gestor, url_parsed.path)
-        else:
-            self.send_response(404)
-            self.end_headers()
+        _api.manejar_post(self, getattr(self.server, "app", None), self.server.gestor)
 
 
 class GestorPantallaRemota:
@@ -206,7 +147,17 @@ class GestorPantallaRemota:
         self.app = app
         self._servidor = None
         self._hilo = None
+        self._publisher = None
         self._detener_event = threading.Event()
+        self._host = "127.0.0.1"
+        self._tls = False
+        self.ecosistema_gestor = GestorEcosistema(AlmacenEcosistema())
+        if self.ecosistema_gestor.identidad_nucleo() is None:
+            self.ecosistema_gestor.registrar_local(TipoDispositivo.PC_NUCLEO,
+                (Scope.STATE_READ, Scope.UI_CONTROL, Scope.OPERATION_REQUEST, Scope.OPERATION_APPROVE))
+        self.bus_sse = BusSSE()
+        self.puente = EcosistemaPuente(self.ecosistema_gestor, self.bus_sse)
+        self._ultimo_estado = {}
         self.ventana_qr = None
         self.tarjeta_principal = "SILVESTRA VIRTUAL INTERFACE // SISTEMA OPERATIVO"
         self.tablet_conectada = False
@@ -216,12 +167,6 @@ class GestorPantallaRemota:
         ]
 
         d = estado.cargar()
-        self.token = d.get("remota_token")
-        if not self.token:
-            self.token = secrets.token_urlsafe(24)
-            d["remota_token"] = self.token
-            estado.guardar(d)
-
         self.puerto = d.get("remota_puerto", PUERTO_DEFECTO)
         self.activa = d.get("remota_activa", False)
 
@@ -236,39 +181,82 @@ class GestorPantallaRemota:
                 self.ultimos_eventos.pop(0)
 
     def obtener_url_completa(self):
-        """Devuelve la URL accesible desde la red local para la tablet."""
-        ip = obtener_ip_local()
-        return f"http://{ip}:{self.puerto}/?token={self.token}"
+        """Devuelve el origen del HUD; no incluye credenciales en la URL."""
+        host = self._host if self._host != "127.0.0.1" else "127.0.0.1"
+        scheme = "https" if self._tls else "http"
+        return f"{scheme}://{host}:{self.puerto}/"
 
-    def iniciar_servidor(self):
-        """Inicia el servidor HTTP en un hilo secundario daemon."""
+    def iniciar_servidor(self, host=None, contexto_tls=None):
+        """Inicia en loopback; una interfaz externa requiere TLS explícito."""
         if self._servidor is not None:
             return True
-
+        host = host or self._host
+        externo = host not in ("127.0.0.1", "::1", "localhost")
+        if externo and contexto_tls is None: return False
         self._detener_event.clear()
         try:
-            servidor = ServidorPantallaRemota(("0.0.0.0", self.puerto), PantallaRemotaHandler)
-            servidor.token_autorizado = self.token
+            servidor = ServidorPantallaRemota((host, self.puerto), PantallaRemotaHandler)
+            if contexto_tls: servidor.socket = contexto_tls.wrap_socket(servidor.socket, server_side=True)
+            servidor.tls = bool(contexto_tls)
             servidor.detener_event = self._detener_event
             servidor.gestor = self
             servidor.app = self.app
+            servidor.bus_sse = self.bus_sse
+            scheme = "https" if contexto_tls else "http"
+            origins = [f"{scheme}://{host}:{self.puerto}"]
+            if not externo: origins.append(f"{scheme}://localhost:{self.puerto}")
+            self.puente.origenes = frozenset(origins)
             self._servidor = servidor
+            self._host, self._tls = host, bool(contexto_tls)
 
             def _correr():
-                log(f"Servidor iniciado en http://0.0.0.0:{self.puerto}")
                 try:
                     servidor.serve_forever()
-                except Exception as ex:
-                    log(f"Servidor finalizado: {ex}")
+                except Exception:
+                    pass
 
             self._hilo = threading.Thread(target=_correr, daemon=True, name="ServidorPantallaRemota")
             self._hilo.start()
+            self._publisher = threading.Thread(target=self._publicar_estado,
+                daemon=True, name="EcosistemaSSEPublisher")
+            self._publisher.start()
             self.registrar_evento("Servidor HTTP online")
             return True
-        except Exception as e:
-            log(f"Error al iniciar servidor en puerto {self.puerto}: {e}")
+        except Exception:
             self._servidor = None
             return False
+
+    def activar_red_tls(self, certificado, clave, host=None):
+        """Expone solo la interfaz indicada y solo si el certificado TLS es válido."""
+        host = host or obtener_ip_local()
+        if host in ("127.0.0.1", "::1", "localhost"): return False
+        try:
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+            ctx.load_cert_chain(certificado, clave)
+        except (OSError, ssl.SSLError, ValueError): return False
+        self.detener_servidor()
+        if self.iniciar_servidor(host, ctx): return self.obtener_url_completa()
+        self._host, self._tls = "127.0.0.1", False
+        self.iniciar_servidor()
+        return ""
+
+    def _publicar_estado(self):
+        anterior = None; siguiente_scan = 0.0
+        while not self._detener_event.wait(.5):
+            try:
+                if time.monotonic() >= siguiente_scan:
+                    offline = self.ecosistema_gestor.marcar_desconectados()
+                    if offline: self.bus_sse.publicar({"desconectados": len(offline)}, "device_status")
+                    siguiente_scan = time.monotonic() + 30
+                datos = recolectar_estado_completo(self.app, self)
+                datos = self.puente.filtrar_estado(datos, self.ecosistema_gestor.modo_privado())
+                self._ultimo_estado = datos
+                serial = json.dumps(datos, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                if serial != anterior:
+                    self.bus_sse.publicar(datos, "state"); anterior = serial
+            except Exception:
+                continue
 
     def detener_servidor(self):
         """Detiene el servidor HTTP y cierra los sockets activos."""
@@ -282,8 +270,13 @@ class GestorPantallaRemota:
         except Exception as e:
             log(f"Error deteniendo servidor: {e}")
         finally:
+            hilo = self._hilo
             self._servidor = None
             self._hilo = None
+            if hilo and hilo is not threading.current_thread(): hilo.join(timeout=.5)
+            if self._publisher and self._publisher is not threading.current_thread():
+                self._publisher.join(timeout=.5)
+            self._publisher = None
             log("Servidor detenido correctamente.")
 
     def accion_mostrar_en_tablet(self, arg=None):
@@ -292,38 +285,36 @@ class GestorPantallaRemota:
             self.tarjeta_principal = str(arg).strip()
             self.registrar_evento(f"Proyección: {self.tarjeta_principal[:22]}")
 
-        ok = self.iniciar_servidor()
-        d = estado.cargar()
-        d["remota_activa"] = True
-        estado.guardar(d)
+        self.iniciar_servidor()
 
         url = self.obtener_url_completa()
+        scopes = (Scope.STATE_READ, Scope.UI_CONTROL, Scope.OPERATION_REQUEST, Scope.SENSOR_SUBMIT)
 
         self.app.cola.put(("copiar_portapapeles", url))
         msg_voz = "Panel Jarvis listo en tu tablet. Ya copié la dirección al portapapeles."
         burbuja = f"📱 PANEL JARVIS TABLET:\n{url}\n\n(Enlace copiado al portapapeles)"
         self.app.cola.put(("hablar_registro", (msg_voz, burbuja)))
 
-        def _mostrar_dialogo():
+        def emitir():
             try:
-                if self.ventana_qr is not None:
-                    self.ventana_qr.close()
-                self.ventana_qr = VentanaQR(url)
-                self.ventana_qr.show()
-                self.ventana_qr.raise_()
-                self.ventana_qr.activateWindow()
-            except Exception as e:
-                log(f"Error abriendo ventana QR: {e}")
+                code = self.ecosistema_gestor.emitir_codigo(TipoDispositivo.TABLET_HUD, scopes)
+                self.app.cola.put(("ecosistema_mostrar_qr", (url, code)))
+            except Exception:
+                self.app.cola.put(("hablar", "No pude generar el código de emparejamiento."))
+        threading.Thread(target=emitir, daemon=True, name="EcosistemaPairCode").start()
 
-        if hasattr(self.app, "cara") and hasattr(self.app.cara, "root") and hasattr(self.app.cara.root, "after"):
-            self.app.cara.root.after(100, _mostrar_dialogo)
+    def emitir_codigo_aprobador(self):
+        return self.ecosistema_gestor.emitir_codigo(TipoDispositivo.TELEFONO_MOVIL,
+            (Scope.STATE_READ, Scope.OPERATION_APPROVE))
+
+    def mostrar_ventana_qr(self, url, code):
+        if self.ventana_qr is not None: self.ventana_qr.close()
+        self.ventana_qr = VentanaQR(url, code, self.emitir_codigo_aprobador, self.activar_red_tls)
+        self.ventana_qr.show(); self.ventana_qr.raise_(); self.ventana_qr.activateWindow()
 
     def accion_ocultar_en_tablet(self):
-        """Detiene el servidor y actualiza estado.json."""
+        """Detiene el servidor y su publicación de eventos."""
         self.detener_servidor()
-        d = estado.cargar()
-        d["remota_activa"] = False
-        estado.guardar(d)
         if self.ventana_qr is not None:
             try:
                 self.ventana_qr.close()
@@ -333,18 +324,17 @@ class GestorPantallaRemota:
         self.app.cola.put(("hablar", "Pantalla remota desactivada."))
 
     def accion_modo_privado(self):
-        """Activa el modo privado en la tablet ocultando recordatorios y notas."""
-        d = estado.cargar()
-        d["tablet_modo_privado"] = True
-        estado.guardar(d)
+        """Activa el filtro privado del ecosistema sin alterar estado.json."""
+        self.ecosistema_gestor.set_privado(True)
         self.registrar_evento("Modo privado activado")
         self.app.cola.put(("hablar", "Modo privado de la tablet activado. Datos confidenciales ocultos."))
 
+    def ocultar_tarjeta(self):
+        with _lock: self.tarjeta_principal = "SILVESTRA VIRTUAL INTERFACE // SISTEMA OPERATIVO"
+
     def accion_modo_normal(self):
-        """Activa el modo normal en la tablet mostrando recordatorios y notas."""
-        d = estado.cargar()
-        d["tablet_modo_privado"] = False
-        estado.guardar(d)
+        """Desactiva el filtro privado del ecosistema."""
+        self.ecosistema_gestor.set_privado(False)
         self.registrar_evento("Modo normal activado")
         self.app.cola.put(("hablar", "Modo normal de la tablet activado. Mostrando datos."))
 

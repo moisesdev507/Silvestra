@@ -2,8 +2,6 @@
 
 JS_JARVIS = """
 (function() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const token = urlParams.get('token') || '';
 
   // 1. Wake Lock API para evitar suspensión de la pantalla
   if ('wakeLock' in navigator) {
@@ -256,8 +254,7 @@ JS_JARVIS = """
     }
   }
 
-  // 6. Conexión Server-Sent Events con token seguro
-  const sseUrl = `/eventos?token=${encodeURIComponent(token)}`;
+  const sseUrl = '/eventos';
   let evtSource = null;
 
   function iniciarSSE() {
@@ -278,7 +275,7 @@ JS_JARVIS = """
 
     evtSource.onerror = function() {
       // Intento de fallback inmediato por endpoint JSON
-      fetch(`/api/panel/estado?token=${encodeURIComponent(token)}`)
+      fetch('/api/panel/estado')
         .then(r => r.json())
         .then(d => {
           aplicarDatos(d);
@@ -289,15 +286,22 @@ JS_JARVIS = """
     };
   }
 
-  // Carga inicial inmediata por REST
-  fetch(`/api/panel/estado?token=${encodeURIComponent(token)}`)
-    .then(r => r.json())
-    .then(d => aplicarDatos(d))
-    .catch(() => {});
+  function iniciarSesion() {
+    fetch('/api/sesion').then(function(r) {
+      if (r.ok) return true;
+      var codigo = prompt('Código de emparejamiento de Silvestra');
+      if (!codigo) return false;
+      return fetch('/api/emparejar', {method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({codigo:codigo})}).then(function(x){return x.ok;});
+    }).then(function(ok) {
+      if (!ok) { marcarReconectando(); return; }
+      fetch('/api/panel/estado').then(r=>r.json()).then(d=>aplicarDatos(d)).catch(()=>{});
+      iniciarSSE();
+      setInterval(function(){fetch('/api/heartbeat',{method:'POST'}).catch(()=>{});},30000);
+    }).catch(function(){marcarReconectando();});
+  }
+  iniciarSesion();
 
-  iniciarSSE();
-
-  // 7. Consola interactiva: enviar comando a Silvestra
   let _cmdPending = false;
   function enviarComando() {
     if (_cmdPending) return;
@@ -308,7 +312,7 @@ JS_JARVIS = """
     if (!texto) return;
     _cmdPending = true;
     if (fb) { fb.textContent = 'ENVIANDO...'; fb.style.color = 'var(--gold)'; }
-    fetch('/api/panel/comando?token=' + encodeURIComponent(token), {
+    fetch('/api/panel/comando', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ texto: texto })
@@ -343,7 +347,7 @@ JS_JARVIS = """
     var fb = document.getElementById('accionFb');
     _accionPending = true;
     if (fb) { fb.textContent = 'EJECUTANDO...'; fb.style.color = 'var(--gold)'; }
-    fetch('/api/panel/accion?token=' + encodeURIComponent(token), {
+    fetch('/api/panel/accion', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ accion: nombre })

@@ -1,13 +1,8 @@
-"""Manejo centralizado de la cola de eventos de Silvestra.
-
-Se ejecuta exclusivamente en el hilo principal de Qt mediante revisar_cola,
-garantizando que ninguna operación sobre la interfaz gráfica ocurra desde hilos secundarios.
-"""
+"""Cola de eventos: Qt ejecuta los cambios de UI."""
 import time
 
 
 def es_confirmacion_rutinaria(texto):
-    """Detecta si un mensaje de voz es una confirmación rutinaria duplicable tras una acción."""
     if not texto:
         return True
     t = str(texto).strip().lower()
@@ -22,7 +17,6 @@ def es_confirmacion_rutinaria(texto):
     if any(a in t for a in alertas):
         return False
 
-    # 2. Datos informativos explícitos o lecturas solicitadas NUNCA se silencian
     datos = (
         "recordatorio vencido", "te leo", "resumen:", "última entrada", "ultima entrada",
         "son las ", "la hora es", "el clima", "temperatura", "grados", "noticia", "diario:"
@@ -48,7 +42,6 @@ def es_confirmacion_rutinaria(texto):
 
 
 def atender_evento(app, tipo, texto):
-    """Procesa un evento extraído de app.cola."""
     if tipo == "frase":
         if isinstance(texto, (tuple, list)):
             frase_txt = str(texto[0])
@@ -117,6 +110,9 @@ def atender_evento(app, tipo, texto):
             app.cara.poner_escuchando(True)
 
     elif tipo == "respuesta":
+        remoto = getattr(app, "_ecosistema_origen", None)
+        if remoto and getattr(app, "pantalla_remota", None):
+            app.pantalla_remota.puente.reservar_turno(remoto, cerrar=True)
         if isinstance(texto, (list, tuple)):
             if len(texto) >= 3:
                 respuesta, accion, emocion = texto[0], texto[1], texto[2]
@@ -129,6 +125,12 @@ def atender_evento(app, tipo, texto):
                 emocion = "neutral"
         else:
             respuesta, accion, emocion = str(texto), None, "neutral"
+
+        if accion and remoto:
+            app._ecosistema_origen = None
+            import ecosistema_eventos
+            ecosistema_eventos.bloquear_accion_remota(app, remoto, accion)
+            return
 
         if accion and hasattr(app, "voz_dueno") and app.voz_dueno:
             permitido, frase_negativa = app.voz_dueno.autorizar_accion(accion)
@@ -153,6 +155,8 @@ def atender_evento(app, tipo, texto):
             if respuesta and str(respuesta).strip():
                 app._t_accion_llm = time.time()
             app.ejecutar(accion)
+        if remoto:
+            app._ecosistema_origen = None
 
     elif tipo == "emocion":
         if hasattr(app, "cara") and app.cara:
@@ -343,20 +347,30 @@ def atender_evento(app, tipo, texto):
                 app.escuchar()
 
     elif tipo == "texto_tablet":
-        # Texto enviado desde la consola del panel HUD de la tablet
+        if isinstance(texto, dict):
+            app._ecosistema_origen = texto.get("identity")
+            app.dispositivo_entrada_actual = (texto.get("device_id"), texto.get("tipo_dispositivo"))
+            texto = texto.get("texto", "")
         app._t_accion_llm = 0
         app.origen_entrada_actual = "chat"
         if hasattr(app, "iniciativa"):
             app.iniciativa.interaccion()
         app.enviar(texto)
 
+    elif tipo in ("ecosistema_observacion", "ecosistema_mostrar_qr"):
+        import ecosistema_eventos
+        ecosistema_eventos.procesar(app, tipo, texto)
+
     elif tipo == "fallo":
+        remoto = getattr(app, "_ecosistema_origen", None)
+        if remoto and getattr(app, "pantalla_remota", None):
+            app.pantalla_remota.puente.reservar_turno(remoto, cerrar=True)
+            app._ecosistema_origen = None
         app._dejar_de_escuchar()
         app.conversacion = False
         app.decir(texto, 5000, con_voz=False)
 
     else:
-        # Errores de pensamiento u otros eventos no contemplados
         if app.flujo is not None:
             app.flujo.cerrar()
             app.flujo = None
