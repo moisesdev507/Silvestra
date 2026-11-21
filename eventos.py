@@ -179,6 +179,11 @@ def atender_evento(app, tipo, texto):
     elif tipo == "telegram_burbuja":
         app.cara.decir(texto, 4000)
 
+    elif tipo == "multimodal_situacion":
+        import qt_estabilidad_ui
+        if qt_estabilidad_ui.puede_actualizar_ui() and getattr(app, "cara", None):
+            app.cara.decir(str(texto)[:550], 4000)
+
     elif tipo == "presencia_modo_discreto":
         discreto = bool(texto)
         if hasattr(app, "cara") and app.cara:

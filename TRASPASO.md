@@ -47,36 +47,9 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 ## 5. Estado Fase 2–3
 - Fase 2 cerrada: permisos, ejecución, archivos, procesos, GUI, verificación y autonomía.
 
-### Fase 2 — Etapa 1 cerrada
-- Contratos puros `ejecucion_modelo.py`, registro thread-safe y resolución normalizada.
-- Adaptador aislado de `acciones.py`: inventario descriptivo sin handlers ni efectos reales.
-
-### Fase 2 — Etapa 2 cerrada
-- Políticas centralizadas, huella SHA-256, vigencia, anti-replay y auditoría.
-
-### Fase 2 — Etapa 3 cerrada
-- Cola prioritaria, estados estrictos y workers acotados.
-- Cancelación cooperativa y validación previa bajo `MotorPermisos`.
-
-### Fase 2 — Etapa 4 cerrada
-- Sandbox de archivos explícito con rechazo de traversal, UNC, reparse points y nombres reservados.
-- Respaldo `.silvestra_respaldos`, escritura atómica y exclusión de respaldos en listados/búsquedas.
-
-### Fase 2 — Etapa 5 cerrada
-- Catálogo deny-by-default y identidad PID/creación/ruta para procesos Windows.
-- Inicio con `shell=False`, supervisión acotada y cierre normal mediante `WM_CLOSE`.
-- Sin shells arbitrarios ni cierre forzado; integración con permisos y motor concurrente.
-
-### Fase 2 — Etapa 6 cerrada
-- Inspección GUI segura, foco controlado y selectores estructurados.
-- Credenciales protegidas y capturas PNG en sandbox.
-
-### Fase 2 — Etapa 7 cerrada
-- Evidencia positiva y recuperación limitada a idempotentes.
-
-### Fase 2 — Etapa 8 cerrada
-- Orquestador global con modos restringido, supervisado y preautorizado.
-- DAG validado, integración de motores y snapshots no bloqueantes.
+### Fase 2 — Etapas 1–8 cerradas
+- Contratos, permisos, cola cancelable, sandbox, procesos y GUI seguros; evidencia y recuperación idempotente.
+- Orquestador con modos restringido/supervisado/preautorizado, DAG y snapshots no bloqueantes.
 
 ### Fase 3 — Etapa 1 cerrada
 - Percepción multimodal, cola concurrente, TTL y dedupe.
@@ -103,3 +76,8 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - Clasificación espectral local, VAD opcional, eco TTS, historial temporal solo de metadatos y consultas recientes.
 - Permiso de micrófono, grabación continua y envío externo desactivados por defecto; propuestas de autonomía pasivas.
 - Suite sintética `test_inteligencia_auditiva.py`; heurística sin modelo neuronal dedicado.
+
+### Fase 3 — Etapa 6 (integración multimodal)
+- Coordinador de visión, cámara, interfaz, audio y contexto Windows; correlaciones probables separadas de hechos fuente.
+- Historial sanitizado/acotado, anti-duplicados, tolerancia a fallos y avisos Qt por cola.
+- Autorización externa desactivada; toda propuesta al orquestador es pasiva.
