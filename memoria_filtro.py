@@ -1,6 +1,7 @@
 """Filtro de calidad, privacidad y desduplicación para la memoria permanente."""
 import re
 import unicodedata
+import math
 
 STOPWORDS = {
     "el", "la", "los", "las", "un", "una", "unos", "unas", "de", "del", "a", "al", "en", "con",
@@ -11,10 +12,37 @@ STOPWORDS = {
     "gusta", "interesa", "tambien"
 }
 
-PALABRAS_PRIVADAS = (
-    "clave", "password", "contraseñ", "contrasena", "token", "api_key",
-    "apikey", "secret", "cvv", "tarjeta de credito", "pin "
+PATRONES_SECRETOS = (
+    r"\bsk-[A-Za-z0-9_-]{10,}\b", r"\bghp_[A-Za-z0-9]{16,}\b",
+    r"\bBearer\s+[A-Za-z0-9._~+/-]{6,}",
+    r"\b(?:token|password|contrase(?:ñ|n)a|clave|api[_ -]?key|apikey|secret|pin)\s*[:=]\s*\S+",
+    r"\b(?:c[oó]digo|code|pin|cvv)\s+(?:temporal\s+)?(?:es\s+|[:=]\s*)?\d{4,8}\b",
+    r"\b(?:\d[ -]*?){13,19}\b",
 )
+# Compatibilidad para memoria_grafo, que compara marcadores normalizados por subcadena.
+PALABRAS_PRIVADAS = ("sk-", "ghp_", "bearer ", "token=", "password=", "contrasena=",
+    "clave=", "api_key=", "apikey=", "secret=", "pin=", "cvv", "tarjeta de credito")
+VALOR_SENSIBLE = re.compile(
+    r"\b(?:token|password|contrase(?:ñ|n)a|clave|api[_ -]?key|apikey|secret|pin)"
+    r"(?:\s+(?:secreto|actual|temporal|de\s+acceso|de\s+mi\s+cuenta))*"
+    r"\s+(?:es|[:=])\s*([^\s,;.!?]+)", re.I
+)
+
+
+def _alta_entropia(valor):
+    if len(valor) < 18 or not re.search(r"[a-z]", valor, re.I) or not re.search(r"\d", valor):
+        return False
+    frecuencias = [valor.count(c) / len(valor) for c in set(valor)]
+    return -sum(p * math.log2(p) for p in frecuencias) >= 3.2
+
+
+def _contiene_secreto(texto):
+    if any(re.search(p, texto, re.I) for p in PATRONES_SECRETOS):
+        return True
+    for valor in VALOR_SENSIBLE.findall(texto):
+        if re.fullmatch(r"\d{4,8}", valor) or _alta_entropia(valor):
+            return True
+    return False
 
 PATRONES_META_NORMALIZADOS = [
     r"^\s*none\s*$",
@@ -75,10 +103,8 @@ def es_recuerdo_valido(hecho):
     if len(limpio) < 12:
         return False, "demasiado corto"
 
-    limpio_low = limpio.lower()
-    for p in PALABRAS_PRIVADAS:
-        if p in limpio_low:
-            return False, f"privacidad: {p}"
+    if _contiene_secreto(limpio):
+        return False, "privacidad: posible valor secreto"
 
     norm = normalizar_para_filtro(limpio)
     for pat in PATRONES_META_NORMALIZADOS:

@@ -10,7 +10,6 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     from memoria_adaptadores import atender_turno
     directo = atender_turno(cerebro, texto)
     if directo:
-        al_frase(directo[0])
         return directo
     cerebro.historial.append({"role": "user", "content": texto})
     # Limitar historial a los 8 turnos más recientes para ahorrar tokens y latencia
