@@ -1,5 +1,4 @@
 """Memoria permanente de hechos, personas, gustos y fechas con filtro de privacidad."""
-import datetime
 import os
 import re
 import threading
@@ -7,7 +6,6 @@ import threading
 from config import ARCHIVO_MEMORIA
 import acciones
 import memoria_busqueda as mb
-import memoria_filtro as mf
 import memoria_tiempo as mt
 import persistencia_segura as ps
 from memoria_almacen import AlmacenMemoriaCognitiva
@@ -105,50 +103,17 @@ class Memoria:
             self.datos["proposito"] = (proposito or "ayudarte en lo que necesites").strip()
             self.guardar()
 
-    def recordar(self, hecho, fecha=None):
+    def recordar(self, hecho, fecha=None, origen="explicito", texto_usuario="",
+                 fuente="conversacion", canal="texto", contexto=None):
         if getattr(self, "bloqueo_invitado", False):
-            print("[memoria] Guardado bloqueado: turno de invitado", flush=True)
             return False
-        if not hecho:
-            return False
-        hecho = mt.anclar_fechas_relativas(hecho.strip())
-        if not hecho:
-            return False
-
-        valido, razon = mf.es_recuerdo_valido(hecho)
-        if not valido:
-            print(f"[memoria] Rechazado por filtro ({razon})", flush=True)
-            return False
-
-        with self._bloqueo:
-            if mf.es_duplicado(hecho, self.datos.get("hechos", [])):
-                print("[memoria] Rechazado por duplicado", flush=True)
-                return False
-
-            if not fecha:
-                try:
-                    from zoneinfo import ZoneInfo
-                    ahora = datetime.datetime.now(ZoneInfo("America/Panama"))
-                except Exception:
-                    ahora = datetime.datetime.now()
-                fecha = ahora.strftime("%Y-%m-%d")
-
-            if not re.match(r"^\[\d{4}-\d{2}-\d{2}\]", hecho) and not re.match(r"^\[\d{2}/\d{2}/\d{4}\]", hecho):
-                hecho_guardar = f"[{fecha}] {hecho}"
-            else:
-                hecho_guardar = hecho
-
-            self.datos["hechos"].append(hecho_guardar)
-            self.gestor.guardar(hecho_guardar, tipo_memoria="semantica",
-                                origen="explicito", fecha_evento=fecha)
-
-            if len(self.datos["hechos"]) > 200:
-                mb.resumir_memoria_antigua(self)
-
-            self.guardar()
-            total = len(self.datos["hechos"])
-            print(f"[memoria] guardados=1 relevantes=0 total={total}", flush=True)
-            return True
+        hecho = mt.anclar_fechas_relativas(str(hecho or "").strip())
+        if fecha and not re.match(r"^\[\d{4}-\d{2}-\d{2}\]", str(hecho or "")):
+            hecho = f"[{fecha}] {hecho}"
+        from memoria_adaptadores import procesar_candidato
+        resultado = procesar_candidato(self, hecho, texto_usuario, fuente, canal,
+                                       contexto, origen == "explicito")
+        return bool(resultado.get("aceptado"))
 
     def olvidar(self, tema):
         if not tema or not tema.strip():
@@ -208,6 +173,9 @@ class Memoria:
         try:
             if getattr(self, "bloqueo_invitado", False):
                 return
+            from memoria_adaptadores import historial_prohibido, procesar_extraccion
+            if historial_prohibido(historial):
+                return
             if not historial or len(historial) < 2:
                 return
 
@@ -254,7 +222,7 @@ class Memoria:
                 if re.match(r"^HECHO\s*:\s*", s, re.I):
                     dato = re.sub(r"^HECHO\s*:\s*", "", s, flags=re.I).strip(" *\"'")
                     if dato and dato.lower() not in ("ninguno", "ninguna", "nada"):
-                        if self.recordar(dato):
+                        if procesar_extraccion(self, dato, historial).get("aceptado"):
                             guardados_ahora += 1
 
             if guardados_ahora > 0:
@@ -296,7 +264,7 @@ def instalar(app):
         if not limpio:
             res = "No me dijiste qué dato quieres que recuerde."
         elif mem:
-            ok = mem.recordar(limpio)
+            ok = mem.recordar(limpio, origen="explicito", texto_usuario=str(arg), fuente="orden_explicita")
             creador = mem.creador
             res = f"Listo, {creador}. Guardé en mi memoria: {limpio}" if ok else f"Ya tenía guardado ese dato, {creador}."
         else:

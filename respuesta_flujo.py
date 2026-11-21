@@ -7,6 +7,11 @@ import proveedores_cadenas as pc
 
 def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     """Genera la respuesta con streaming y conmutación automática de proveedores si hay fallos."""
+    from memoria_adaptadores import atender_turno
+    directo = atender_turno(cerebro, texto)
+    if directo:
+        al_frase(directo[0])
+        return directo
     cerebro.historial.append({"role": "user", "content": texto})
     # Limitar historial a los 8 turnos más recientes para ahorrar tokens y latencia
     mensajes = [{"role": "system", "content": cerebro.instrucciones(texto)}] + cerebro.historial[-8:]
@@ -58,7 +63,10 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
 
     respuesta, accion, recuerdo, emocion = separar(crudo)
     if recuerdo and not getattr(cerebro, "turno_invitado", False):
-        cerebro.memoria.recordar(recuerdo)
+        from memoria_adaptadores import procesar_candidato
+        app = getattr(cerebro, "app", None)
+        procesar_candidato(cerebro.memoria, recuerdo, texto, fuente="recuerdo_modelo",
+            canal=getattr(app, "origen_entrada_actual", "texto"))
     cerebro.historial.append({"role": "assistant", "content": respuesta})
     if hasattr(cerebro, "_podar_historial"):
         cerebro._podar_historial()

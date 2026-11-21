@@ -97,6 +97,10 @@ class Cerebro:
     def responder(self, texto):
         """Devuelve (respuesta, accion, emocion). accion es None o 'nombre' / 'nombre | texto'."""
         import proveedores_cadenas as pc
+        from memoria_adaptadores import atender_turno
+        directo = atender_turno(self, texto)
+        if directo:
+            return directo
         self.ultimo_texto_usuario = texto
         self.historial.append({"role": "user", "content": texto})
         prompt = self.instrucciones(texto)
@@ -112,7 +116,9 @@ class Cerebro:
             crudo = pc.respuesta_emergencia_local()
         respuesta, accion, recuerdo, emocion = separar(crudo)
         if recuerdo and not getattr(self, "turno_invitado", False):
-            self.memoria.recordar(recuerdo)
+            from memoria_adaptadores import procesar_candidato
+            procesar_candidato(self.memoria, recuerdo, texto, fuente="recuerdo_modelo",
+                canal=getattr(self.app, "origen_entrada_actual", "texto"))
         self.historial.append({"role": "assistant", "content": respuesta})
         self._podar_historial()
         if not getattr(self, "turno_invitado", False):
@@ -137,6 +143,9 @@ class Cerebro:
         """Reflexiona sobre la conversación reciente para extraer hechos y temas pendientes."""
         try:
             ultimos = self.historial[-20:]
+            from memoria_adaptadores import historial_prohibido
+            if historial_prohibido(ultimos):
+                return
             intervenciones = sum(1 for m in ultimos if m.get("role") == "user")
             if intervenciones < 4:
                 return
@@ -164,7 +173,8 @@ class Cerebro:
                 if re.match(r"^HECHO\s*:\s*", s, re.I):
                     dato = re.sub(r"^HECHO\s*:\s*", "", s, flags=re.I).strip(" *\"'")
                     if dato and dato.lower() not in ("ninguno", "ninguna", "nada"):
-                        self.memoria.recordar(dato)
+                        self.memoria.recordar(dato, origen="inferido", texto_usuario=charla,
+                                              fuente="extraccion")
                 elif re.match(r"^PREGUNTA\s*:\s*", s, re.I):
                     preg = re.sub(r"^PREGUNTA\s*:\s*", "", s, flags=re.I).strip(" *\"'")
                     if preg and preg.lower() not in ("ninguno", "ninguna", "nada"):

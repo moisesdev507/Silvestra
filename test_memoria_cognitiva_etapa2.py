@@ -266,4 +266,4 @@ class TestAlmacenCognitivo(unittest.TestCase):
         evento.clear()
         reintento = migrar_legado_a_sqlite(self.store, ruta, token_cancelacion=evento)
         self.assertFalse(reintento["cancelado"])
-        self.assertEqual(reintento["migrados"], 1)\n
+        self.assertEqual(reintento["migrados"], 1)
