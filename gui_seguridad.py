@@ -18,7 +18,7 @@ from procesos_seguridad import (
 
 PATRONES_SENSIBLES = (
     "password", "contraseña", "contrasena", "pin", "token",
-    "secret", "clave", "credencial", "otp", "2fa",
+    "secret", "clave", "credencial", "otp", "2fa", "banco", "bank",
 )
 CLASES_PROHIBIDAS = {"Progman", "WorkerW", "Shell_TrayWnd"}
 

@@ -8,9 +8,22 @@ import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 from multimodal_integracion_motor import MotorIntegracionMultimodal
+from multimodal_integracion_modelo import SituacionIntegrada
 from situacion_interpretacion_motor import MotorInterpretacionSituaciones
 
 logger = logging.getLogger(__name__)
+_titulo_sensible = None
+_lock_titulo_sensible = threading.Lock()
+
+
+def _es_titulo_sensible(titulo):
+    global _titulo_sensible
+    if _titulo_sensible is None:
+        with _lock_titulo_sensible:
+            if _titulo_sensible is None:
+                from gui_seguridad import titulo_es_sensible
+                _titulo_sensible = titulo_es_sensible
+    return _titulo_sensible(titulo)
 
 
 class SistemaMultimodalSilvestra:
@@ -131,8 +144,7 @@ class SistemaMultimodalSilvestra:
                 "WorkerW", "Progman", "Shell_TrayWnd"}:
             return None
         titulo = str(datos.get("titulo") or "").strip()
-        from gui_seguridad import titulo_es_sensible
-        omitido = titulo_es_sensible(titulo)
+        omitido = _es_titulo_sensible(titulo)
         return {"hwnd": hwnd, "pid": pid,
                 "titulo": "" if omitido else titulo[:180],
                 "titulo_omitido": omitido,
@@ -219,7 +231,8 @@ class SistemaMultimodalSilvestra:
     def _interpretar(self, observacion):
         if observacion is None:
             return None
-        situacion = self.integrador.consultar_situacion_actual().get("situacion")
+        situacion = (observacion if isinstance(observacion, SituacionIntegrada)
+            else self.integrador.consultar_situacion_actual().get("situacion"))
         if situacion is None:
             return None
         try:
