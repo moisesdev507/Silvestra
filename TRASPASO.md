@@ -81,3 +81,8 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - Coordinador de visión, cámara, interfaz, audio y contexto Windows; correlaciones probables separadas de hechos fuente.
 - Historial sanitizado/acotado, anti-duplicados, tolerancia a fallos y avisos Qt por cola.
 - Autorización externa desactivada; toda propuesta al orquestador es pasiva.
+
+### Fase 3 — Etapa 7 (interpretación de situaciones)
+- Evaluadores extensibles, incertidumbre explícita y memoria temporal con fusión, resolución y expiración.
+- Hechos, relaciones probables, hipótesis y conclusiones verificadas permanecen separados; sin acciones automáticas.
+- Suite sintética `test_interpretacion_situaciones.py`.
