@@ -8,11 +8,10 @@ import threading
 import time
 
 from voz_reproductor import ReproductorAudio, calcular_envolvente_rms
+from cara_sincronia import SincroniaLabial
 
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 
-# Voz natural de Microsoft Edge (gratis, necesita internet).
-# Si falla o no hay internet, usa la voz de Windows.
 VOZ_EDGE = "es-PA-MargaritaNeural"
 
 # Diccionario de respaldo por si config no define EMOCIONES_VOZ
@@ -99,6 +98,8 @@ class Voz:
         self.version = 0
         self._activos = 0
         self._estado_lock = threading.RLock()
+        self._generacion_audio = 0
+        self.sincronia_labial = SincroniaLabial()
         self.proceso = None
         self.pg = None
         self.reproductor = None
@@ -133,11 +134,11 @@ class Voz:
         with self._estado_lock:
             self.version += 1
             self._activos = 0
+            self.sincronia_labial.cancelar()
         self.nivel_volumen = 0.0
         self._parar()
 
     def hablar(self, texto, al_terminar=None, emocion=None):
-        """Dice el texto completo frase por frase con la emoción indicada o deducida."""
         emo_base = normalizar_emocion(emocion) if emocion else deducir_emocion(texto)
         flujo = self.flujo(al_terminar, emocion=emo_base)
         for frase in dividir_frases(texto):
@@ -146,7 +147,6 @@ class Voz:
         flujo.cerrar()
 
     def flujo(self, al_terminar=None, emocion="neutral", t_fin_habla=None, metricas=None):
-        """Empieza a hablar frase por frase conforme van llegando. Usa .agregar(frase) y al final .cerrar()."""
         with self._estado_lock:
             self.version += 1
             version = self.version
@@ -240,6 +240,10 @@ class Voz:
                 pass
 
     def _hablar(self, flujo, al_terminar, version, emocion_defecto="neutral", t_fin_habla=None, metricas=None):
+        if not hasattr(self, "_generacion_audio"):
+            self._generacion_audio = 0
+        if not hasattr(self, "sincronia_labial"):
+            self.sincronia_labial = SincroniaLabial()
         try:
             self._parar()
             buzon = queue.Queue()
@@ -285,9 +289,6 @@ class Voz:
 
             threading.Thread(target=productor, daemon=True).start()
 
-            def _set_nivel(val):
-                self.nivel_volumen = float(val)
-
             while True:
                 if version != self.version:
                     print(f"[voz] cancelada motivo=version_obsoleta ({version}!={self.version})", flush=True)
@@ -299,18 +300,27 @@ class Voz:
                     print(f"[voz] cancelada motivo=version_obsoleta ({version}!={self.version})", flush=True)
                     return
                 frase, audio, emo = item
+                with self._estado_lock:
+                    self._generacion_audio += 1
+                    generacion = self._generacion_audio
+                    self.sincronia_labial.preparar(generacion, frase)
+
+                inicio_audio, set_nivel = self.sincronia_labial.callbacks(
+                    self, generacion, version, _reportar_primera_palabra)
+
                 if audio and self.reproductor is not None:
                     try:
                         print(f"[voz] reproduciendo='{frase}'", flush=True)
                         exito = self.reproductor.reproducir(
                             audio,
                             version_check_fn=lambda: version == self.version,
-                            on_nivel_fn=_set_nivel,
-                            on_inicio_fn=_reportar_primera_palabra,
+                            on_nivel_fn=set_nivel,
+                            on_inicio_fn=inicio_audio,
                         )
                         if version != self.version:
                             print(f"[voz] cancelada motivo=interrupcion_en_reproduccion frase='{frase}'", flush=True)
                             return
+                        self.sincronia_labial.finalizar(generacion)
                         if exito:
                             print(f"[voz] terminó='{frase}'", flush=True)
                             continue
@@ -320,10 +330,12 @@ class Voz:
                 if version != self.version:
                     return
                 self.nivel_volumen = -1.0
+                inicio_audio()
                 _reportar_primera_palabra()
                 print(f"[voz] reproduciendo='{frase}'", flush=True)
                 self._voz_windows(frase, version, emocion=emo)
                 self.nivel_volumen = 0.0
+                self.sincronia_labial.finalizar(generacion, inmediata=version != self.version)
                 if version == self.version:
                     print(f"[voz] terminó='{frase}'", flush=True)
 

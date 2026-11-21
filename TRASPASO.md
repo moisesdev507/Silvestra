@@ -65,3 +65,7 @@ Aprendizaje experiencial trazable sobre SQLite cognitiva: patrones requieren 3 f
 
 ## Fase 5 — Etapa 4 (cierre)
 `integracion_cognitiva_fase5.py` comparte planificación, aprendizaje, ejecución controlada y verificación. La app conecta y cierra el coordinador; Cerebro reutiliza sus motores. Aprendizaje asíncrono deduplicado por usuario/plan/tarea; migración aditiva de experiencias previas. Preparación de ejecución exige aprobación del plan y permisos independientes; sin registro de herramientas no hay ejecución. Validación E2E A–G en `test_integracion_global_fase5_etapa4.py`. No inicia Fase 6.
+
+
+## Voz–cara
+La boca sigue el estado real y el RMS por generación (`cara_sincronia.py`); las cancelaciones limpian el estado y Qt solo renderiza.

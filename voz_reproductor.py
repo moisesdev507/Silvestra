@@ -1,5 +1,6 @@
 """Módulo de reproducción de audio thread-safe con SDL/pygame para Silvestra."""
 import io
+import math
 import threading
 import time
 
@@ -22,12 +23,11 @@ def calcular_envolvente_rms(audio_bytes, fps=30):
             return None, snd
         frec = init_res[0]
         muestras_por_cuadro = max(1, int(frec / fps))
-        num_cuadros = len(mono) // muestras_por_cuadro
-        if num_cuadros == 0:
-            return None, snd
-        recortado = mono[:num_cuadros * muestras_por_cuadro].reshape(num_cuadros, muestras_por_cuadro)
+        num_cuadros = math.ceil(len(mono) / muestras_por_cuadro)
+        rellenado = np.pad(mono, (0, num_cuadros * muestras_por_cuadro - len(mono)))
+        recortado = rellenado.reshape(num_cuadros, muestras_por_cuadro)
         rms = np.sqrt(np.mean(recortado**2, axis=1))
-        rms_norm = np.clip(rms * 4.2, 0.0, 1.0).tolist()
+        rms_norm = np.clip(rms, 0.0, 1.0).tolist()
         return rms_norm, snd
     except Exception:
         return None, None
@@ -42,6 +42,7 @@ class ReproductorAudio:
         self._buffer_actual = None
         self._snd_actual = None
         self._canal_actual = None
+        self._sesion = 0
 
     def reproducir(self, audio_bytes, version_check_fn, on_nivel_fn, on_inicio_fn=None):
         """Reproduce audio_bytes de forma síncrona en el hilo llamador, actualizando nivel_volumen."""
@@ -52,6 +53,8 @@ class ReproductorAudio:
             if not version_check_fn():
                 return False
             self._parar_mixer()
+            self._sesion += 1
+            sesion = self._sesion
             bio = io.BytesIO(audio_bytes)
             self._buffer_actual = bio
             rms_norm, snd = calcular_envolvente_rms(audio_bytes)
@@ -66,36 +69,29 @@ class ReproductorAudio:
                 self.pg.mixer.music.load(bio)
                 self.pg.mixer.music.play()
 
-        if on_inicio_fn:
-            on_inicio_fn()
-
-        t_inicio = time.time()
-        while version_check_fn():
-            with self._lock:
-                if canal is not None:
-                    busy = canal.get_busy()
-                elif self.pg is not None:
-                    busy = self.pg.mixer.music.get_busy()
+        try:
+            if on_inicio_fn:
+                on_inicio_fn()
+            t_inicio = time.monotonic()
+            while version_check_fn():
+                with self._lock:
+                    busy = canal.get_busy() if canal is not None else self.pg.mixer.music.get_busy()
+                if not busy:
+                    break
+                if canal is not None and rms_norm:
+                    idx = int((time.monotonic() - t_inicio) * 30)
+                    on_nivel_fn(rms_norm[idx] if idx < len(rms_norm) else 0.0)
                 else:
-                    busy = False
-            if not busy:
-                break
-
-            if canal is not None and rms_norm:
-                idx = int((time.time() - t_inicio) * 30)
-                vol = rms_norm[idx] if idx < len(rms_norm) else 0.0
-                on_nivel_fn(vol)
-            else:
-                on_nivel_fn(-1.0)
-
-            time.sleep(0.02)
-
-        on_nivel_fn(0.0)
-
-        with self._lock:
-            self._parar_mixer()
-
-        return version_check_fn()
+                    on_nivel_fn(-1.0)
+                time.sleep(0.02)
+            return version_check_fn()
+        finally:
+            try:
+                on_nivel_fn(0.0)
+            finally:
+                with self._lock:
+                    if self._sesion == sesion:
+                        self._parar_mixer()
 
     def reproducir_corto(self, audio_bytes, volumen=0.65):
         """Reproduce un audio corto (ej. muletilla) en un canal libre de forma no bloqueante."""
@@ -115,6 +111,7 @@ class ReproductorAudio:
     def detener(self):
         """Detiene de inmediato toda reproducción activa y libera buffers bajo Lock."""
         with self._lock:
+            self._sesion += 1
             self._parar_mixer()
 
     def esta_ocupado(self):

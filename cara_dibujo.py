@@ -7,6 +7,7 @@ from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QCursor, QPainter, QPen, QRadialGradient
 
 import cara_baile
+import cara_sincronia
 
 TAM = 208               # tamaño compacto de la ventana de la cara (-17%)
 ESC = TAM / 280.0       # escala proporcional del dibujo
@@ -304,20 +305,13 @@ def pintar(self):
         p.drawEllipse(QPointF(-55, 22), 12, 7)
         p.drawEllipse(QPointF(55, 22), 12, 7)
 
-        # Boca con sincronía labial RMS / animación suave silábica
-        if self.hablando:
-            nivel_rms = getattr(self, "nivel_volumen", -1.0)
-            if nivel_rms >= 0.0:
-                abre_target = 3.0 + 15.0 * min(1.0, nivel_rms * 1.6)
-            else:
-                fase_silaba = (math.sin(t * 11.5) * 0.5 + 0.5) * (0.6 + 0.4 * math.sin(t * 3.3) ** 2)
-                abre_target = 3.5 + 11.0 * fase_silaba
-
-            self.boca_abre += (abre_target - self.boca_abre) * 0.35
-            ancho_boca = max(11.0, self.val_boca_ancho * 0.48)
+        # El estado y la forma los calcula la sincronía; Qt solo dibuja.
+        moviendo, apertura, ancho_boca = cara_sincronia.forma_boca(self, t, ahora)
+        if moviendo:
+            self.boca_abre = apertura
             p.setBrush(QColor(200, 80, 100))
             p.setPen(Qt.NoPen)
-            p.drawEllipse(QPointF(0, 38), ancho_boca, max(2.5, self.boca_abre))
+            p.drawEllipse(QPointF(0, 38), ancho_boca, max(2.5, apertura))
         else:
             self.boca_abre = 0.0
             pluma = QPen(QColor(200, 80, 100), 3)
