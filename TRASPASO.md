@@ -69,3 +69,7 @@ Aprendizaje experiencial trazable sobre SQLite cognitiva: patrones requieren 3 f
 
 ## Voz–cara
 La boca sigue el estado real y el RMS por generación (`cara_sincronia.py`); las cancelaciones limpian el estado y Qt solo renderiza.
+
+
+## Fase 6 Etapa 1
+Contratos versionados: API pública, validación/sanitización, mensajes y registro RAM. Scopes fail-closed; observaciones no ejecutables; pruebas sintéticas aisladas.
