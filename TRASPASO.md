@@ -85,6 +85,10 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - Evidencia independiente positiva obligatoria.
 - Recuperación limitada a idempotentes con permisos vigentes.
 
+### Fase 2 — Etapa 8 cerrada
+- Orquestador global con modos restringido, supervisado y preautorizado.
+- DAG validado, integración de motores y snapshots no bloqueantes.
+
 ## 6. Guía de prompts para Gemini (Antigravity)
 ```text
 Lee PROYECTO.md, TRASPASO.md y archivos relevantes. Define alcance, reglas .py/TRASPASO,
