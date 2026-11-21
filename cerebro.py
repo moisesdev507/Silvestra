@@ -90,7 +90,9 @@ class Cerebro:
                 self._seguimiento_visual_pendiente = False
         else:
             self._seguimiento_visual_pendiente = False
-        if len(pregunta) >= 18 and not es_invitado and hasattr(self.memoria, "razonar"):
+        from planificacion_motor import es_solicitud_explicita
+        solicitud_plan = es_solicitud_explicita(texto_actual)
+        if (len(pregunta) >= 18 or solicitud_plan) and not es_invitado and hasattr(self.memoria, "razonar"):
             try:
                 import contexto_motor
                 contexto_engine = contexto_motor.obtener_motor_contexto(app).obtener_contexto()
@@ -102,6 +104,17 @@ class Cerebro:
                 resumen = formatear(cognicion, 900)
                 if resumen:
                     contexto_adicional = (contexto_adicional + "\n" + resumen).strip()[:1800]
+                from planificacion_motor import PlanificacionMotor, formatear as formatear_plan
+                if solicitud_plan:
+                    motor = getattr(self, "_motor_planificacion", None)
+                    if motor is None or motor.usuario_id != self.memoria.usuario_id:
+                        motor = PlanificacionMotor(self.memoria.almacen, self.memoria.usuario_id)
+                        self._motor_planificacion = motor
+                    contexto_plan = dict(contexto_engine or {})
+                    contexto_plan["multimodal"] = datos_multimodales or {}
+                    plan = motor.crear_plan(texto_actual, cognicion, contexto_plan,
+                        self, token_cancelacion=getattr(self, "token_cancelacion", None))
+                    contexto_adicional = (contexto_adicional + "\n" + formatear_plan(plan)).strip()[:2800]
             except Exception as exc:
                 print(f"[cerebro] razonamiento de memoria no disponible ({type(exc).__name__})", flush=True)
         return construir_prompt(self.memoria, texto_actual, self._obtener_historial_podado(),

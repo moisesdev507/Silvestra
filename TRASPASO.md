@@ -55,3 +55,6 @@ Memoria cognitiva SQLite/FTS5: formación, recuperación, grafo, linaje, consoli
 
 ## Fase 5 — Etapa 1
 Motor determinista de razonamiento (`razonamiento_modelos.py`, `razonamiento_fuentes.py`, `razonamiento_evaluador.py`, `razonamiento_motor.py`) integrado en Cerebro. Reutiliza el paquete de memoria ya calculado; separa estado vivo, hechos explícitos, inferencias, hipótesis y conclusiones trazables. Cancelable, de solo lectura y sin acciones. Suite `test_razonamiento_inteligente_fase5_etapa1.py`; no iniciar Etapa 2 sin revisión.
+
+## Fase 5 — Etapa 2
+Planificación reutiliza el DAG de `planificador_modelo.py`; evaluación de alternativas/riesgos, progreso y replanificación incremental se guardan por usuario en la SQLite cognitiva. Cerebro solo genera planes ante pedidos explícitos. Recomendación, aprobación humana y autorización de ejecución son estados independientes; no hay ejecución autónoma.

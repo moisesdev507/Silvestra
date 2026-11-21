@@ -8,11 +8,12 @@ ESTADO_PENDIENTE = "pendiente"
 ESTADO_EN_PROGRESO = "en_progreso"
 ESTADO_COMPLETADA = "completada"
 ESTADO_BLOQUEADA = "bloqueada"
+ESTADO_FALLIDA = "fallida"
 ESTADO_CANCELADA = "cancelada"
 
 ESTADOS_VALIDOS = {
     ESTADO_PENDIENTE, ESTADO_EN_PROGRESO, ESTADO_COMPLETADA,
-    ESTADO_BLOQUEADA, ESTADO_CANCELADA,
+    ESTADO_BLOQUEADA, ESTADO_FALLIDA, ESTADO_CANCELADA,
 }
 FACTOR_COMPLEJIDAD = {"baja": 1.0, "media": 0.5, "alta": 0.0}
 
@@ -116,9 +117,11 @@ class Fase:
         estados = {t.estado for t in self.tareas}
         if estados == {ESTADO_COMPLETADA}:
             self.estado = ESTADO_COMPLETADA
+        elif estados == {ESTADO_FALLIDA}:
+            self.estado = ESTADO_FALLIDA
         elif ESTADO_BLOQUEADA in estados:
             self.estado = ESTADO_BLOQUEADA
-        elif ESTADO_EN_PROGRESO in estados or (ESTADO_COMPLETADA in estados and ESTADO_PENDIENTE in estados):
+        elif ESTADO_EN_PROGRESO in estados or ESTADO_FALLIDA in estados or (ESTADO_COMPLETADA in estados and ESTADO_PENDIENTE in estados):
             self.estado = ESTADO_EN_PROGRESO
         elif estados == {ESTADO_CANCELADA}:
             self.estado = ESTADO_CANCELADA
@@ -204,9 +207,11 @@ class PlanObjetivo:
         estados = {f.estado for f in self.fases} if self.fases else {self.estado}
         if estados == {ESTADO_COMPLETADA}:
             self.estado = ESTADO_COMPLETADA
+        elif estados == {ESTADO_FALLIDA}:
+            self.estado = ESTADO_FALLIDA
         elif ESTADO_BLOQUEADA in estados:
             self.estado = ESTADO_BLOQUEADA
-        elif ESTADO_EN_PROGRESO in estados or (ESTADO_COMPLETADA in estados and ESTADO_PENDIENTE in estados):
+        elif ESTADO_EN_PROGRESO in estados or ESTADO_FALLIDA in estados or (ESTADO_COMPLETADA in estados and ESTADO_PENDIENTE in estados):
             self.estado = ESTADO_EN_PROGRESO
         elif estados == {ESTADO_CANCELADA}:
             self.estado = ESTADO_CANCELADA
