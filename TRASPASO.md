@@ -45,51 +45,13 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - Persistencia atómica y prueba de humo estricta operativas.
 
 ## 5. Estado Fase 2–3
-- Fase 2 cerrada: permisos, ejecución, archivos, procesos, GUI, verificación y autonomía.
+- Fase 2 (1–8): permisos, colas cancelables, sandbox, procesos/GUI seguros, evidencia y orquestación supervisada con DAG.
+- Fase 3 (1–4): percepción multimodal, visión/OCR, cámara temporal e interfaces Win32; pasiva, privada y sin persistencia de capturas.
+- Fase 3 (5–8): clasificación auditiva local, integración y correlación multimodal, interpretación temporal e integración global. Incertidumbre explícita; permisos de cámara/micrófono/envío externo apagados. Suite global disponible; pruebas físicas pendientes.
+- Qt: cola acotada, repintado suspendido al minimizar; al despertar restaura solo el avatar, no el panel Casa.
 
-### Fase 2 — Etapas 1–8 cerradas
-- Contratos, permisos, cola cancelable, sandbox, procesos y GUI seguros; evidencia y recuperación idempotente.
-- Orquestador con modos restringido/supervisado/preautorizado, DAG y snapshots no bloqueantes.
+## Fase 4 — Etapas 1–8
+Memoria cognitiva SQLite/FTS5: formación, recuperación, grafo, linaje, consolidación, olvido y razonamiento trazable. Aislamiento por usuario; consultas de razonamiento de solo lectura. Contexto Windows vivo separado de recuerdos históricos; regresión E2E validada en almacenamiento aislado.
 
-### Fase 3 — Etapa 1 cerrada
-- Percepción multimodal, cola concurrente, TTL y dedupe.
-- Liberación de referencias y puentes pasivos a contexto/HUD/autonomía.
-
-### Fase 3 — Etapa 2 cerrada
-- Comprensión visual PNG/JPEG/WebP y OCR local.
-
-### Fase 3 — Etapa 3 cerrada
-- Comparación local de fotogramas y contexto temporal acotado.
-- Fuente dual compatible con Camara y callable sintética.
-- Sin almacenamiento permanente ni envío externo por defecto.
-
-### Fase 3 — Etapa 4 cerrada
-- Comprensión visual de interfaces: estructura Win32, OCR, formularios y alertas.
-- Consulta NL pasiva sin acciones; campos sensibles enmascarados.
-- Caché LRU de mapas/texto, sin imágenes o arrays, y remoto bloqueado por defecto.
-
-### Corrección UI — estabilidad al minimizar
-- Cola Qt drenada en lotes acotados con reprogramación de 1 ms.
-- Movimiento y repintado suspendidos al minimizar o mostrar escritorio.
-
-### Fase 3 — Etapa 5 (inteligencia auditiva)
-- Clasificación espectral local, VAD opcional, eco TTS, historial temporal solo de metadatos y consultas recientes.
-- Permiso de micrófono, grabación continua y envío externo desactivados por defecto; propuestas de autonomía pasivas.
-- Suite sintética `test_inteligencia_auditiva.py`; heurística sin modelo neuronal dedicado.
-
-### Fase 3 — Etapa 6 (integración multimodal)
-- Coordinador de visión, cámara, interfaz, audio y contexto Windows; correlaciones probables separadas de hechos fuente.
-- Historial sanitizado/acotado, anti-duplicados, tolerancia a fallos y avisos Qt por cola.
-- Autorización externa desactivada; toda propuesta al orquestador es pasiva.
-
-### Fase 3 — Etapa 7 (interpretación de situaciones)
-- Evaluadores extensibles, incertidumbre explícita y memoria temporal con fusión, resolución y expiración.
-- Hechos, relaciones probables, hipótesis y conclusiones verificadas permanecen separados; sin acciones automáticas.
-- Suite sintética `test_interpretacion_situaciones.py`.
-
-### Fase 3 — Etapa 8 (integración global)
-- Puente global con ciclo de vida no bloqueante; cámaras, micrófono, captura continua y envío externo desactivados por defecto.
-- Contexto conserva la última ventana externa no sensible; captura efímera cerrada en `finally`.
-- Cerebro incluye observaciones e hipótesis separadas. Suite `test_validacion_global_fase3.py`; pendientes pruebas físicas autorizadas.
-## Cierre Fase 4 — Etapa 8
-Integración validada: SQLite/FTS5, formación, recuperación, grafo, linaje, consolidación, olvido y razonamiento trazable. El razonador es de solo lectura; contexto Windows en vivo permanece separado de recuerdos históricos. Validación E2E y regresión completa ejecutadas en almacenamiento aislado. Sin inicio de Fase 5.
+## Fase 5 — Etapa 1
+Motor determinista de razonamiento (`razonamiento_modelos.py`, `razonamiento_fuentes.py`, `razonamiento_evaluador.py`, `razonamiento_motor.py`) integrado en Cerebro. Reutiliza el paquete de memoria ya calculado; separa estado vivo, hechos explícitos, inferencias, hipótesis y conclusiones trazables. Cancelable, de solo lectura y sin acciones. Suite `test_razonamiento_inteligente_fase5_etapa1.py`; no iniciar Etapa 2 sin revisión.

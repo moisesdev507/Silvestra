@@ -97,8 +97,9 @@ class Cerebro:
                 resultado = self.memoria.razonar(texto_actual, contexto_engine=contexto_engine,
                     multimodal=datos_multimodales or None)
                 paquete_memoria = resultado.get("recuperacion")
-                from memoria_razonamiento import formatear
-                resumen = formatear(resultado, 650)
+                from razonamiento_motor import razonar, formatear
+                cognicion = razonar(texto_actual, resultado_memoria=resultado)
+                resumen = formatear(cognicion, 900)
                 if resumen:
                     contexto_adicional = (contexto_adicional + "\n" + resumen).strip()[:1800]
             except Exception as exc:
