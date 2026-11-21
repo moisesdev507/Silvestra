@@ -44,12 +44,8 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - PySide6, voz, cámara, Context Engine, HUD, iniciativa y planificador cerrados.
 - Persistencia atómica y prueba de humo estricta operativas.
 
-## 5. Tareas pendientes (Fase 2)
-- [ ] **Rotar clave de Groq:** Clave expuesta en el pasado; rotar en `config.py` y Groq.
-- [ ] **Módulo de diagnóstico central (`diagnostico.py`):** Monitorización integral de salud de subsistemas.
-- [ ] **Cerebro premium ($5/mes):** Integrar proveedor de alta calidad con límite estricto de gasto.
-- [ ] **Respaldo local:** Modelo SLM/LLM cuantizado local (Ollama / llama.cpp) offline.
-- [ ] **Núcleo headless y nube:** Separar lógica para correr 24/7 en VPS con Telegram.
+## 5. Estado Fase 2–3
+- Fase 2 cerrada: permisos, ejecución, archivos, procesos, GUI, verificación y autonomía.
 
 ### Fase 2 — Etapa 1 cerrada
 - Contratos puros `ejecucion_modelo.py`, registro thread-safe y resolución normalizada.
@@ -93,6 +89,11 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - Comparación local de fotogramas y contexto temporal acotado.
 - Fuente dual compatible con Camara y callable sintética.
 - Sin almacenamiento permanente ni envío externo por defecto.
+
+### Fase 3 — Etapa 4 cerrada
+- Comprensión visual de interfaces: estructura Win32, OCR, formularios y alertas.
+- Consulta NL pasiva sin acciones; campos sensibles enmascarados.
+- Caché LRU de mapas/texto, sin imágenes o arrays, y remoto bloqueado por defecto.
 
 ### Corrección UI — estabilidad al minimizar
 - Cola Qt drenada en lotes acotados con reprogramación de 1 ms.
