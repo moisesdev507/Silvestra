@@ -13,6 +13,7 @@ import memoria_consolidacion as consol
 import memoria_olvido as olvido
 import memoria_razonamiento as razonar
 import memoria_recuperacion as recuperar
+import memoria_tema
 from memoria import Memoria
 
 
@@ -188,6 +189,39 @@ class TestValidacionCognitivaEtapa8(unittest.TestCase):
             names = [n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)]
             self.assertNotIn("acciones", names)
             self.assertNotIn("ejecucion_modelo", names)
+
+    def test_16_olvido_filtra_nucleo_y_preserva_otros_temas(self):
+        objetivo = self.save("El módulo de pagos de Uniconex procesa facturas")
+        otro_objetivo = self.save("Uniconex mantiene el pago de facturas recurrentes")
+        otro_cliente = self.save("El módulo de pagos de Acme procesa facturas")
+        unrelated = self.save("El usuario me llamó Silvestre durante una prueba de voz")
+        respuesta = self.mem.olvidar("lo que te dije sobre el módulo de pagos de Uniconex")
+        self.assertIn("olvidado 2", respuesta)
+        restantes = [x["id"] for x in self.store.listar_recuerdos(100, solo_activos=False, usuario_id="e2e")]
+        self.assertNotIn(objetivo["id"], restantes)
+        self.assertNotIn(otro_objetivo["id"], restantes)
+        self.assertIn(otro_cliente["id"], restantes)
+        self.assertIn(unrelated["id"], restantes)
+        self.assertEqual(self.store.olvidar_por_tema("sobre pagos"), 0)
+
+    def test_17_consulta_rapida_no_duplica_ni_rellena(self):
+        frases = ["El usuario me llamó Silvestre", "Prueba humo punto pi funcionó",
+                  "Prefiere escuchar música tranquila", "Su proyecto usa Python", "Ayer salió a caminar"]
+        for frase in frases:
+            self.save(frase)
+        respuesta = self.mem.consultar("sobre el método de pago de Unicomens")
+        self.assertNotIn("Sobre sobre", respuesta)
+        self.assertIn("no tengo recuerdos guardados", respuesta)
+        self.assertFalse(any(frase in respuesta for frase in frases))
+
+    def test_18_variantes_foneticas_requieren_anclaje_tematico(self):
+        self.assertTrue(memoria_tema.coincide("sobre método de pago de Unicomens",
+            "El método de pago de Uniconex es transferencia"))
+        self.assertTrue(memoria_tema.coincide("método de pago UniConnect",
+            "Método de pago de Uniconex"))
+        self.assertFalse(memoria_tema.coincide("método de pago de Unicomens",
+            "El método de pago de Acme"))
+        self.assertFalse(memoria_tema.coincide("Unicomens", "Uniconex permite pagos"))
 
 
 if __name__ == "__main__":

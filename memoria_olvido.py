@@ -1,5 +1,6 @@
 """Obsolescencia y olvido controlado; purga ligada a una petición explícita."""
 import memoria_politicas
+import memoria_tema
 
 
 def evaluar(almacen, usuario_id="local", umbral_dias=365):
@@ -38,6 +39,8 @@ def olvidar(almacen, tema, usuario_id="local", explicito=False):
     if not explicito:
         raise PermissionError("El olvido físico requiere una solicitud explícita")
     uid = almacen._uid(usuario_id)
-    filas = almacen.buscar_texto(tema, 500, solo_activos=False, usuario_id=uid)
-    ids = [f["id"] for f in filas]
+    if not memoria_tema.terminos(tema):
+        return 0
+    filas = almacen.listar_recuerdos(10000, usuario_id=uid)
+    ids = [f["id"] for f in filas if memoria_tema.coincide(tema, f.get("contenido"))]
     return almacen.eliminar_recuerdos_fisicos(ids, uid)

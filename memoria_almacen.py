@@ -10,6 +10,7 @@ import memoria_esquema
 from memoria_transacciones import TransaccionesMemoria
 from memoria_modelos import validar_usuario_id
 import memoria_almacen_purga
+import memoria_tema
 
 
 def normalizar(texto):
@@ -176,14 +177,11 @@ class AlmacenMemoriaCognitiva(TransaccionesMemoria):
 
     def olvidar_por_tema(self, tema, usuario_id=None):
         uid = self._uid(usuario_id)
-        filas = self.buscar_texto(tema, 500, usuario_id=uid)
-        ids = [x["id"] for x in filas]
-        if ids:
-            with self._lock:
-                self.conexion.executemany("UPDATE recuerdos SET estado='eliminado',actualizado_en=? WHERE id=? AND usuario_id=?",
-                                          [(_ahora(), i, uid) for i in ids])
-                self.conexion.commit()
-        return len(ids)
+        if not memoria_tema.terminos(tema):
+            return 0
+        filas = self.listar_recuerdos(10000, usuario_id=uid)
+        ids = [x["id"] for x in filas if memoria_tema.coincide(tema, x.get("contenido"))]
+        return self.eliminar_recuerdos_fisicos(ids, uid)
 
     def eliminar_recuerdo(self, recuerdo_id, fisico=False, usuario_id=None):
         uid = self._uid(usuario_id)

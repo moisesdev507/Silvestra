@@ -7,6 +7,7 @@ from config import ARCHIVO_MEMORIA
 import acciones
 import memoria_busqueda as mb
 import memoria_tiempo as mt
+import memoria_tema
 import persistencia_segura as ps
 from memoria_almacen import AlmacenMemoriaCognitiva
 from memoria_gestor import GestorMemoria
@@ -144,14 +145,20 @@ class Memoria(MantenimientoMemoria):
             print(f"[memoria] guardados=0 relevantes={len(limpios)} total={total}", flush=True)
             return f"De ti sé que te llamas {creador}, y recuerdo esto: " + "; ".join(limpios) + "."
 
-        paquete = self.recuperar(tema, limite=5)
-        encontrados = [r["contenido"] for r in paquete["resultados"]]
+        tema_limpio = memoria_tema.normalizar(tema)
+        if not memoria_tema.terminos(tema_limpio):
+            print(f"[memoria] guardados=0 relevantes=0 total={total}", flush=True)
+            return f"{creador}, no tengo guardado nada sobre '{tema_limpio or tema}' todavía."
+        paquete = self.recuperar(tema_limpio, limite=5)
+        encontrados = [r["contenido"] for r in paquete["resultados"]
+            if float(r.get("puntuacion", 0) or 0) >= .22 and
+            memoria_tema.coincide(tema_limpio, r.get("contenido", ""))]
         print(f"[memoria] guardados=0 relevantes={len(encontrados)} total={total}", flush=True)
         if not encontrados:
-            return f"{creador}, no tengo guardado nada sobre '{tema}' todavía."
+            return f"{creador}, no tengo recuerdos guardados sobre '{tema_limpio}' todavía."
 
         limpios = [re.sub(r"^\[[^\]]+\]\s*", "", x).strip() for x in encontrados]
-        return f"Sobre {tema} recuerdo: " + "; ".join(limpios) + "."
+        return f"Sobre {tema_limpio} recuerdo: " + "; ".join(limpios) + "."
 
     def extraer_hechos_conversacion(self, historial, pedir_fn=None):
         try:
