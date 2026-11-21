@@ -86,3 +86,8 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - Evaluadores extensibles, incertidumbre explícita y memoria temporal con fusión, resolución y expiración.
 - Hechos, relaciones probables, hipótesis y conclusiones verificadas permanecen separados; sin acciones automáticas.
 - Suite sintética `test_interpretacion_situaciones.py`.
+
+### Fase 3 — Etapa 8 (integración global)
+- Puente global con ciclo de vida no bloqueante; cámaras, micrófono, captura continua y envío externo desactivados por defecto.
+- Contexto conserva la última ventana externa no sensible; captura efímera cerrada en `finally`.
+- Cerebro incluye observaciones e hipótesis separadas. Suite `test_validacion_global_fase3.py`; pendientes pruebas físicas autorizadas.

@@ -48,7 +48,27 @@ class Cerebro:
 
     def instrucciones(self, texto_actual=None):
         es_invitado = bool(getattr(self, "turno_invitado", False))
-        return construir_prompt(self.memoria, texto_actual, self._obtener_historial_podado(), es_invitado=es_invitado)
+        prompt = construir_prompt(self.memoria, texto_actual, self._obtener_historial_podado(), es_invitado=es_invitado)
+        app = getattr(self, "app", None)
+        puente = getattr(app, "sistema_multimodal", None) if app else None
+        pregunta = str(texto_actual or "").lower()
+        consulta = any(x in pregunta for x in
+            ("pantalla", "ventana", "aplicacion abierta", "aplicación abierta", "sonido", "audio", "situacion", "situación", "que pasa", "qué pasa"))
+        if puente is not None and consulta:
+            try:
+                datos = puente.consultar_entorno_actual(texto_actual)
+                ventana = datos.get("ventana", {})
+                bloque = ("\nContexto multimodal reciente, evidencia observada: ventana externa: "
+                    + str(ventana.get("titulo", "sin ventana externa conocida"))
+                    + "; audio: " + str(datos.get("audio", "sin datos recientes"))
+                    + "; situación: " + str(datos.get("situacion", "sin interpretación"))
+                    + "; pantalla: " + str(datos.get("captura_pantalla", "no consultada"))
+                    + "\nDistingue hechos de hipótesis. No afirmes causalidad ni inventes detalles visuales; "
+                    "explica si faltan permisos, captura o datos.")
+                prompt += bloque[:1100]
+            except Exception:
+                prompt += "\nContexto multimodal no disponible; no infieras datos del entorno."
+        return prompt
 
     def _pedir(self, mensajes, tarea="charla"):
         import proveedores

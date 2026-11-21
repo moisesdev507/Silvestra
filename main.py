@@ -160,6 +160,13 @@ class Silvestra:
         except Exception as e:
             print(f"[contexto] Error al iniciar motor: {e}", flush=True)
             self.contexto_motor = None
+        try:
+            from multimodal_puente_app import SistemaMultimodalSilvestra
+            self.sistema_multimodal = SistemaMultimodalSilvestra(self, self.contexto_motor)
+            self.sistema_multimodal.iniciar()
+        except Exception as e:
+            print(f"[multimodal] Integracion no disponible: {e}", flush=True)
+            self.sistema_multimodal = None
 
         self.cara.root.after(100, self.revisar_cola)
 
@@ -299,6 +306,11 @@ class Silvestra:
 
     def detener(self):
         """Detiene de forma limpia los motores y subprocesos al cerrar la aplicación."""
+        if getattr(self, "sistema_multimodal", None):
+            try:
+                self.sistema_multimodal.detener()
+            except Exception:
+                pass
         if hasattr(self, "contexto_motor") and self.contexto_motor:
             try:
                 self.contexto_motor.detener()
