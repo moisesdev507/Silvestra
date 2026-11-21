@@ -10,14 +10,14 @@ from cerebro_prompt import (
     MESES,
     SOBRE_MI,
     cargar_alma,
-    obtener_hora_panama,
+    obtener_hora_local,
     construir_prompt,
 )
 
 
 def ahora_texto():
-    """Devuelve la fecha y hora oficial de Panamá."""
-    return obtener_hora_panama()
+    """Devuelve la fecha y hora local del sistema."""
+    return obtener_hora_local()
 
 
 class Cerebro:

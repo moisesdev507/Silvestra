@@ -23,13 +23,9 @@ SOBRE_MI = (
 )
 
 
-def obtener_hora_panama():
-    """Genera la fecha y hora oficial de la zona America/Panama en formato legible."""
-    try:
-        from zoneinfo import ZoneInfo
-        now = datetime.datetime.now(ZoneInfo("America/Panama"))
-    except Exception:
-        now = datetime.datetime.now()
+def obtener_hora_local():
+    """Genera la fecha y hora local del sistema con zona horaria explícita."""
+    now = datetime.datetime.now().astimezone()
 
     dia_sem = DIAS[now.weekday()]
     dia = now.day
@@ -38,7 +34,8 @@ def obtener_hora_panama():
     h12 = now.hour % 12 or 12
     minu = f"{now.minute:02d}"
     meridiano = "p. m." if now.hour >= 12 else "a. m."
-    return f"Hoy es {dia_sem} {dia} de {mes} de {anio}, {h12}:{minu} {meridiano}"
+    aclaracion = " (medianoche / madrugada, hora local)" if now.hour == 0 else " (hora local)"
+    return f"Hoy es {dia_sem} {dia} de {mes} de {anio}, {h12}:{minu} {meridiano}{aclaracion}"
 
 
 def cargar_alma():
@@ -126,8 +123,8 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
     m = memoria
     tokens_base = int((len("\n".join(m.hechos)) + 6800) / 3.6)
 
-    hora_panama = obtener_hora_panama()
-    print(f"[hora] inyectada='{hora_panama}'", flush=True)
+    hora_local = obtener_hora_local()
+    print(f"[hora] inyectada='{hora_local}'", flush=True)
 
     alma_texto = f"{cargar_alma()}\n\n{SOBRE_MI}"
     tok_alma = max(1, int(len(alma_texto) / 3.6))
@@ -207,7 +204,7 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         "Reacciona primero a lo que te dicen antes de responder. Si te piden presentarte, hazlo con orgullo y personalidad.\n"
         "Estilo conversacional: Respuestas habladas directas de 1 a 2 frases cortas por defecto (solo extiéndete si te piden explicar o charlar). "
         "PROHIBIDO terminar con preguntas de relleno automáticas ('¿en qué te ayudo?', '¿qué tienes en mente?', '¿algo más?'). Solo pregunta si falta un dato indispensable.\n"
-        f"FECHA Y HORA REAL: {hora_panama}. Silvestra NUNCA inventa la hora ni la fecha: usa exactamente este dato.\n\n"
+        f"FECHA Y HORA LOCAL REAL: {hora_local}. 12:xx a. m. significa medianoche/madrugada; 12:xx p. m., mediodía. Usa exactamente este dato.\n\n"
         "ACCIONES DISPONIBLES en la laptop (SOLO estas; no inventes que algo ya está hecho):\n"
         f"{desc_acciones}\n\n"
         "Regla anti-invención estricta: jamás inventes vivencias ni datos falsos. "

@@ -3,10 +3,14 @@ import queue
 import threading
 import time
 import unittest
+import datetime
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from conversacion import alternar_conversacion
 from voz import Flujo, Voz
 from oido import Oido
+from calidad_respuesta import analizar_calidad_texto
 
 
 class TestReanudacionEscucha(unittest.TestCase):
@@ -78,6 +82,38 @@ class TestReanudacionEscucha(unittest.TestCase):
         hilo.join(1.0)
         self.assertFalse(hilo.is_alive())
         self.assertEqual(voz._activos, 1)
+
+    def test_calidad_allowlist_toma_todo_el_contexto_de_ventanas(self):
+        contexto = [{"role": "system", "content": (
+            'Aplicación activa en Windows: Code.exe | Ventana: "VS Code"\n'
+            "Contexto multimodal reciente:\nVentanas visibles por orden Z:\n"
+            '1. ChatGPT.exe | Ventana: "ChatGPT"\n'
+            '2. chrome.exe | Ventana: "Chrome"\n') }]
+        respuesta = "Tienes abierto Visual Studio Code, la ventana de ChatGPT y Chrome."
+        self.assertTrue(analizar_calidad_texto(respuesta, contexto_windows=contexto)[0])
+        self.assertFalse(analizar_calidad_texto("Soy ChatGPT.", contexto_windows=contexto)[0])
+        self.assertFalse(analizar_calidad_texto("Como modelo de OpenAI, no puedo.", contexto_windows=contexto)[0])
+
+    def test_hora_local_aclara_medianoche_y_usa_astimezone(self):
+        import cerebro_prompt
+        convertido = []
+        fecha = datetime.datetime(2026, 1, 2, 0, 7, tzinfo=datetime.timezone.utc)
+
+        class Ahora:
+            def astimezone(self):
+                convertido.append(True)
+                return fecha
+
+        class FechaHora:
+            @staticmethod
+            def now():
+                return Ahora()
+
+        with patch.object(cerebro_prompt, "datetime", SimpleNamespace(datetime=FechaHora)):
+            hora = cerebro_prompt.obtener_hora_local()
+        self.assertTrue(convertido)
+        self.assertIn("12:07 a. m.", hora)
+        self.assertIn("medianoche / madrugada", hora)
 
 
 if __name__ == "__main__":

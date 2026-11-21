@@ -57,16 +57,19 @@ def es_token_corrupto(token):
 
 def _tokens_contexto_windows(contexto):
     if isinstance(contexto, (list, tuple)):
-        texto_ctx = "\n".join(str(m.get("content", "")) for m in contexto
-            if isinstance(m, dict) and m.get("role") == "system")
+        textos = [str(m.get("content", "")) for m in contexto
+            if isinstance(m, dict) and m.get("role") == "system"]
     else:
-        texto_ctx = str(contexto or "")
-    patron = r'(?im)^Aplicación activa en Windows:\s*([^|\r\n]+)\s*\|\s*Ventana:\s*["“](.*?)["”]\s*$'
-    coincidencia = re.search(patron, texto_ctx)
-    if not coincidencia:
-        return set()
-    return {_normalizar_token(p) for parte in coincidencia.groups()
-            for p in re.findall(r"[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ0-9]+", parte)}
+        textos = [str(contexto or "")]
+    tokens = set()
+    for texto in textos:
+        for inicio in re.finditer(r"(?im)^Aplicación activa en Windows:", texto):
+            resto = texto[inicio.start():]
+            fin = re.search(r"(?im)^\s*(?:Perfil del usuario|Correcciones aplicadas):", resto)
+            bloque = resto[:fin.start()] if fin else resto
+            tokens.update(_normalizar_token(p) for p in
+                re.findall(r"[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ0-9]+", bloque))
+    return tokens
 
 
 def _es_fuga_identidad(texto):
