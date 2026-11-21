@@ -50,7 +50,6 @@ class Cerebro:
 
     def instrucciones(self, texto_actual=None):
         es_invitado = bool(getattr(self, "turno_invitado", False))
-        prompt = construir_prompt(self.memoria, texto_actual, self._obtener_historial_podado(), es_invitado=es_invitado)
         app = getattr(self, "app", None)
         puente = getattr(app, "sistema_multimodal", None) if app else None
         pregunta = str(texto_actual or "").strip().lower()
@@ -63,14 +62,15 @@ class Cerebro:
         seguimiento = self._seguimiento_visual_pendiente and len(pregunta) <= 70
         consulta = visual or seguimiento or any(x in normal for x in (
             "sonido", "audio", "situacion", "que pasa"))
+        contexto_adicional = ""
         if puente is not None and consulta:
             try:
-                datos = puente.consultar_entorno_actual(texto_actual)
-                ventana = datos.get("ventana", {})
+                datos = puente.consultar_entorno_actual(texto_actual) or {}
+                ventana = datos.get("ventana") or {}
                 proceso = ventana.get("ejecutable") or "no disponible"
                 titulo = ("omitido por privacidad" if ventana.get("titulo_omitido")
                           else ventana.get("titulo") or "no disponible")
-                bloque = (f'\nAplicación activa detectada en Windows: {proceso} | Ventana: "{titulo}"'
+                contexto_adicional = (f'Aplicación activa en Windows: {proceso} | Ventana: "{titulo}"'
                     + "\nContexto multimodal reciente, evidencia observada: ventana externa: "
                     + str(ventana.get("titulo", "sin ventana externa conocida"))
                     + "; audio: " + str(datos.get("audio", "sin datos recientes"))
@@ -78,14 +78,15 @@ class Cerebro:
                     + "; pantalla: " + str(datos.get("captura_pantalla", "no consultada"))
                     + "\nDistingue hechos de hipótesis. No afirmes causalidad ni inventes detalles visuales; "
                     "explica si faltan permisos, captura o datos.")
-                prompt += bloque[:1100]
+                contexto_adicional = contexto_adicional[:1100]
                 self._seguimiento_visual_pendiente = visual or seguimiento
             except Exception:
-                prompt += "\nContexto multimodal no disponible; no infieras datos del entorno."
+                contexto_adicional = "Contexto multimodal no disponible; no infieras datos del entorno."
                 self._seguimiento_visual_pendiente = False
         else:
             self._seguimiento_visual_pendiente = False
-        return prompt
+        return construir_prompt(self.memoria, texto_actual, self._obtener_historial_podado(),
+            es_invitado=es_invitado, contexto_adicional=contexto_adicional)
 
     def _pedir(self, mensajes, tarea="charla"):
         import proveedores

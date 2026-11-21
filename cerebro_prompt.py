@@ -120,7 +120,8 @@ def describir_acciones_compactas(texto_actual=None):
     return "\n".join(lineas)
 
 
-def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_invitado=False):
+def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_invitado=False,
+                     contexto_adicional=""):
     """Construye el prompt del sistema optimizado por debajo de 2000 tokens."""
     m = memoria
     tokens_base = int((len("\n".join(m.hechos)) + 6800) / 3.6)
@@ -180,6 +181,8 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         ctx_texto = contexto_prompt.generar_directiva_contexto()
     except Exception:
         pass
+    if contexto_adicional:
+        ctx_texto = (ctx_texto + "\n" + str(contexto_adicional)).strip()
     tok_contexto = max(0, int(len(ctx_texto) / 3.6))
 
     desc_acciones = describir_acciones_compactas(texto_actual)

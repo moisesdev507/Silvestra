@@ -165,7 +165,7 @@ class TestValidacionGlobal(unittest.TestCase):
         self.app.sistema_multimodal = SimpleNamespace(consultar_entorno_actual=lambda q: {
             "ventana": {"titulo": "Editor de texto"}, "audio": "sin eventos",
             "situacion": "informacion insuficiente", "captura_pantalla": "captura efimera"})
-        with patch("cerebro.construir_prompt", return_value="prompt base"):
+        with patch("cerebro.construir_prompt", side_effect=lambda *a, **k: k.get("contexto_adicional", "")):
             cerebro = Cerebro(None, SimpleNamespace(), app=self.app)
             prompt = cerebro.instrucciones("¿Qué ves en mi pantalla?")
         self.assertIn("Editor de texto", prompt)
@@ -182,7 +182,7 @@ class TestValidacionGlobal(unittest.TestCase):
         self.app.sistema_multimodal = self.sistema
         with patch("contexto_windows.obtener_contexto_windows", side_effect=ventanas), \
              patch.object(self.sistema, "_captura_temporal_segura", return_value="captura efimera"), \
-             patch("cerebro.construir_prompt", return_value="prompt base"):
+             patch("cerebro.construir_prompt", side_effect=lambda *a, **k: k.get("contexto_adicional", "")):
             cerebro = Cerebro(None, SimpleNamespace(), app=self.app)
             primero = cerebro.instrucciones("¿Qué ves en la pantalla?")
             transcripcion = cerebro.instrucciones("y ahora a que parte de a cambio")
@@ -200,18 +200,49 @@ class TestValidacionGlobal(unittest.TestCase):
                    "ejecutable": "code.exe", "clase": "Chrome_WidgetWin_1"}
         with patch("contexto_windows.obtener_contexto_windows", return_value=None) as sensor, \
              patch.object(self.sistema, "_enumerar_ventana_externa", return_value=externa) as enumerar, \
-             patch("cerebro.construir_prompt", return_value="prompt base"):
+             patch("cerebro.construir_prompt", side_effect=lambda *a, **k: k.get("contexto_adicional", "")):
             cerebro = Cerebro(None, SimpleNamespace(), app=self.app)
             prompt = cerebro.instrucciones("¿En qué aplicación estoy ahorita?")
         sensor.assert_called_once()
         enumerar.assert_called_once()
-        self.assertIn('Aplicación activa detectada en Windows: code.exe | Ventana: "Visual Studio Code"', prompt)
+        self.assertIn('Aplicación activa en Windows: code.exe | Ventana: "Visual Studio Code"', prompt)
         sensible = self.sistema._normalizar_ventana({"hwnd": 24, "pid": 74,
             "titulo": "Password recovery", "ejecutable": "browser.exe"})
         with self.assertLogs("multimodal_puente_app", level="INFO") as salida:
             self.sistema._registrar_ventana(sensible)
         self.assertNotIn("password recovery", " ".join(salida.output).lower())
         self.assertIn("omitido por privacidad", " ".join(salida.output).lower())
+
+    def test_21_contexto_completo_llega_al_proveedor_antes_del_prompt(self):
+        from cerebro import Cerebro
+        from cerebro_prompt import construir_prompt as constructor_real
+        import respuesta_flujo
+        self.sistema._activo = True
+        self.app.sistema_multimodal = self.sistema
+        self.app.modo_activo = "normal"
+        externo = {"hwnd": 88, "pid": 108, "titulo": "baile_audio.py - Proyecto_Silvestra - Visual Studio Code",
+                   "ejecutable": "Code.exe"}
+        memoria = SimpleNamespace(hechos=[], datos={"resumenes_tematicos": {}},
+            nombre="Silvestra", creador="Moisés", proposito="asistente personal")
+        capturas = {}
+        def construir(*args, **kwargs):
+            capturas["contexto_previo"] = kwargs.get("contexto_adicional", "")
+            return constructor_real(*args, **kwargs)
+        def proveedor(mensajes, *_args, **_kwargs):
+            capturas["prompt_enviado"] = mensajes[0]["content"]
+            return "EMOCION: neutral\nRESPUESTA: Veo Code.exe con Visual Studio Code abierto.\nACCION: ninguna\nRECUERDO: ninguno"
+        with patch("contexto_windows.obtener_contexto_windows", return_value=externo), \
+             patch("cerebro.construir_prompt", side_effect=construir), \
+             patch("cerebro_enrutador.verificar_pro_disponible", return_value=False), \
+             patch("cerebro_enrutador.decidir_carril", return_value=("rapido", "prueba")), \
+             patch("proveedores.completar_flujo", side_effect=proveedor):
+            cerebro = Cerebro(None, memoria, app=self.app)
+            cerebro.turno_invitado = True
+            respuesta_flujo.responder_flujo(cerebro,
+                "Así dime a qué aplicación estoy ahorita.", lambda _frase: None)
+        esperado = 'Aplicación activa en Windows: Code.exe | Ventana: "baile_audio.py - Proyecto_Silvestra - Visual Studio Code"'
+        self.assertIn(esperado, capturas["contexto_previo"])
+        self.assertIn(esperado, capturas["prompt_enviado"])
 
     @staticmethod
     def _obs(modalidad, texto, tags, epistemico):
