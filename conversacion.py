@@ -83,12 +83,24 @@ def alternar_conversacion(app, motivo="desconocido"):
     app.silencios = 0
     print(f"[conversacion] alternar_conversacion motivo='{motivo}' nuevo_estado={'escuchando' if app.conversacion else 'silencio'}", flush=True)
     if app.conversacion:
+        if hasattr(app, "cola"):
+            app.cola.put(("restaurar_ventanas", None))
         app.decir("Te escucho. Háblame.", 2500)
         escuchar(app)
     else:
         dejar_de_escuchar(app)
         app.decir("Listo, dejo de escuchar.", 2500)
         app._iniciar_reflexion()
+
+
+def despertar(app):
+    """Sale del reposo y difiere la restauración visual a la cola Qt."""
+    app.descansando = False
+    app.pendiente_descanso = False
+    app.conversacion = True
+    app.silencios = 0
+    app.cola.put(("restaurar_ventanas", None))
+    app.decir(f"Aquí estoy, {app.memoria.creador}. Dime.", 3000)
 
 
 def abrir_chat(app):

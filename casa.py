@@ -29,10 +29,14 @@ class Casa(QWidget):
         self.update()
 
     def _tic(self):
-        if self.ventilador:
-            self.angulo = (self.angulo + 14) % 360
-        if self.isVisible():
-            self.update()
+        try:
+            if self.ventilador:
+                self.angulo = (self.angulo + 14) % 360
+            if self.isVisible():
+                self.update()
+        except KeyboardInterrupt:
+            self.reloj.stop()
+            QApplication.quit()
 
     def paintEvent(self, _):
         p = QPainter(self)
@@ -128,3 +132,30 @@ def instalar(app):
 
     reg("apagar_todo", apagar_todo, "apaga todo en la casa inteligente y cierra la puerta")
     return casa
+
+
+def restaurar_ventana(ventana):
+    """Restaura y trae al frente una ventana Qt, sin volver a mostrarla si ya lo está."""
+    if ventana is None:
+        return
+    if ventana.isMinimized():
+        ventana.showNormal()
+    elif not ventana.isVisible():
+        ventana.show()
+    ventana.raise_()
+    ventana.activateWindow()
+    ventana.update()
+
+
+def restaurar_ventanas(app):
+    """Restaura cara, contenedora y panel Casa desde el hilo principal de Qt."""
+    vistas = []
+    for ventana in (getattr(app, "cara", None), getattr(app, "casa", None)):
+        if ventana is None:
+            continue
+        contenedora = ventana.window()
+        for objetivo in (ventana, contenedora):
+            if objetivo is not None and all(objetivo is not v for v in vistas):
+                vistas.append(objetivo)
+    for ventana in vistas:
+        restaurar_ventana(ventana)

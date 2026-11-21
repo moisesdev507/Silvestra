@@ -11,11 +11,81 @@ from conversacion import alternar_conversacion
 from voz import Flujo, Voz
 from oido import Oido
 from calidad_respuesta import analizar_calidad_texto
+import casa
+import conversacion
+import eventos
 from cerebro import Cerebro
 from memoria_filtro import es_recuerdo_valido
 
 
 class TestReanudacionEscucha(unittest.TestCase):
+    def test_descansa_palabra_clave_restauracion_y_escucha(self):
+        class Ventana:
+            def __init__(self, visible=False, minimizada=False):
+                self.visible, self.minimizada, self.llamadas = visible, minimizada, []
+                self.contenedora = None
+            def isMinimized(self): return self.minimizada
+            def isVisible(self): return self.visible
+            def window(self): return self.contenedora or self
+            def showNormal(self): self.llamadas.append("showNormal"); self.visible = True; self.minimizada = False
+            def show(self): self.llamadas.append("show"); self.visible = True
+            def hide(self): self.llamadas.append("hide"); self.visible = False
+            def raise_(self): self.llamadas.append("raise_")
+            def activateWindow(self): self.llamadas.append("activateWindow")
+            def update(self): self.llamadas.append("update")
+
+        class Reloj:
+            def after(self, _ms, callback): callback()
+
+        class Cara(Ventana):
+            def __init__(self):
+                super().__init__()
+                self.root = Reloj()
+                self.contenedora = Ventana(minimizada=True)
+                self.estado_escucha = False
+            def poner_escuchando(self, valor): self.estado_escucha = valor
+            def programar_retorno_neutral(self, _ms): pass
+
+        cara, panel = Cara(), Ventana()
+        app = SimpleNamespace(cara=cara, casa=panel, cola=queue.Queue(),
+            memoria=SimpleNamespace(creador="Usuario", nombre="Usuario"),
+            oido=SimpleNamespace(escuchar=lambda **_kw: None),
+            conversacion=False, escuchando=False, descansando=True,
+            pendiente_descanso=False, silencios=0, musica_activa=False,
+            flujo=None, _generacion_escucha=0, _iniciar_reflexion=lambda: None,
+            decir=lambda *_args, **_kw: None)
+        app.escuchar = lambda: conversacion.escuchar(app)
+        app.despertar = lambda: conversacion.despertar(app)
+        cara.hide()
+        panel.hide()
+
+        eventos.atender_evento(app, "despertar", None)
+        self.assertFalse(app.descansando)
+        self.assertTrue(app.conversacion)
+        tipo, valor = app.cola.get_nowait()
+        self.assertEqual((tipo, valor), ("restaurar_ventanas", None))
+        eventos.atender_evento(app, tipo, valor)
+        self.assertIn("show", cara.llamadas)
+        self.assertIn("showNormal", cara.contenedora.llamadas)
+        self.assertTrue(all(x in cara.llamadas for x in ("raise_", "activateWindow", "update")))
+        self.assertTrue(all(x in panel.llamadas for x in ("show", "raise_", "activateWindow", "update")))
+
+        eventos.atender_evento(app, "fin_voz", None)
+        limite = time.time() + 1
+        while not app.escuchando and time.time() < limite:
+            time.sleep(.005)
+        self.assertTrue(app.escuchando)
+        self.assertTrue(cara.estado_escucha)
+
+    def test_casa_tic_interrumpe_y_detiene_timer(self):
+        reloj = SimpleNamespace(detener=0, stop=lambda: setattr(reloj, "detener", reloj.detener + 1))
+        casa_obj = SimpleNamespace(ventilador=False, reloj=reloj,
+            isVisible=lambda: (_ for _ in ()).throw(KeyboardInterrupt()))
+        with patch.object(casa.QApplication, "quit") as salir:
+            casa.Casa._tic(casa_obj)
+        self.assertEqual(reloj.detener, 1)
+        salir.assert_called_once_with()
+
     def test_contexto_vivo_prevalece_y_ventanas_no_se_memorizan(self):
         memoria = SimpleNamespace(
             hechos=["El usuario está trabajando con Visual Studio Code en aprendizaje.py."],
@@ -83,9 +153,14 @@ class TestReanudacionEscucha(unittest.TestCase):
         alternar_conversacion(app, "prueba_reanudar")
 
         limite = time.time() + 2.0
-        while app.cola.empty() and time.time() < limite:
-            time.sleep(0.01)
-        self.assertEqual(app.cola.get_nowait(), ("oido", "audio listo"))
+        eventos = []
+        while time.time() < limite and (not eventos or ("oido", "audio listo") not in eventos):
+            try:
+                eventos.append(app.cola.get(timeout=0.01))
+            except queue.Empty:
+                pass
+        self.assertEqual(eventos.count(("restaurar_ventanas", None)), 2)
+        self.assertIn(("oido", "audio listo"), eventos)
         self.assertTrue(app.conversacion)
         self.assertTrue(app.escuchando)
         self.assertEqual(llamadas, [1, 3])

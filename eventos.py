@@ -161,6 +161,10 @@ def atender_evento(app, tipo, texto):
     elif tipo == "despertar":
         app.despertar()
 
+    elif tipo == "restaurar_ventanas":
+        import casa
+        casa.restaurar_ventanas(app)
+
     elif tipo == "alternar_conversacion":
         motivo = texto or "evento"
         app.silencios = 0

@@ -19,6 +19,8 @@ except Exception:
 
 
 def _excepthook_sys(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        return
     try:
         hilo_nombre = threading.current_thread().name
         print(f"\n[FATAL_CAPTURADO] Excepción no capturada en hilo '{hilo_nombre}':", file=_diario, flush=True)
@@ -29,6 +31,8 @@ def _excepthook_sys(exc_type, exc_value, exc_traceback):
 
 
 def _excepthook_thread(args):
+    if issubclass(args.exc_type, KeyboardInterrupt):
+        return
     try:
         hilo_nombre = getattr(args.thread, "name", "Desconocido") if args.thread else "Desconocido"
         print(f"\n[FATAL_CAPTURADO] Excepción no capturada en hilo '{hilo_nombre}':", file=_diario, flush=True)
@@ -235,11 +239,7 @@ class Silvestra:
         self.cara.ocultar()
 
     def despertar(self):
-        self.descansando = False
-        self.cara.mostrar()
-        self.conversacion = True
-        self.silencios = 0
-        self.decir(f"Aquí estoy, {self.memoria.creador}. Dime.", 3000)
+        conversacion.despertar(self)
 
     def _iniciar_reflexion(self):
         threading.Thread(target=self.cerebro.reflexionar, args=(hilos,), daemon=True).start()
@@ -301,11 +301,27 @@ class Silvestra:
     def iniciar(self):
         try:
             self.cara.iniciar()
+        except KeyboardInterrupt:
+            pass
         finally:
             self.detener()
 
     def detener(self):
         """Detiene de forma limpia los motores y subprocesos al cerrar la aplicación."""
+        try:
+            self.casa.reloj.stop()
+        except Exception:
+            pass
+        for objeto, metodo, args in (
+            (getattr(self, "palabra_clave", None), "detener", ()),
+            (getattr(self, "camara", None), "apagar", ()),
+            (getattr(self, "oido", None), "cerrar", ()),
+            (getattr(self, "voz", None), "detener", ("cierre_aplicacion",)),
+        ):
+            try:
+                getattr(objeto, metodo)(*args)
+            except Exception:
+                pass
         if getattr(self, "sistema_multimodal", None):
             try:
                 self.sistema_multimodal.detener()
