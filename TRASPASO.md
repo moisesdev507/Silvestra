@@ -62,6 +62,11 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - Adaptador aislado de `acciones.py`: inventario descriptivo sin handlers ni efectos reales.
 - Preparados permisos, confirmación, cancelación, ejecución asíncrona y timeout para etapas futuras.
 
+### Fase 2 — Etapa 2 cerrada
+- Políticas centralizadas y confirmación humana exclusiva en `permisos_motor.py`.
+- Huella SHA-256, vigencia, revocación, anti-replay y auditoría sanitizada.
+- `SistemaEjecucion` integra validación previa sin habilitar ejecuciones externas.
+
 ## 6. Guía de prompts para Gemini (Antigravity)
 ```text
 Lee PROYECTO.md, TRASPASO.md y [archivos relevantes]. Haz git commit antes de empezar.

@@ -17,88 +17,7 @@ from ejecucion_modelo import (
     SolicitudEjecucion,
     resultado_error,
 )
-
-
-TIPOS_ESPERADOS = {
-    "str": str,
-    "string": str,
-    "int": int,
-    "integer": int,
-    "float": float,
-    "number": (int, float),
-    "bool": bool,
-    "boolean": bool,
-    "dict": dict,
-    "list": list,
-    "tuple": tuple,
-    "any": object,
-}
-
-
-def _normalizar_tipo(tipo: Any) -> tuple[type, ...]:
-    if isinstance(tipo, type):
-        return (tipo,)
-    if isinstance(tipo, (tuple, list)):
-        resultado: list[type] = []
-        for item in tipo:
-            resultado.extend(_normalizar_tipo(item))
-        return tuple(resultado)
-    return TIPOS_ESPERADOS.get(str(tipo).strip().lower(), ())
-
-
-def _esquema_parametros(esquema: dict[str, Any]) -> tuple[list[str], list[str], dict[str, Any]]:
-    if not isinstance(esquema, dict):
-        return [], [], {}
-
-    requeridos = esquema.get("requeridos", esquema.get("required", []))
-    opcionales = esquema.get("opcionales", esquema.get("optional", []))
-    tipos = esquema.get("tipos", esquema.get("properties", {}))
-
-    if "type" in esquema and isinstance(esquema.get("properties"), dict):
-        requeridos = esquema.get("required", requeridos)
-        opcionales = [k for k in tipos if k not in requeridos]
-
-    if isinstance(requeridos, str):
-        requeridos = [requeridos]
-    if isinstance(opcionales, str):
-        opcionales = [opcionales]
-    if not isinstance(requeridos, list):
-        requeridos = list(requeridos or [])
-    if not isinstance(opcionales, list):
-        opcionales = list(opcionales or [])
-    if not isinstance(tipos, dict):
-        tipos = {}
-    return requeridos, opcionales, tipos
-
-
-def _tipo_propiedad(especificacion: Any) -> Any:
-    if isinstance(especificacion, dict):
-        return especificacion.get("type", "any")
-    return especificacion
-
-
-def _coincide_tipo(valor: Any, especificacion: Any) -> bool:
-    tipo = str(_tipo_propiedad(especificacion)).strip().lower()
-    if tipo in ("str", "string"):
-        return isinstance(valor, str)
-    if tipo in ("int", "integer"):
-        return isinstance(valor, int) and not isinstance(valor, bool)
-    if tipo in ("float",):
-        return isinstance(valor, float)
-    if tipo in ("number",):
-        return isinstance(valor, (int, float)) and not isinstance(valor, bool)
-    if tipo in ("bool", "boolean"):
-        return isinstance(valor, bool)
-    if tipo in ("dict",):
-        return isinstance(valor, dict)
-    if tipo in ("list",):
-        return isinstance(valor, list)
-    if tipo in ("tuple",):
-        return isinstance(valor, tuple)
-    if tipo in ("any",):
-        return True
-    tipos = _normalizar_tipo(especificacion)
-    return bool(tipos) and isinstance(valor, tipos)
+from ejecucion_esquemas import esquema_parametros, coincide_tipo
 
 
 class RegistroHerramientas:
@@ -167,7 +86,7 @@ class RegistroHerramientas:
         if not contrato.habilitada:
             return False, "Herramienta deshabilitada.", contrato
 
-        requeridos, opcionales, tipos = _esquema_parametros(contrato.parametros_esquema)
+        requeridos, opcionales, tipos = esquema_parametros(contrato.parametros_esquema)
         permitidos = set(requeridos) | set(opcionales)
         for clave in solicitud.parametros:
             if clave not in permitidos:
@@ -180,7 +99,7 @@ class RegistroHerramientas:
             especificacion = tipos.get(clave)
             if especificacion is None:
                 continue
-            if not _coincide_tipo(valor, especificacion):
+            if not coincide_tipo(valor, especificacion):
                 return False, f"Tipo invalido para '{clave}'.", contrato
         return True, "", contrato
 
@@ -241,14 +160,27 @@ class SistemaEjecucion:
         registro: Optional[RegistroHerramientas] = None,
         pre_validacion: Optional[Callable[..., Any]] = None,
         post_ejecucion: Optional[Callable[..., Any]] = None,
+        motor_permisos: Optional[Any] = None,
     ) -> None:
         self.registro = registro or RegistroHerramientas()
         self.resolvedor = ResolvedorEjecucion(self.registro)
         self.pre_validacion = pre_validacion
         self.post_ejecucion = post_ejecucion
+        self.motor_permisos = motor_permisos
 
     def resolver_desde_tarea(self, tarea: Any, id_plan: Optional[str] = None) -> SolicitudEjecucion:
         return self.resolvedor.resolver_desde_tarea(tarea, id_plan)
+
+    def _validar_motor_fallback(
+        self, solicitud: SolicitudEjecucion, contrato: ContratoHerramienta
+    ) -> dict[str, Any]:
+        d = self.motor_permisos.evaluar_solicitud(solicitud, contrato)
+        if d.get("decision") == "pendiente_autorizacion":
+            return {"estado": "pendiente", **d}
+        if d.get("decision") != "permitida":
+            return {"estado": "rechazada", **d}
+        v = self.motor_permisos.validar_antes_de_ejecutar(solicitud, contrato)
+        return {"estado": "permitida" if v.get("permitida") else "rechazada", **v}
 
     def procesar(self, solicitud: SolicitudEjecucion) -> ResultadoEjecucion:
         inicio = time.perf_counter()
@@ -270,6 +202,45 @@ class SistemaEjecucion:
                 return resultado_error(solicitud, codigo, motivo, True, duracion, metadatos)
 
             solicitud.estado = ESTADO_VALIDADA
+            if self.motor_permisos is not None:
+                try:
+                    metodo_integracion = getattr(
+                        self.motor_permisos, "validar_para_ejecucion", None
+                    )
+                    permiso = (
+                        metodo_integracion(solicitud, contrato)
+                        if callable(metodo_integracion)
+                        else self._validar_motor_fallback(solicitud, contrato)
+                    )
+                    estado_permiso = permiso.get("estado")
+                    if estado_permiso == "pendiente":
+                        solicitud.estado = "pendiente_autorizacion"
+                        duracion = (time.perf_counter() - inicio) * 1000.0
+                        return ResultadoEjecucion(
+                            solicitud.id_solicitud, solicitud.herramienta,
+                            "pendiente_autorizacion", False, None,
+                            {"codigo": "PENDIENTE_AUTORIZACION",
+                             "mensaje": "Requiere confirmacion explicita del usuario.",
+                             "recuperable": True},
+                            duracion, {**metadatos, **permiso},
+                        )
+                    if estado_permiso == "rechazada":
+                        solicitud.estado = ESTADO_RECHAZADA
+                        duracion = (time.perf_counter() - inicio) * 1000.0
+                        return resultado_error(
+                            solicitud,
+                            permiso.get("motivo", permiso.get("codigo", "DENEGADA")),
+                            "Solicitud denegada por politica de seguridad.",
+                            True, duracion, {**metadatos, **permiso},
+                        )
+                except Exception:
+                    solicitud.estado = ESTADO_RECHAZADA
+                    duracion = (time.perf_counter() - inicio) * 1000.0
+                    return resultado_error(
+                        solicitud, "ERROR_INTERNO_PERMISOS",
+                        "Motor de permisos fallido en modo fail-closed.",
+                        True, duracion, metadatos,
+                    )
             if callable(self.pre_validacion):
                 pre = self.pre_validacion(solicitud, contrato)
                 if isinstance(pre, tuple) and len(pre) == 2 and pre[0] is False:
