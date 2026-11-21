@@ -83,8 +83,23 @@ class Oido:
             print(f"[oido] Fallo en Vosk de respaldo: {err}", flush=True)
             return None
 
-    def escuchar(self, corto=False, app=None):
-        if self._escuchando_activo:
+    @staticmethod
+    def _sesion_vigente(app, generacion):
+        return generacion is None or getattr(app, "_generacion_escucha", generacion) == generacion
+
+    def escuchar(self, corto=False, app=None, generacion=None):
+        while generacion is not None and self._sesion_vigente(app, generacion):
+            adquirido = self.bloqueo.acquire(timeout=0.2)
+            if not adquirido:
+                continue
+            try:
+                self._escuchando_activo = True
+                return self._escuchar(corto, app=app, generacion=generacion)
+            finally:
+                self._escuchando_activo = False
+                self.bloqueo.release()
+                time.sleep(0.05)
+        if generacion is not None:
             return None
         for intento in range(2):
             adquirido = self.bloqueo.acquire(timeout=4.0)
@@ -102,7 +117,7 @@ class Oido:
         print("[oido] Aviso: micrófono ocupado tras reintentar. Continuando sin colgar.", flush=True)
         return None
 
-    def _escuchar(self, corto=False, app=None):
+    def _escuchar(self, corto=False, app=None, generacion=None):
         """Captura audio usando Silero VAD neuronal a 16 kHz y transcribe con Whisper/Vosk."""
         rate = 16000
         ganancia = float(getattr(config, "GANANCIA_MICROFONO", 1.2))
@@ -118,7 +133,7 @@ class Oido:
             # Anti-eco inteligente: guarda de ~350 ms solo cuando la voz de Silvestra estuvo activa
             hablaba_ella = False
             if app is not None and hasattr(app, "voz") and hasattr(app.voz, "ocupada"):
-                while app.voz.ocupada():
+                while app.voz.ocupada() and self._sesion_vigente(app, generacion):
                     hablaba_ella = True
                     self._flujo.drenar()
                     time.sleep(0.04)
@@ -134,6 +149,8 @@ class Oido:
             hablo = False
 
             while True:
+                if not self._sesion_vigente(app, generacion):
+                    return None
                 if app is not None and (not getattr(app, "escuchando", True) or not getattr(app, "conversacion", True)):
                     break
 
@@ -201,6 +218,8 @@ class Oido:
         except Exception as e:
             raise RuntimeError("No pude usar el micrófono: " + str(e)[:120])
 
+        if not self._sesion_vigente(app, generacion):
+            return None
         self.t_fin_escucha = time.time()
 
         if not self._vad.hay_segmento_completo():

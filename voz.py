@@ -98,6 +98,7 @@ class Voz:
     def __init__(self):
         self.version = 0
         self._activos = 0
+        self._estado_lock = threading.RLock()
         self.proceso = None
         self.pg = None
         self.reproductor = None
@@ -118,7 +119,9 @@ class Voz:
 
     def ocupada(self):
         """Devuelve True si hay un flujo de voz activo o el mixer está reproduciendo."""
-        if self._activos > 0:
+        with self._estado_lock:
+            activos = self._activos
+        if activos > 0:
             return True
         if self.reproductor is not None:
             return self.reproductor.esta_ocupado()
@@ -127,8 +130,9 @@ class Voz:
     def detener(self, motivo="detener()"):
         """Detiene de inmediato cualquier reproducción o síntesis de voz en curso (barge-in)."""
         print(f"[voz] cancelada motivo={motivo}", flush=True)
-        self.version += 1
-        self._activos = 0
+        with self._estado_lock:
+            self.version += 1
+            self._activos = 0
         self.nivel_volumen = 0.0
         self._parar()
 
@@ -143,11 +147,13 @@ class Voz:
 
     def flujo(self, al_terminar=None, emocion="neutral", t_fin_habla=None, metricas=None):
         """Empieza a hablar frase por frase conforme van llegando. Usa .agregar(frase) y al final .cerrar()."""
-        self.version += 1
-        self._activos += 1
+        with self._estado_lock:
+            self.version += 1
+            version = self.version
+            self._activos = 1
         emo = normalizar_emocion(emocion)
         flujo = Flujo(emocion=emo)
-        threading.Thread(target=self._hablar, args=(flujo, al_terminar, self.version, emo, t_fin_habla, metricas), daemon=True).start()
+        threading.Thread(target=self._hablar, args=(flujo, al_terminar, version, emo, t_fin_habla, metricas), daemon=True).start()
         return flujo
 
     def _parar(self):
@@ -324,8 +330,10 @@ class Voz:
             if version == self.version and al_terminar:
                 al_terminar()
         finally:
-            self.nivel_volumen = 0.0
-            self._activos = max(0, self._activos - 1)
+            with self._estado_lock:
+                if version == self.version:
+                    self.nivel_volumen = 0.0
+                    self._activos = max(0, self._activos - 1)
 
 
 class Flujo:

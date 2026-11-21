@@ -30,6 +30,7 @@ def es_eco(app, texto):
 
 def dejar_de_escuchar(app):
     """Apaga el estado de escucha y el indicador visual en la cara."""
+    app._generacion_escucha = getattr(app, "_generacion_escucha", 0) + 1
     app.escuchando = False
     app.cara.poner_escuchando(False)
     if getattr(app, "musica_activa", False):
@@ -45,6 +46,8 @@ def escuchar(app):
     """Comienza a escuchar por el micrófono si la conversación está activa (soporta barge-in)."""
     if app.escuchando or not app.conversacion:
         return
+    app._generacion_escucha = getattr(app, "_generacion_escucha", 0) + 1
+    generacion = app._generacion_escucha
     app.escuchando = True
     app.cara.poner_escuchando(True)
     if getattr(app, "musica_activa", False):
@@ -53,15 +56,19 @@ def escuchar(app):
             control_laptop.aplicar_ducking()
         except Exception:
             pass
-    threading.Thread(target=grabar, args=(app,), daemon=True).start()
+    threading.Thread(target=grabar, args=(app, generacion), daemon=True).start()
 
 
-def grabar(app):
+def grabar(app, generacion=None):
     """Captura el audio con Whisper y encola el resultado (se ejecuta en hilo aparte)."""
     try:
-        texto = app.oido.escuchar(app=app)
+        texto = app.oido.escuchar(app=app, generacion=generacion)
     except Exception as e:
+        if generacion is not None and generacion != getattr(app, "_generacion_escucha", generacion):
+            return
         app.cola.put(("fallo", str(e)))
+        return
+    if (generacion is not None and generacion != getattr(app, "_generacion_escucha", generacion)):
         return
     if not getattr(app, "conversacion", False) and not getattr(app, "escuchando", False):
         return
