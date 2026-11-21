@@ -192,6 +192,27 @@ class TestValidacionGlobal(unittest.TestCase):
         self.assertIn("Bloc de notas", seguimiento)
         self.assertEqual(self.sistema.estado_salud()["ultima_ventana_externa"]["titulo"], "Bloc de notas")
 
+    def test_20_primer_turno_recupera_ventana_con_foco_propio(self):
+        from cerebro import Cerebro
+        self.sistema._activo = True
+        self.app.sistema_multimodal = self.sistema
+        externa = {"hwnd": 23, "pid": 73, "titulo": "Visual Studio Code",
+                   "ejecutable": "code.exe", "clase": "Chrome_WidgetWin_1"}
+        with patch("contexto_windows.obtener_contexto_windows", return_value=None) as sensor, \
+             patch.object(self.sistema, "_enumerar_ventana_externa", return_value=externa) as enumerar, \
+             patch("cerebro.construir_prompt", return_value="prompt base"):
+            cerebro = Cerebro(None, SimpleNamespace(), app=self.app)
+            prompt = cerebro.instrucciones("¿En qué aplicación estoy ahorita?")
+        sensor.assert_called_once()
+        enumerar.assert_called_once()
+        self.assertIn('Aplicación activa detectada en Windows: code.exe | Ventana: "Visual Studio Code"', prompt)
+        sensible = self.sistema._normalizar_ventana({"hwnd": 24, "pid": 74,
+            "titulo": "Password recovery", "ejecutable": "browser.exe"})
+        with self.assertLogs("multimodal_puente_app", level="INFO") as salida:
+            self.sistema._registrar_ventana(sensible)
+        self.assertNotIn("password recovery", " ".join(salida.output).lower())
+        self.assertIn("omitido por privacidad", " ".join(salida.output).lower())
+
     @staticmethod
     def _obs(modalidad, texto, tags, epistemico):
         return ObservacionIntegrada(modalidad, "prueba", texto,
