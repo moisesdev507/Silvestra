@@ -57,6 +57,11 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - [ ] **Respaldo local:** Modelo SLM/LLM cuantizado local (Ollama / llama.cpp) offline.
 - [ ] **Núcleo headless y nube:** Separar lógica para correr 24/7 en VPS con Telegram.
 
+### Fase 2 — Etapa 1 cerrada
+- Contratos puros `ejecucion_modelo.py`, registro thread-safe y resolución normalizada.
+- Adaptador aislado de `acciones.py`: inventario descriptivo sin handlers ni efectos reales.
+- Preparados permisos, confirmación, cancelación, ejecución asíncrona y timeout para etapas futuras.
+
 ## 6. Guía de prompts para Gemini (Antigravity)
 ```text
 Lee PROYECTO.md, TRASPASO.md y [archivos relevantes]. Haz git commit antes de empezar.
