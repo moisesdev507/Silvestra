@@ -67,6 +67,11 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - Huella SHA-256, vigencia, revocación, anti-replay y auditoría sanitizada.
 - `SistemaEjecucion` integra validación previa sin habilitar ejecuciones externas.
 
+### Fase 2 — Etapa 3 cerrada
+- Motor concurrente con cola prioritaria, estados estrictos y workers acotados.
+- Cancelación cooperativa, timeout honesto y validación previa bajo `MotorPermisos`.
+- Solo handlers puros/simulados; no se habilitan procesos ni efectos reales.
+
 ## 6. Guía de prompts para Gemini (Antigravity)
 ```text
 Lee PROYECTO.md, TRASPASO.md y [archivos relevantes]. Haz git commit antes de empezar.
