@@ -58,8 +58,16 @@ def cargar_alma():
     )
 
 
-def recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5):
+def recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5, contexto=""):
     """Selecciona hasta max_recuerdos relevantes al tema actual por categorías y palabras clave."""
+    if hasattr(memoria, "recuperar"):
+        try:
+            paquete = memoria.recuperar(texto_actual or "", contexto=contexto, limite=max_recuerdos)
+            import memoria_recuperacion
+            texto = memoria_recuperacion.formatear(paquete, 1050)
+            return texto or "- (todavía nada)", len(paquete.get("resultados", []))
+        except Exception:
+            return "[Recuperación de memoria no disponible.]", 0
     resumenes = getattr(memoria, "datos", {}).get("resumenes_tematicos")
     elegidos, n_rec = mb.buscar_recuerdos(
         memoria.hechos, texto_actual, max_recuerdos=max_recuerdos, resumenes_tematicos=resumenes
@@ -129,11 +137,21 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
     alma_texto = f"{cargar_alma()}\n\n{SOBRE_MI}"
     tok_alma = max(1, int(len(alma_texto) / 3.6))
 
+    ctx_texto = ""
+    try:
+        import contexto_prompt
+        ctx_texto = contexto_prompt.generar_directiva_contexto()
+    except Exception:
+        pass
+    if contexto_adicional:
+        ctx_texto = (ctx_texto + "\n" + str(contexto_adicional)).strip()
+
     if es_invitado:
         hechos_str = f"- (Protegido: datos privados de {m.creador} ocultos para invitados)"
         n_recuerdos = 0
     else:
-        hechos_str, n_recuerdos = recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5)
+        hechos_str, n_recuerdos = recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5,
+                                                       contexto=ctx_texto)
     total_m = len(memoria.hechos)
     print(f"[memoria] guardados=0 relevantes={n_recuerdos} total={total_m}", flush=True)
 
@@ -146,6 +164,7 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
 
     memoria_texto = (
         f"[RECUERDOS HISTÓRICOS — PASADO]\nLo que sabes (fechas relativas al día en que se guardó):\n{hechos_str}\n"
+        "Cada recuerdo conserva su procedencia y confianza. Las contradicciones son hipótesis y deben exponerse con ambas fuentes.\n"
         "Regla temporal: 'hoy'/'mañana' en un recuerdo son de su fecha guardada. Si el evento ya pasó, PROHIBIDO preguntar por él en futuro (ignóralo o pregunta cómo salió).\n"
         f"Ideas anotadas: {ideas_res}.\n"
         f"Hilos pendientes: {hilos_res}.\n[FIN RECUERDOS HISTÓRICOS]"
@@ -172,14 +191,6 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         pass
     tok_corr = max(0, int(len(corr_texto) / 3.6))
 
-    ctx_texto = ""
-    try:
-        import contexto_prompt
-        ctx_texto = contexto_prompt.generar_directiva_contexto()
-    except Exception:
-        pass
-    if contexto_adicional:
-        ctx_texto = (ctx_texto + "\n" + str(contexto_adicional)).strip()
     tok_contexto = max(0, int(len(ctx_texto) / 3.6))
 
     desc_acciones = describir_acciones_compactas(texto_actual)
@@ -253,9 +264,9 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
             bloques.append(dir_nat)
     except Exception:
         pass
+    bloques.append(memoria_texto)
     if ctx_texto:
         bloques.append(ctx_texto)
-    bloques.append(memoria_texto)
     if perfil_texto:
         bloques.append(f"Perfil del usuario:\n{perfil_texto}")
     if corr_texto:

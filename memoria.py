@@ -142,6 +142,11 @@ class Memoria:
                 return f"Listo. He olvidado lo que sabía sobre '{tema}'."
         return f"No encontré ningún recuerdo guardado sobre '{tema}'."
 
+    def recuperar(self, consulta, contexto="", limite=5):
+        """Devuelve resultados trazables e incertidumbre sin filtrar otros perfiles."""
+        from memoria_recuperacion import recuperar
+        return recuperar(self.gestor, consulta, self.usuario_id, contexto, limite)
+
     def consultar(self, tema=None):
         creador = self.creador
         t_norm = (tema or "").strip().lower()
@@ -161,9 +166,10 @@ class Memoria:
             print(f"[memoria] guardados=0 relevantes={len(limpios)} total={total}", flush=True)
             return f"De ti sé que te llamas {creador}, y recuerdo esto: " + "; ".join(limpios) + "."
 
-        encontrados, n_rel = mb.buscar_recuerdos(hechos, tema, max_recuerdos=5, resumenes_tematicos=resumenes)
-        print(f"[memoria] guardados=0 relevantes={n_rel} total={total}", flush=True)
-        if not encontrados or n_rel == 0:
+        paquete = self.recuperar(tema, limite=5)
+        encontrados = [r["contenido"] for r in paquete["resultados"]]
+        print(f"[memoria] guardados=0 relevantes={len(encontrados)} total={total}", flush=True)
+        if not encontrados:
             return f"{creador}, no tengo guardado nada sobre '{tema}' todavía."
 
         limpios = [re.sub(r"^\[[^\]]+\]\s*", "", x).strip() for x in encontrados]

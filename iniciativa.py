@@ -59,12 +59,13 @@ class Iniciativa:
             if not valido:
                 return
 
-            import memoria_tiempo as mt
-            hechos_raw = getattr(self.app.memoria, "hechos", []) if hasattr(self.app, "memoria") else []
-            hechos_fmt = [mt.formatear_recuerdo_con_fecha(h) for h in hechos_raw]
-            hechos = "\n".join(f"- {h}" for h in hechos_fmt) or "- (ninguno)"
-
             guia = getattr(sug, "prompt_orientacion", "Llevan más de 20 minutos en silencio.")
+            hechos = "- (ninguno)"
+            memoria = getattr(self.app, "memoria", None)
+            if memoria and hasattr(memoria, "recuperar"):
+                import memoria_recuperacion
+                paquete = memoria.recuperar(guia, contexto=guia, limite=3)
+                hechos = memoria_recuperacion.formatear(paquete, 650) or hechos
             nombre_asistente = getattr(self.app.memoria, "nombre", None) or "Silvestra"
             creador = getattr(self.app.memoria, "creador", None) or "tu creador"
 
