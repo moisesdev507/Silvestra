@@ -61,3 +61,7 @@ Planificación reutiliza el DAG de `planificador_modelo.py`; evaluación de alte
 
 ## Fase 5 — Etapa 3
 Aprendizaje experiencial trazable sobre SQLite cognitiva: patrones requieren 3 fuentes independientes. Verificación publica informes a un adaptador de fondo; razonamiento y planificación reciben lecciones históricas orientativas. Sin cambios automáticos a permisos/código.
+
+
+## Fase 5 — Etapa 4 (cierre)
+`integracion_cognitiva_fase5.py` comparte planificación, aprendizaje, ejecución controlada y verificación. La app conecta y cierra el coordinador; Cerebro reutiliza sus motores. Aprendizaje asíncrono deduplicado por usuario/plan/tarea; migración aditiva de experiencias previas. Preparación de ejecución exige aprobación del plan y permisos independientes; sin registro de herramientas no hay ejecución. Validación E2E A–G en `test_integracion_global_fase5_etapa4.py`. No inicia Fase 6.

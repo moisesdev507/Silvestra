@@ -1,4 +1,3 @@
-"""Formación, promoción y evaluación de aprendizajes a partir de evidencia."""
 import hashlib
 import json
 import threading
@@ -9,6 +8,18 @@ from experiencia_modelos import Aprendizaje, Experiencia
 
 def _cancelado(token):
     return bool(token is not None and callable(getattr(token, "is_set", None)) and token.is_set())
+
+
+def _clave_origen(dato, solicitud=None):
+    plan, tarea = dato.get("id_plan"), dato.get("id_tarea")
+    if plan and tarea:
+        return f"plan:{plan}|tarea:{tarea}"
+    ident=solicitud or dato.get("id_solicitud")
+    if ident: return "solicitud:"+str(ident)
+    origen=tuple(x for x in dato.get("origen_ids",()) if x is not None)
+    if len(origen)>=3: return f"plan:{origen[-2]}|tarea:{origen[-1]}"
+    if len(origen)==2: return f"plan:{origen[0]}|tarea:{origen[1]}"
+    return "origen:"+"|".join(sorted(map(str,origen))) if origen else ""
 
 
 class MotorExperiencias:
@@ -22,18 +33,19 @@ class MotorExperiencias:
             return {"cancelado": True, "aprendizaje": None}
         d = dict(datos or {})
         d["usuario_id"] = self.usuario_id
+        origen_clave=str(d.get("origen_clave") or _clave_origen(d))
         exp = Experiencia(**{k:v for k,v in d.items() if k in Experiencia.__dataclass_fields__})
         limpio = analizar(exp.a_dict())
         if not limpio.get("util"):
             return {"registrada": False, "motivo": limpio.get("motivo")}
         dato = exp.a_dict(); dato["clave_patron"] = limpio["clave_patron"]
+        dato["origen_clave"] = origen_clave
         with self._lock:
-            self.repo.guardar_experiencia(dato, limpio["clave_patron"], self.usuario_id)
+            self.repo.guardar_experiencia(dato, limpio["clave_patron"], origen_clave, self.usuario_id)
             filas = self.repo.experiencias(limpio["clave_patron"], self.usuario_id)
-            # Solo fuentes independientes cuentan para promover un patrón.
             validas, fuentes = [], set()
             for x in filas:
-                origen = tuple(x.get("origen_ids") or ())
+                origen = str(x.get("origen_clave") or "") or tuple(x.get("origen_ids") or ())
                 if not x.get("verificada") or x.get("exito") is None or not origen or origen in fuentes:
                     continue
                 fuentes.add(origen); validas.append(x)
@@ -59,22 +71,23 @@ class MotorExperiencias:
         d = informe.a_dict() if callable(getattr(informe, "a_dict", None)) else dict(informe or {})
         solicitud = d.get("solicitud_original", {})
         evidencia = d.get("evidencia") or {}
-        verificada = d.get("estado_final") in {"verificado", "recuperado"} or bool(evidencia.get("verificada"))
-        exito = True if verificada else False if d.get("estado_final") == "fallido" else None
+        verificada = bool(evidencia.get("verificada")) and not evidencia.get("insuficiente") and not evidencia.get("es_parcial")
+        exito = bool(evidencia.get("coincide_esperado")) if verificada else None
         return self.registrar({"resultado_esperado": d.get("resultado_esperado"),
             "resultado_observado": json.dumps(evidencia, ensure_ascii=False, default=str),
             "factores": d.get("errores_detectados", ()), "origen_ids": [d.get("id_solicitud"), solicitud.get("id_plan"), solicitud.get("id_tarea")],
             "verificada": verificada, "exito": exito, "categoria": solicitud.get("herramienta", "verificacion"),
-            "condiciones": ["resultado de verificación"]}, token_cancelacion)
+            "condiciones": ["resultado de verificación"],
+            "origen_clave": _clave_origen(solicitud,d.get("id_solicitud"))}, token_cancelacion)
 
     def registrar_ejecucion(self, solicitud, resultado, esperado=None):
         s = solicitud.a_dict() if callable(getattr(solicitud, "a_dict", None)) else dict(solicitud or {})
         r = resultado.a_dict() if callable(getattr(resultado, "a_dict", None)) else dict(resultado or {})
-        # Una salida sin informe verificador nunca se trata como éxito confirmado.
         return self.registrar({"resultado_esperado": str(esperado or ""),
             "resultado_observado": json.dumps({"estado":r.get("estado"),"exito":r.get("exito"),"error":r.get("error")},ensure_ascii=False),
             "factores": [r.get("herramienta", "")], "origen_ids": [s.get("id_solicitud"),s.get("id_plan"),s.get("id_tarea")],
-            "verificada": False, "exito": None, "categoria": r.get("herramienta", "ejecucion")})
+            "verificada": False, "exito": None, "categoria": r.get("herramienta", "ejecucion"),
+            "origen_clave": _clave_origen(s,r.get("id_solicitud"))})
 
     def recuperar(self, consulta, limite=5):
         import re

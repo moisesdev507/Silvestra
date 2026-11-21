@@ -126,6 +126,9 @@ class TestPlanificacionFase5Etapa2(unittest.TestCase):
 
     def test_11_prepara_solicitud_para_sistema_ejecucion(self):
         r = self.crear()
+        with self.assertRaises(PermissionError):
+            self.motor.preparar_ejecucion(r["plan"].id_plan, "t1", "operacion_demo", {"x": 1})
+        self.assertTrue(self.motor.aprobar_recomendacion(r["plan"].id_plan, actor="usuario"))
         sol = self.motor.preparar_ejecucion(r["plan"].id_plan, "t1", "operacion_demo", {"x": 1})
         self.assertEqual((sol.origen, sol.id_plan, sol.id_tarea), ("planificador", r["plan"].id_plan, "t1"))
 
@@ -133,6 +136,7 @@ class TestPlanificacionFase5Etapa2(unittest.TestCase):
         with self.assertRaises(ValueError):
             DecisionPlan("x", "", autorizacion_ejecucion="autorizada")
         r = self.crear()
+        self.assertTrue(self.motor.aprobar_recomendacion(r["plan"].id_plan, actor="usuario"))
         sol = self.motor.preparar_ejecucion(r["plan"].id_plan, "t1", "operacion_demo")
         permisos = MotorPermisos()
         permisos.registrar_politica(PoliticaOperacion("operacion_demo", NIVEL_REQUIERE_CONFIRMACION,

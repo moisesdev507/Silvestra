@@ -100,8 +100,11 @@ class Cerebro:
                     multimodal=datos_multimodales or None)
                 paquete_memoria = resultado.get("recuperacion")
                 from razonamiento_motor import razonar, formatear
+                coordinador = getattr(self, "integracion_cognitiva", None) or getattr(app, "integracion_cognitiva", None)
                 experiencias = []
-                if hasattr(self.memoria, "almacen"):
+                if coordinador:
+                    experiencias = coordinador.experiencias.recuperar(texto_actual, 4)
+                elif hasattr(self.memoria, "almacen"):
                     try:
                         from experiencia_motor import MotorExperiencias
                         motor_exp = getattr(self, "_motor_experiencias", None)
@@ -118,8 +121,8 @@ class Cerebro:
                     contexto_adicional = (contexto_adicional + "\n" + resumen).strip()[:1800]
                 from planificacion_motor import PlanificacionMotor, formatear as formatear_plan
                 if solicitud_plan:
-                    motor = getattr(self, "_motor_planificacion", None)
-                    if motor is None or motor.usuario_id != self.memoria.usuario_id:
+                    motor = coordinador.planificacion if coordinador else getattr(self, "_motor_planificacion", None)
+                    if not coordinador and (motor is None or motor.usuario_id != self.memoria.usuario_id):
                         motor = PlanificacionMotor(self.memoria.almacen, self.memoria.usuario_id)
                         self._motor_planificacion = motor
                     contexto_plan = dict(contexto_engine or {})

@@ -94,6 +94,12 @@ class Silvestra:
 
     def __init__(self):
         self.memoria = Memoria()
+        self.integracion_cognitiva = None
+        try:
+            from integracion_cognitiva_fase5 import IntegracionCognitivaFase5
+            self.integracion_cognitiva = IntegracionCognitivaFase5(self.memoria, self)
+        except Exception as e:
+            print(f"[cognicion] Integración global no disponible: {type(e).__name__}", flush=True)
         http_client = httpx.Client(limits=httpx.Limits(max_keepalive_connections=10, max_connections=20))
         self.cliente = Groq(api_key=config.CLAVE, http_client=http_client)
         self.cerebro = Cerebro(self.cliente, self.memoria, app=self)
@@ -332,6 +338,15 @@ class Silvestra:
                 self.contexto_motor.detener()
             except Exception:
                 pass
+        try:
+            if self.integracion_cognitiva:
+                self.integracion_cognitiva.cerrar()
+        except Exception:
+            pass
+        try:
+            self.memoria.cerrar()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

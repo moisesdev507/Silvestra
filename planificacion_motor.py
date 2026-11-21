@@ -150,9 +150,11 @@ class PlanificacionMotor:
         return {"actualizado": True, "completadas_preservadas": True}
 
     def preparar_ejecucion(self, id_plan, id_tarea, herramienta, parametros=None):
-        plan, _ = self.obtener(id_plan)
+        plan, analisis = self.obtener(id_plan)
         if not plan:
             raise KeyError(id_plan)
+        if not analisis or analisis.decision.aprobacion_usuario != "aprobada":
+            raise PermissionError("La recomendación requiere aprobación explícita del usuario")
         valido, errores = pm.validar_dependencias(plan)
         tarea = plan.mapa_tareas().get(id_tarea)
         if not valido or tarea not in pm.obtener_tareas_accionables(plan):
