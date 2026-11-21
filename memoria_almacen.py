@@ -7,6 +7,7 @@ import threading
 from datetime import datetime, timezone
 
 import memoria_esquema
+from memoria_modelos import validar_usuario_id
 
 
 def normalizar(texto):
@@ -18,8 +19,9 @@ def _ahora():
 
 
 class AlmacenMemoriaCognitiva:
-    def __init__(self, ruta=":memory:"):
+    def __init__(self, ruta=":memory:", usuario_id="local"):
         self.ruta = os.fspath(ruta)
+        self.usuario_id = validar_usuario_id(usuario_id)
         self._lock = threading.RLock()
         self._cerrado = False
         self.conexion = sqlite3.connect(self.ruta, check_same_thread=False, timeout=10)
@@ -34,6 +36,9 @@ class AlmacenMemoriaCognitiva:
 
     close = cerrar
 
+    def _uid(self, usuario_id=None):
+        return validar_usuario_id(usuario_id if usuario_id is not None else self.usuario_id)
+
     def _fila(self, fila):
         if fila is None:
             return None
@@ -46,7 +51,8 @@ class AlmacenMemoriaCognitiva:
 
     def guardar_recuerdo(self, contenido, tipo_memoria="semantica", categoria="general",
                          origen="explicito", confianza=0.8, fecha_evento=None,
-                         metadatos=None, reemplaza_a_id=None):
+                         metadatos=None, reemplaza_a_id=None, usuario_id=None):
+        uid = self._uid(usuario_id)
         texto = str(contenido or "").strip()
         norm = normalizar(texto)
         if not norm:
@@ -55,31 +61,38 @@ class AlmacenMemoriaCognitiva:
             raise ValueError("tipo_memoria no válido")
         if origen not in ("explicito", "inferido", "multimodal", "migrado", "sistema"):
             raise ValueError("origen no válido")
-        conf = max(0.0, min(1.0, float(confianza)))
+        conf = float(confianza)
+        if not 0 <= conf <= 1:
+            raise ValueError("confianza fuera de rango")
         ahora = _ahora()
         meta = json.dumps(metadatos or {}, ensure_ascii=False, default=str)
         with self._lock:
             previo = self.conexion.execute(
-                "SELECT * FROM recuerdos WHERE contenido_norm=? AND estado='activo' LIMIT 1", (norm,)
+                "SELECT * FROM recuerdos WHERE usuario_id=? AND contenido_norm=? AND estado='activo' LIMIT 1", (uid, norm)
             ).fetchone()
             if previo:
                 return self._fila(previo)
+            if reemplaza_a_id is not None and not self.conexion.execute(
+                "SELECT 1 FROM recuerdos WHERE id=? AND usuario_id=?", (reemplaza_a_id, uid)
+            ).fetchone():
+                raise KeyError(reemplaza_a_id)
             cur = self.conexion.execute("""INSERT INTO recuerdos
-                (tipo_memoria,contenido,contenido_norm,categoria,origen,confianza,
+                (usuario_id,tipo_memoria,contenido,contenido_norm,categoria,origen,confianza,
                  reemplaza_a_id,fecha_evento,creado_en,actualizado_en,metadatos_json)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
-                (tipo_memoria, texto, norm, categoria or "general", origen, conf,
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (uid, tipo_memoria, texto, norm, categoria or "general", origen, conf,
                  reemplaza_a_id, fecha_evento, ahora, ahora, meta))
             self.conexion.commit()
             fila = self.conexion.execute("SELECT * FROM recuerdos WHERE id=?", (cur.lastrowid,)).fetchone()
             return self._fila(fila)
 
-    def buscar_texto(self, consulta, limite=10, tipos=None, solo_activos=True):
+    def buscar_texto(self, consulta, limite=10, tipos=None, solo_activos=True, usuario_id=None):
+        uid = self._uid(usuario_id)
         tokens = re.findall(r"[\w]+", str(consulta or ""), re.UNICODE)
         limite = max(0, min(int(limite), 500))
         if not limite:
             return []
-        where, args = [], []
+        where, args = ["r.usuario_id=?"], [uid]
         if solo_activos:
             where.append("r.estado='activo'")
         if tipos:
@@ -108,7 +121,8 @@ class AlmacenMemoriaCognitiva:
             return [self._fila(x) for x in filas]
 
     def actualizar_recuerdo(self, recuerdo_id, nuevo_contenido=None, confianza=None,
-                            categoria=None, metadatos=None):
+                            categoria=None, metadatos=None, usuario_id=None):
+        uid = self._uid(usuario_id)
         cambios, args = ["actualizado_en=?"], [_ahora()]
         if nuevo_contenido is not None:
             texto = str(nuevo_contenido).strip()
@@ -118,61 +132,71 @@ class AlmacenMemoriaCognitiva:
             args += [texto, normalizar(texto)]
         if confianza is not None:
             cambios.append("confianza=?")
-            args.append(max(0.0, min(1.0, float(confianza))))
+            conf = float(confianza)
+            if not 0 <= conf <= 1:
+                raise ValueError("confianza fuera de rango")
+            args.append(conf)
         if categoria is not None:
             cambios.append("categoria=?")
             args.append(str(categoria))
         if metadatos is not None:
             cambios.append("metadatos_json=?")
             args.append(json.dumps(metadatos, ensure_ascii=False, default=str))
-        args.append(int(recuerdo_id))
+        args += [int(recuerdo_id), uid]
         with self._lock:
-            self.conexion.execute("UPDATE recuerdos SET " + ",".join(cambios) + " WHERE id=?", args)
+            self.conexion.execute("UPDATE recuerdos SET " + ",".join(cambios) + " WHERE id=? AND usuario_id=?", args)
             self.conexion.commit()
-            return self._fila(self.conexion.execute("SELECT * FROM recuerdos WHERE id=?", (recuerdo_id,)).fetchone())
+            return self._fila(self.conexion.execute("SELECT * FROM recuerdos WHERE id=? AND usuario_id=?",
+                                                    (recuerdo_id, uid)).fetchone())
 
     def reemplazar_recuerdo(self, anterior_id, nuevo_contenido, tipo_memoria=None,
-                            origen="explicito", confianza=1.0):
+                            origen="explicito", confianza=1.0, usuario_id=None):
+        uid = self._uid(usuario_id)
         with self._lock:
-            anterior = self.conexion.execute("SELECT * FROM recuerdos WHERE id=?", (anterior_id,)).fetchone()
+            anterior = self.conexion.execute("SELECT * FROM recuerdos WHERE id=? AND usuario_id=?",
+                                              (anterior_id, uid)).fetchone()
             if anterior is None:
                 raise KeyError(anterior_id)
             nuevo = self.guardar_recuerdo(nuevo_contenido, tipo_memoria or anterior["tipo_memoria"],
-                anterior["categoria"], origen, confianza, reemplaza_a_id=anterior_id)
+                anterior["categoria"], origen, confianza, reemplaza_a_id=anterior_id, usuario_id=uid)
             if nuevo["id"] != anterior_id:
-                self.conexion.execute("UPDATE recuerdos SET estado='obsoleto',actualizado_en=? WHERE id=?",
-                                      (_ahora(), anterior_id))
+                self.conexion.execute("UPDATE recuerdos SET estado='obsoleto',actualizado_en=? WHERE id=? AND usuario_id=?",
+                                      (_ahora(), anterior_id, uid))
                 self.conexion.commit()
             return nuevo
 
-    def olvidar_por_tema(self, tema):
-        filas = self.buscar_texto(tema, 500)
+    def olvidar_por_tema(self, tema, usuario_id=None):
+        uid = self._uid(usuario_id)
+        filas = self.buscar_texto(tema, 500, usuario_id=uid)
         ids = [x["id"] for x in filas]
         if ids:
             with self._lock:
-                self.conexion.executemany("UPDATE recuerdos SET estado='eliminado',actualizado_en=? WHERE id=?",
-                                          [(_ahora(), i) for i in ids])
+                self.conexion.executemany("UPDATE recuerdos SET estado='eliminado',actualizado_en=? WHERE id=? AND usuario_id=?",
+                                          [(_ahora(), i, uid) for i in ids])
                 self.conexion.commit()
         return len(ids)
 
-    def eliminar_recuerdo(self, recuerdo_id, fisico=False):
+    def eliminar_recuerdo(self, recuerdo_id, fisico=False, usuario_id=None):
+        uid = self._uid(usuario_id)
         with self._lock:
             if fisico:
-                self.conexion.execute("UPDATE recuerdos SET reemplaza_a_id=NULL WHERE reemplaza_a_id=?",
-                                      (int(recuerdo_id),))
-            sql = "DELETE FROM recuerdos WHERE id=?" if fisico else "UPDATE recuerdos SET estado='eliminado',actualizado_en=? WHERE id=?"
-            args = (int(recuerdo_id),) if fisico else (_ahora(), int(recuerdo_id))
+                self.conexion.execute("UPDATE recuerdos SET reemplaza_a_id=NULL WHERE reemplaza_a_id=? AND usuario_id=?",
+                                      (int(recuerdo_id), uid))
+            sql = "DELETE FROM recuerdos WHERE id=? AND usuario_id=?" if fisico else "UPDATE recuerdos SET estado='eliminado',actualizado_en=? WHERE id=? AND usuario_id=?"
+            args = (int(recuerdo_id), uid) if fisico else (_ahora(), int(recuerdo_id), uid)
             cur = self.conexion.execute(sql, args)
             self.conexion.commit()
             return cur.rowcount > 0
 
-    def contar_recuerdos(self, solo_activos=True):
-        sql = "SELECT count(*) FROM recuerdos" + (" WHERE estado='activo'" if solo_activos else "")
+    def contar_recuerdos(self, solo_activos=True, usuario_id=None):
+        uid = self._uid(usuario_id)
+        sql = "SELECT count(*) FROM recuerdos WHERE usuario_id=?" + (" AND estado='activo'" if solo_activos else "")
         with self._lock:
-            return self.conexion.execute(sql).fetchone()[0]
+            return self.conexion.execute(sql, (uid,)).fetchone()[0]
 
-    def listar_recuerdos(self, limite=100, solo_activos=True, tipo_memoria=None):
-        where, args = [], []
+    def listar_recuerdos(self, limite=100, solo_activos=True, tipo_memoria=None, usuario_id=None):
+        uid = self._uid(usuario_id)
+        where, args = ["usuario_id=?"], [uid]
         if solo_activos:
             where.append("estado='activo'")
         if tipo_memoria:

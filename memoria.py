@@ -11,39 +11,30 @@ import memoria_filtro as mf
 import memoria_tiempo as mt
 import persistencia_segura as ps
 from memoria_almacen import AlmacenMemoriaCognitiva
+from memoria_gestor import GestorMemoria
 from memoria_migrador import migrar_legado_a_sqlite
+from memoria_modelos import limpiar_nombre, validar_usuario_id
 
 _memoria_instancia = None
 
 
-def limpiar_nombre(texto):
-    if not texto:
-        return texto
-    t = texto.strip()
-    t = re.sub(
-        r"^(hola[,.! ]*)?(me llamo|mi nombre es|yo soy|soy|te llamas|te llamarás|"
-        r"tu nombre es|llámame|puedes llamarme)\s+",
-        "",
-        t,
-        flags=re.IGNORECASE,
-    )
-    return t.strip(" .,!¡¿?")
-
-
 class Memoria:
-    def __init__(self, ruta_db=None, ruta_json=None):
+    def __init__(self, ruta_db=None, ruta_json=None, usuario_id="local"):
         global _memoria_instancia
         _memoria_instancia = self
         self._bloqueo = threading.RLock()
         self.bloqueo_invitado = False
-        self.ruta_json = os.fspath(ruta_json or ARCHIVO_MEMORIA)
+        self.usuario_id = validar_usuario_id(usuario_id)
+        self.ruta_json = os.fspath(ruta_json or ARCHIVO_MEMORIA) if self.usuario_id == "local" or ruta_json else None
         ruta_db = ruta_db or os.environ.get("SILVESTRA_MEMORIA_DB")
         if ruta_db is None:
-            ruta_db = os.path.join(os.path.dirname(os.path.abspath(self.ruta_json)), "silvestra_memoria.db")
-        self.almacen = AlmacenMemoriaCognitiva(ruta_db)
+            ruta_db = os.path.join(os.path.dirname(os.path.abspath(self.ruta_json or ARCHIVO_MEMORIA)), "silvestra_memoria.db")
+        self.almacen = AlmacenMemoriaCognitiva(ruta_db, self.usuario_id)
+        self.gestor = GestorMemoria(self.almacen, self.usuario_id)
         self.datos = self._vacia()
         self.cargar()
-        migrar_legado_a_sqlite(self.almacen, os.path.dirname(os.path.abspath(self.ruta_json)))
+        if self.ruta_json:
+            migrar_legado_a_sqlite(self.almacen, os.path.dirname(os.path.abspath(self.ruta_json)), self.usuario_id)
 
     @staticmethod
     def _vacia():
@@ -57,6 +48,9 @@ class Memoria:
 
     def cargar(self):
         with self._bloqueo:
+            if not self.ruta_json:
+                self.datos["hechos"] = [r["contenido"] for r in self.almacen.listar_recuerdos(10000)]
+                return
             guardado = ps.cargar_json_seguro(self.ruta_json, {})
             if isinstance(guardado, dict):
                 self.datos.update(guardado)
@@ -69,13 +63,13 @@ class Memoria:
 
     def guardar(self):
         with self._bloqueo:
-            ps.guardar_json_atomico(self.ruta_json, self.datos)
+            return ps.guardar_json_atomico(self.ruta_json, self.datos) if self.ruta_json else True
 
     def borrar(self):
         with self._bloqueo:
-            for r in self.almacen.listar_recuerdos(10000):
+            for r in self.almacen.listar_recuerdos(10000, solo_activos=False):
                 self.almacen.eliminar_recuerdo(r["id"])
-            if os.path.exists(self.ruta_json):
+            if self.ruta_json and os.path.exists(self.ruta_json):
                 os.remove(self.ruta_json)
             self.datos = self._vacia()
 
@@ -145,8 +139,8 @@ class Memoria:
                 hecho_guardar = hecho
 
             self.datos["hechos"].append(hecho_guardar)
-            self.almacen.guardar_recuerdo(hecho_guardar, tipo_memoria="semantica",
-                                          origen="explicito", fecha_evento=fecha)
+            self.gestor.guardar(hecho_guardar, tipo_memoria="semantica",
+                                origen="explicito", fecha_evento=fecha)
 
             if len(self.datos["hechos"]) > 200:
                 mb.resumir_memoria_antigua(self)
@@ -175,7 +169,7 @@ class Memoria:
 
             if eliminados:
                 self.datos["hechos"] = nuevos_hechos
-                self.almacen.olvidar_por_tema(tema)
+                self.gestor.olvidar(tema)
                 self.guardar()
                 total = len(self.datos["hechos"])
                 print(f"[memoria] guardados=0 relevantes=0 total={total}", flush=True)
