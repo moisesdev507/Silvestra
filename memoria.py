@@ -1,6 +1,5 @@
 """Memoria permanente de hechos, personas, gustos y fechas con filtro de privacidad."""
 import datetime
-import json
 import os
 import re
 import threading
@@ -9,15 +8,15 @@ from config import ARCHIVO_MEMORIA
 import acciones
 import memoria_busqueda as mb
 import memoria_filtro as mf
-from memoria_filtro import PALABRAS_PRIVADAS
 import memoria_tiempo as mt
 import persistencia_segura as ps
+from memoria_almacen import AlmacenMemoriaCognitiva
+from memoria_migrador import migrar_legado_a_sqlite
 
 _memoria_instancia = None
 
 
 def limpiar_nombre(texto):
-    """Quita frases como 'mi nombre es' y deja solo el nombre."""
     if not texto:
         return texto
     t = texto.strip()
@@ -32,13 +31,19 @@ def limpiar_nombre(texto):
 
 
 class Memoria:
-    def __init__(self):
+    def __init__(self, ruta_db=None, ruta_json=None):
         global _memoria_instancia
         _memoria_instancia = self
         self._bloqueo = threading.RLock()
         self.bloqueo_invitado = False
+        self.ruta_json = os.fspath(ruta_json or ARCHIVO_MEMORIA)
+        ruta_db = ruta_db or os.environ.get("SILVESTRA_MEMORIA_DB")
+        if ruta_db is None:
+            ruta_db = os.path.join(os.path.dirname(os.path.abspath(self.ruta_json)), "silvestra_memoria.db")
+        self.almacen = AlmacenMemoriaCognitiva(ruta_db)
         self.datos = self._vacia()
         self.cargar()
+        migrar_legado_a_sqlite(self.almacen, os.path.dirname(os.path.abspath(self.ruta_json)))
 
     @staticmethod
     def _vacia():
@@ -52,7 +57,7 @@ class Memoria:
 
     def cargar(self):
         with self._bloqueo:
-            guardado = ps.cargar_json_seguro(ARCHIVO_MEMORIA, {})
+            guardado = ps.cargar_json_seguro(self.ruta_json, {})
             if isinstance(guardado, dict):
                 self.datos.update(guardado)
             self.datos["nombre"] = limpiar_nombre(self.datos.get("nombre"))
@@ -64,13 +69,24 @@ class Memoria:
 
     def guardar(self):
         with self._bloqueo:
-            ps.guardar_json_atomico(ARCHIVO_MEMORIA, self.datos)
+            ps.guardar_json_atomico(self.ruta_json, self.datos)
 
     def borrar(self):
         with self._bloqueo:
-            if os.path.exists(ARCHIVO_MEMORIA):
-                os.remove(ARCHIVO_MEMORIA)
+            for r in self.almacen.listar_recuerdos(10000):
+                self.almacen.eliminar_recuerdo(r["id"])
+            if os.path.exists(self.ruta_json):
+                os.remove(self.ruta_json)
             self.datos = self._vacia()
+
+    def cerrar(self):
+        self.almacen.cerrar()
+
+    def __del__(self):
+        try:
+            self.cerrar()
+        except Exception:
+            pass
 
     @property
     def nombre(self):
@@ -96,9 +112,8 @@ class Memoria:
             self.guardar()
 
     def recordar(self, hecho, fecha=None):
-        """Guarda un registro permanente de lo que el dueño cuenta, con fecha."""
         if getattr(self, "bloqueo_invitado", False):
-            print(f"[memoria] Guardado bloqueado: turno de invitado ('{hecho}')", flush=True)
+            print("[memoria] Guardado bloqueado: turno de invitado", flush=True)
             return False
         if not hecho:
             return False
@@ -106,19 +121,16 @@ class Memoria:
         if not hecho:
             return False
 
-        # Filtro estricto de privacidad, meta-conversaciones y calidad
         valido, razon = mf.es_recuerdo_valido(hecho)
         if not valido:
-            print(f"[memoria] Rechazado ({razon}): '{hecho}'", flush=True)
+            print(f"[memoria] Rechazado por filtro ({razon})", flush=True)
             return False
 
         with self._bloqueo:
-            # Evitar duplicados exactos y semánticos
             if mf.es_duplicado(hecho, self.datos.get("hechos", [])):
-                print(f"[memoria] Rechazado por duplicado: '{hecho}'", flush=True)
+                print("[memoria] Rechazado por duplicado", flush=True)
                 return False
 
-            # Fecha de cuándo se dijo en zona de Panamá
             if not fecha:
                 try:
                     from zoneinfo import ZoneInfo
@@ -127,26 +139,24 @@ class Memoria:
                     ahora = datetime.datetime.now()
                 fecha = ahora.strftime("%Y-%m-%d")
 
-            # Prefijo de fecha
             if not re.match(r"^\[\d{4}-\d{2}-\d{2}\]", hecho) and not re.match(r"^\[\d{2}/\d{2}/\d{4}\]", hecho):
                 hecho_guardar = f"[{fecha}] {hecho}"
             else:
                 hecho_guardar = hecho
 
             self.datos["hechos"].append(hecho_guardar)
+            self.almacen.guardar_recuerdo(hecho_guardar, tipo_memoria="semantica",
+                                          origen="explicito", fecha_evento=fecha)
 
-            # Si pasa de ~200 recuerdos, resumir los viejos por tema
             if len(self.datos["hechos"]) > 200:
                 mb.resumir_memoria_antigua(self)
 
             self.guardar()
             total = len(self.datos["hechos"])
             print(f"[memoria] guardados=1 relevantes=0 total={total}", flush=True)
-            print(f"[memoria] Nuevo recuerdo permanente guardado: '{hecho_guardar}'", flush=True)
             return True
 
     def olvidar(self, tema):
-        """Borra recuerdos por voz según el tema o palabras clave."""
         if not tema or not tema.strip():
             return "No me dijiste qué recuerdo quieres que olvide."
         t_limpio = tema.strip().lower()
@@ -165,15 +175,15 @@ class Memoria:
 
             if eliminados:
                 self.datos["hechos"] = nuevos_hechos
+                self.almacen.olvidar_por_tema(tema)
                 self.guardar()
                 total = len(self.datos["hechos"])
                 print(f"[memoria] guardados=0 relevantes=0 total={total}", flush=True)
-                print(f"[memoria] Olvidados {len(eliminados)} recuerdos sobre '{tema}'", flush=True)
+                print(f"[memoria] olvidados={len(eliminados)}", flush=True)
                 return f"Listo. He olvidado lo que sabía sobre '{tema}'."
         return f"No encontré ningún recuerdo guardado sobre '{tema}'."
 
     def consultar(self, tema=None):
-        """Devuelve con total honestidad lo que tiene guardado sobre el dueño o sobre un tema X."""
         creador = self.creador
         t_norm = (tema or "").strip().lower()
 
@@ -182,7 +192,6 @@ class Memoria:
             resumenes = dict(self.datos.get("resumenes_tematicos", {}))
 
         total = len(hechos)
-        # Consulta general sobre el usuario
         if not t_norm or t_norm in ("mi", "mí", "yo", "sobre mi", "sobre mí", "de mi", "de mí"):
             if not hechos and not resumenes:
                 print(f"[memoria] guardados=0 relevantes=0 total={total}", flush=True)
@@ -193,7 +202,6 @@ class Memoria:
             print(f"[memoria] guardados=0 relevantes={len(limpios)} total={total}", flush=True)
             return f"De ti sé que te llamas {creador}, y recuerdo esto: " + "; ".join(limpios) + "."
 
-        # Consulta sobre tema específico X
         encontrados, n_rel = mb.buscar_recuerdos(hechos, tema, max_recuerdos=5, resumenes_tematicos=resumenes)
         print(f"[memoria] guardados=0 relevantes={n_rel} total={total}", flush=True)
         if not encontrados or n_rel == 0:
@@ -203,7 +211,6 @@ class Memoria:
         return f"Sobre {tema} recuerdo: " + "; ".join(limpios) + "."
 
     def extraer_hechos_conversacion(self, historial, pedir_fn=None):
-        """Hilo secundario: usa el proveedor para extraer hechos duraderos del diálogo."""
         try:
             if getattr(self, "bloqueo_invitado", False):
                 return
@@ -259,10 +266,9 @@ class Memoria:
             if guardados_ahora > 0:
                 print(f"[memoria] Extracción completada: {guardados_ahora} hechos guardados.", flush=True)
         except Exception as e:
-            print(f"[memoria] Error en extracción de conversación: {e}", flush=True)
+            print(f"[memoria] Error en extracción ({type(e).__name__})", flush=True)
 
     def vocabulario(self):
-        """Nombres propios que ayudan al oído a no confundirse."""
         palabras = [self.nombre or "", self.creador or ""]
         for h in self.hechos:
             palabras += re.findall(r"[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+", h)
@@ -274,7 +280,6 @@ class Memoria:
 
 
 def instalar(app):
-    """Registra las acciones de memoria: olvidar, recuerda_esto y que_sabes."""
     def _accion_olvidar(arg=None):
         mem = getattr(app, "memoria", None) or _memoria_instancia
         res = mem.olvidar(arg) if mem else "No pude acceder a la memoria."
