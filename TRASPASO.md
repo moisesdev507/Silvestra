@@ -72,14 +72,13 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - Cancelación cooperativa, timeout honesto y validación previa bajo `MotorPermisos`.
 - Solo handlers puros/simulados; no se habilitan procesos ni efectos reales.
 
+### Fase 2 — Etapa 4 cerrada
+- Sandbox de archivos explícito con rechazo de traversal, UNC, reparse points y nombres reservados.
+- Lectura, creación, modificación, copia, movimiento y renombrado dentro de raíces autorizadas.
+- Respaldo `.silvestra_respaldos`, escritura atómica y exclusión de respaldos en listados/búsquedas.
+
 ## 6. Guía de prompts para Gemini (Antigravity)
 ```text
-Lee PROYECTO.md, TRASPASO.md y [archivos relevantes]. Haz git commit antes de empezar.
-[Descripción clara y específica del cambio o corrección].
-Reglas de oro:
-- Archivos .py <= 15 KB (si crece, dividir en módulos) y TRASPASO.md <= 6.5 KB.
-- Nada de llamadas Qt directas desde hilos secundarios (usa app.cola).
-- Todo trabajo pesado o de red en hilos secundarios daemon.
-- No pidas claves ni inventes datos; español de Panamá.
-Al terminar, muestra cómo probarlo, tamaños exactos y actualiza PROYECTO.md y TRASPASO.md.
+Lee PROYECTO.md, TRASPASO.md y archivos relevantes. Define alcance, reglas .py/TRASPASO,
+seguridad Qt, pruebas, tamaños exactos y actualización mínima de documentación.
 ```
