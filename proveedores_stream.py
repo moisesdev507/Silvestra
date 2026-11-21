@@ -201,7 +201,7 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
                                 continue
                             # Validar lingüísticamente la primera frase antes de sintetizar voz
                             if frases_emitidas == 0:
-                                ok_f, mot_f = cr.analizar_calidad_texto(f_limpia)
+                                ok_f, mot_f = cr.analizar_calidad_texto(f_limpia, contexto_windows=mensajes)
                                 if not ok_f:
                                     registrar_fn(f"filtro_calidad frase rechazada en {nombre_p} ({mod_activo}): '{f_limpia}' motivo={mot_f}. Descartando proveedor.")
                                     cancelar.set()
@@ -227,7 +227,7 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
         if parcial is None:
             txt, _, _, emo_fin = separar(crudo)
             if txt and frases_emitidas == 0:
-                ok_txt, mot_txt = cr.analizar_calidad_texto(txt)
+                ok_txt, mot_txt = cr.analizar_calidad_texto(txt, contexto_windows=mensajes)
                 if ok_txt and callable(al_frase):
                     emo_usar = emo_detectada or emo_fin
                     item_envio = (forzar_utf8_fn(txt), emo_usar) if emo_usar else forzar_utf8_fn(txt)
@@ -244,7 +244,7 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
                 if not f_limpia:
                     continue
                 if frases_emitidas == 0:
-                    ok_f, mot_f = cr.analizar_calidad_texto(f_limpia)
+                    ok_f, mot_f = cr.analizar_calidad_texto(f_limpia, contexto_windows=mensajes)
                     if not ok_f:
                         registrar_fn(f"filtro_calidad frase final rechazada en {nombre_p} ({mod_activo}): '{f_limpia}' motivo={mot_f}")
                         descartado_por_calidad = True
@@ -266,7 +266,7 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
             continue
 
         # Validación de la respuesta completa
-        ok_resp, mot_resp = cr.analizar_calidad_texto(resp_final)
+        ok_resp, mot_resp = cr.analizar_calidad_texto(resp_final, contexto_windows=mensajes)
         if not ok_resp:
             registrar_fn(f"filtro_calidad respuesta completa rechazada en {nombre_p} ({mod_activo}): '{resp_final[:60]}' motivo={mot_resp}")
             idx += 1

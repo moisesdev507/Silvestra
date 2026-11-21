@@ -244,6 +244,17 @@ class TestValidacionGlobal(unittest.TestCase):
         self.assertIn(esperado, capturas["contexto_previo"])
         self.assertIn(esperado, capturas["prompt_enviado"])
 
+    def test_22_calidad_permite_proceso_contextual_y_bloquea_identidad(self):
+        from calidad_respuesta import analizar_calidad_texto
+        contexto = 'Aplicación activa en Windows: ChatGPT.exe | Ventana: "ChatGPT"'
+        ok, _ = analizar_calidad_texto(
+            "¡Ups! Me equivoqué, ahora estás en ChatGPT.exe.", contexto_windows=contexto)
+        self.assertTrue(ok)
+        self.assertFalse(analizar_calidad_texto(
+            "Soy ChatGPT.", contexto_windows=contexto)[0])
+        self.assertFalse(analizar_calidad_texto(
+            "Como modelo de OpenAI, no puedo hacer eso.", contexto_windows=contexto)[0])
+
     @staticmethod
     def _obs(modalidad, texto, tags, epistemico):
         return ObservacionIntegrada(modalidad, "prueba", texto,

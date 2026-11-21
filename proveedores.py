@@ -97,7 +97,7 @@ def completar(mensajes, tarea="charla", timeout=20):
                     continue
 
                 # Control de calidad lingüística
-                ok_c, mot_c = cr.analizar_calidad_texto(contenido)
+                ok_c, mot_c = cr.analizar_calidad_texto(contenido, contexto_windows=mensajes)
                 if not ok_c:
                     _registrar(f"filtro_calidad respuesta rechazada en {nombre} ({modelo}): {mot_c}. Reintentando...")
                     continue

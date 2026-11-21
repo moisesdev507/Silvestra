@@ -55,7 +55,29 @@ def es_token_corrupto(token):
     return False
 
 
-def analizar_calidad_texto(texto):
+def _tokens_contexto_windows(contexto):
+    if isinstance(contexto, (list, tuple)):
+        texto_ctx = "\n".join(str(m.get("content", "")) for m in contexto
+            if isinstance(m, dict) and m.get("role") == "system")
+    else:
+        texto_ctx = str(contexto or "")
+    patron = r'(?im)^Aplicación activa en Windows:\s*([^|\r\n]+)\s*\|\s*Ventana:\s*["“](.*?)["”]\s*$'
+    coincidencia = re.search(patron, texto_ctx)
+    if not coincidencia:
+        return set()
+    return {_normalizar_token(p) for parte in coincidencia.groups()
+            for p in re.findall(r"[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ0-9]+", parte)}
+
+
+def _es_fuga_identidad(texto):
+    normal = " ".join(_normalizar_token(p) for p in
+        re.findall(r"[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ0-9]+", texto))
+    marcas = r"chatgpt|claude|openai|anthropic|gemini"
+    return bool(re.search(rf"\bsoy\s+(?:(?:un|una|el|la)\s+)?(?:(?:modelo|asistente)\s+de\s+)?(?:{marcas})\b", normal)
+        or re.search(rf"\bcomo\s+(?:un\s+)?modelo\s+de\s+(?:{marcas})\b", normal))
+
+
+def analizar_calidad_texto(texto, contexto_windows=None):
     """Evalúa la completitud, ausencia de texto cortado y coherencia en español.
 
     Devuelve: (es_valido, motivo)
@@ -64,6 +86,8 @@ def analizar_calidad_texto(texto):
         return False, "texto_vacio"
 
     t = texto.strip()
+    if _es_fuga_identidad(t):
+        return False, "identidad_proveedor_modelo"
     if len(t) < 4:
         return False, "demasiado_corto"
 
@@ -78,7 +102,9 @@ def analizar_calidad_texto(texto):
         return False, f"truncado_en_conector('{ultima_palabra}')"
 
     # Detección de palabras fonotácticamente corruptas o imposibles en español
-    corruptas = [p for p in palabras if es_token_corrupto(p)]
+    permitidas = _tokens_contexto_windows(contexto_windows)
+    corruptas = [p for p in palabras if _normalizar_token(p) not in permitidas
+                 and es_token_corrupto(p)]
     if corruptas:
         return False, f"token_corrupto({corruptas[:2]})"
 
