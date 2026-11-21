@@ -1,4 +1,4 @@
-"""Validacion global pasiva de la integracion multimodal de Silvestra."""
+"""Validacion pasiva de integracion multimodal."""
 import threading
 import time
 import tracemalloc
@@ -77,7 +77,8 @@ class TestValidacionGlobal(unittest.TestCase):
         import os
         self.sistema._activo = True
         with patch("contexto_windows.obtener_contexto_windows", side_effect=[ctx, {
-            "hwnd": 0, "pid": os.getpid(), "titulo": "Silvestra", "ejecutable": "silvestra.exe"}]):
+            "hwnd": 0, "pid": os.getpid(), "titulo": "Silvestra", "ejecutable": "silvestra.exe"}]), \
+             patch.object(self.sistema, "_enumerar_ventana_externa", return_value=None):
             primera = self.sistema._actualizar_contexto()
             segunda = self.sistema._actualizar_contexto()
         self.assertEqual(primera["titulo"], "Editor")
@@ -196,16 +197,21 @@ class TestValidacionGlobal(unittest.TestCase):
         from cerebro import Cerebro
         self.sistema._activo = True
         self.app.sistema_multimodal = self.sistema
+        self.sistema._ultima_ventana_externa = self.sistema._normalizar_ventana({
+            "hwnd": 22, "pid": 72, "titulo": "Proyecto en VS Code", "ejecutable": "Code.exe"})
         externa = {"hwnd": 23, "pid": 73, "titulo": "Visual Studio Code",
-                   "ejecutable": "code.exe", "clase": "Chrome_WidgetWin_1"}
-        with patch("contexto_windows.obtener_contexto_windows", return_value=None) as sensor, \
+                   "ejecutable": "msedge.exe", "clase": "Chrome_WidgetWin_1"}
+        with self.assertLogs("multimodal_puente_app", level="INFO") as salida, \
+             patch("contexto_windows.obtener_contexto_windows", return_value=None) as sensor, \
              patch.object(self.sistema, "_enumerar_ventana_externa", return_value=externa) as enumerar, \
              patch("cerebro.construir_prompt", side_effect=lambda *a, **k: k.get("contexto_adicional", "")):
             cerebro = Cerebro(None, SimpleNamespace(), app=self.app)
             prompt = cerebro.instrucciones("¿En qué aplicación estoy ahorita?")
         sensor.assert_called_once()
         enumerar.assert_called_once()
-        self.assertIn('Aplicación activa en Windows: code.exe | Ventana: "Visual Studio Code"', prompt)
+        self.assertIn('Aplicación activa en Windows: msedge.exe | Ventana: "Visual Studio Code"', prompt)
+        self.assertEqual(self.sistema.estado_salud()["ultima_ventana_externa"]["ejecutable"], "msedge.exe")
+        self.assertIn("fuente=zorder", " ".join(salida.output))
         sensible = self.sistema._normalizar_ventana({"hwnd": 24, "pid": 74,
             "titulo": "Password recovery", "ejecutable": "browser.exe"})
         with self.assertLogs("multimodal_puente_app", level="INFO") as salida:

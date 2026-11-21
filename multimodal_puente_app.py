@@ -142,82 +142,20 @@ class SistemaMultimodalSilvestra:
 
     @staticmethod
     def _enumerar_ventana_externa():
-        """Recupera la ventana visible superior ignorando Silvestra y el shell."""
-        if os.name != "nt":
-            return None
-        import ctypes
-        from ctypes import wintypes
-        user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
-        clases = {"WorkerW", "Progman", "Shell_TrayWnd"}
-        hallada = []
-        callback_tipo = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
-        user32.IsWindowVisible.argtypes = [wintypes.HWND]
-        user32.IsWindowVisible.restype = wintypes.BOOL
-        user32.IsIconic.argtypes = [wintypes.HWND]
-        user32.IsIconic.restype = wintypes.BOOL
-        user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
-        user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
-        user32.GetWindowTextLengthW.restype = ctypes.c_int
-        user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
-        user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
-        user32.GetWindowThreadProcessId.restype = wintypes.DWORD
-        user32.EnumWindows.argtypes = [callback_tipo, wintypes.LPARAM]
-        user32.EnumWindows.restype = wintypes.BOOL
-        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
-        kernel32.OpenProcess.restype = wintypes.HANDLE
-        kernel32.QueryFullProcessImageNameW.argtypes = [wintypes.HANDLE, wintypes.DWORD,
-            wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
-        kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
-        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-        kernel32.CloseHandle.restype = wintypes.BOOL
+        """Recupera la primera ventana externa válida en orden Z."""
+        from multimodal_ventana_win32 import enumerar_ventana_externa
+        return enumerar_ventana_externa()
 
-        def visitar(hwnd, _):
-            if not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
-                return True
-            clase = ctypes.create_unicode_buffer(256)
-            user32.GetClassNameW(hwnd, clase, 256)
-            if clase.value in clases:
-                return True
-            pid = wintypes.DWORD(0)
-            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-            if not pid.value or pid.value == os.getpid():
-                return True
-            n = user32.GetWindowTextLengthW(hwnd)
-            if n <= 0:
-                return True
-            titulo = ctypes.create_unicode_buffer(min(n + 1, 1024))
-            user32.GetWindowTextW(hwnd, titulo, len(titulo))
-            ejecutable = ""
-            handle = kernel32.OpenProcess(0x1000, False, pid.value)
-            if handle:
-                try:
-                    ruta = ctypes.create_unicode_buffer(1024)
-                    largo = wintypes.DWORD(len(ruta))
-                    if kernel32.QueryFullProcessImageNameW(handle, 0, ruta, ctypes.byref(largo)):
-                        ejecutable = os.path.basename(ruta.value)
-                finally:
-                    kernel32.CloseHandle(handle)
-            if titulo.value:
-                hallada.append({"hwnd": int(hwnd), "pid": int(pid.value),
-                    "titulo": titulo.value, "ejecutable": ejecutable, "clase": clase.value})
-                return False
-            return True
-
-        try:
-            user32.EnumWindows(callback_tipo(visitar), 0)
-        except Exception:
-            return None
-        return hallada[0] if hallada else None
-
-    def _registrar_ventana(self, ventana):
+    def _registrar_ventana(self, ventana, fuente="foreground"):
         if not ventana:
-            logger.info("[multimodal] ventana_activa=%s titulo=%s", "no_disponible", "omitido")
+            logger.info("[multimodal] ventana_activa=%s titulo=%s fuente=%s",
+                        "no_disponible", "omitido", fuente)
             return {}
         with self._lock:
             self._ultima_ventana_externa = ventana
         titulo_log = "[omitido por privacidad]" if ventana["titulo_omitido"] else ventana["titulo"]
-        logger.info("[multimodal] ventana_activa=%s titulo=%s",
-                    ventana["ejecutable"] or ventana["pid"], titulo_log)
+        logger.info("[multimodal] ventana_activa=%s titulo=%s fuente=%s",
+                    ventana["ejecutable"] or ventana["pid"], titulo_log, fuente)
         obs = self.integrador.ingerir_contexto_windows(ventana)
         self._interpretar(obs)
         return dict(ventana)
@@ -233,18 +171,22 @@ class SistemaMultimodalSilvestra:
             actual = None
         if actual:
             self._reintentos = 0
-            return self._registrar_ventana(actual)
-        with self._lock:
-            previa = dict(self._ultima_ventana_externa)
-        if previa:
-            logger.info("[multimodal] ventana_activa=%s titulo=%s", previa.get("ejecutable") or previa.get("pid"),
-                        "[omitido por privacidad]" if previa.get("titulo_omitido") else previa.get("titulo", ""))
-            return previa
+            return self._registrar_ventana(actual, "foreground")
         try:
             respaldo = self._normalizar_ventana(self._enumerar_ventana_externa())
         except Exception:
             respaldo = None
-        return self._registrar_ventana(respaldo)
+        if respaldo:
+            return self._registrar_ventana(respaldo, "zorder")
+        with self._lock:
+            previa = dict(self._ultima_ventana_externa)
+        if previa:
+            logger.info("[multimodal] ventana_activa=%s titulo=%s fuente=%s",
+                        previa.get("ejecutable") or previa.get("pid"),
+                        "[omitido por privacidad]" if previa.get("titulo_omitido") else previa.get("titulo", ""),
+                        "cache")
+            return previa
+        return self._registrar_ventana(None, "cache")
 
     def registrar_vision(self, resultado):
         obs = self.integrador.ingerir_vision(resultado)
