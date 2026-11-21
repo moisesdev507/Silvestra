@@ -86,6 +86,10 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - Percepción multimodal, cola concurrente, TTL y dedupe.
 - Liberación de referencias y puentes pasivos a contexto/HUD/autonomía.
 
+### Fase 3 — Etapa 2 cerrada
+- Comprensión visual de PNG/JPEG/WebP y OCR desacoplado.
+- Privacidad remota, caché visual y límites de memoria.
+
 ## 6. Guía de prompts para Gemini (Antigravity)
 ```text
 Lee PROYECTO.md, TRASPASO.md y archivos relevantes. Define alcance, reglas .py/TRASPASO,
