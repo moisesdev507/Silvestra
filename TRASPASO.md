@@ -90,6 +90,11 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - Comprensión visual de PNG/JPEG/WebP y OCR desacoplado.
 - Privacidad remota, caché visual y límites de memoria.
 
+### Fase 3 — Etapa 3 cerrada
+- Comparación local de fotogramas y contexto temporal acotado.
+- Fuente dual compatible con Camara y callable sintética.
+- Sin almacenamiento permanente ni envío externo por defecto.
+
 ## 6. Guía de prompts para Gemini (Antigravity)
 ```text
 Lee PROYECTO.md, TRASPASO.md y archivos relevantes. Define alcance, reglas .py/TRASPASO,
