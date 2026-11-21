@@ -103,9 +103,12 @@ def formatear_contexto_para_prompt(ctx: dict[str, Any], t_ahora: float | None = 
     return "\n".join(lineas)
 
 
-def generar_directiva_contexto(app: Any = None, max_antiguedad_seg: float = UMBRAL_STALENESS_SEG) -> str:
+def generar_directiva_contexto(app: Any = None, max_antiguedad_seg: float = UMBRAL_STALENESS_SEG,
+                              contexto: dict[str, Any] | None = None) -> str:
     """Consulta el motor de contexto y produce el bloque formateado para cerebro_prompt."""
     try:
+        if contexto is not None:
+            return formatear_contexto_para_prompt(contexto)
         import contexto_motor
         motor = contexto_motor.obtener_motor_contexto(app)
         ctx = motor.obtener_contexto()

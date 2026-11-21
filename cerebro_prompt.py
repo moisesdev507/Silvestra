@@ -58,11 +58,11 @@ def cargar_alma():
     )
 
 
-def recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5, contexto=""):
+def recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5, contexto="", paquete=None):
     """Selecciona hasta max_recuerdos relevantes al tema actual por categorías y palabras clave."""
     if hasattr(memoria, "recuperar"):
         try:
-            paquete = memoria.recuperar(texto_actual or "", contexto=contexto, limite=max_recuerdos)
+            paquete = paquete or memoria.recuperar(texto_actual or "", contexto=contexto, limite=max_recuerdos)
             import memoria_recuperacion
             texto = memoria_recuperacion.formatear(paquete, 1050)
             import contexto_prompt
@@ -130,7 +130,7 @@ def describir_acciones_compactas(texto_actual=None):
 
 
 def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_invitado=False,
-                     contexto_adicional=""):
+                     contexto_adicional="", paquete_memoria=None, contexto_engine=None):
     """Construye el prompt del sistema optimizado por debajo de 2000 tokens."""
     m = memoria
     tokens_base = int((len("\n".join(m.hechos)) + 6800) / 3.6)
@@ -144,7 +144,7 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
     ctx_texto = ""
     try:
         import contexto_prompt
-        ctx_texto = contexto_prompt.generar_directiva_contexto()
+        ctx_texto = contexto_prompt.generar_directiva_contexto(contexto=contexto_engine)
     except Exception:
         pass
     if contexto_adicional:
@@ -155,7 +155,7 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         n_recuerdos = 0
     else:
         hechos_str, n_recuerdos = recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5,
-                                                       contexto=ctx_texto)
+            contexto=ctx_texto, paquete=paquete_memoria)
     total_m = len(memoria.hechos)
     print(f"[memoria] guardados=0 relevantes={n_recuerdos} total={total_m}", flush=True)
 

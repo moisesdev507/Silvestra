@@ -66,8 +66,7 @@ class Memoria(MantenimientoMemoria):
 
     def borrar(self):
         with self._bloqueo:
-            for r in self.almacen.listar_recuerdos(10000, solo_activos=False):
-                self.almacen.eliminar_recuerdo(r["id"])
+            self.almacen.eliminar_todos(self.usuario_id)
             if self.ruta_json and os.path.exists(self.ruta_json):
                 os.remove(self.ruta_json)
             self.datos = self._vacia()

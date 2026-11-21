@@ -1,9 +1,8 @@
 """Grafo SQLite multiusuario con aristas trazables y recorridos acotados."""
-import re
-import unicodedata
 from datetime import datetime, timezone
 
 from memoria_modelos import validar_usuario_id
+from memoria_grafo_utils import normalizar
 import memoria_grafo_recorrido as recorrido
 import memoria_filtro
 
@@ -13,12 +12,6 @@ TIPOS_RELACION = {"pertenece_a", "esta_relacionado_con", "utiliza", "depende_de"
                   "fue_creado_por", "ocurrio_antes_de", "ocurrio_despues_de", "es_version_de",
                   "contribuye_a", "tiene_como_objetivo", "es_consecuencia_de"}
 ESTADOS = {"activo", "contradicho", "obsoleto", "eliminado"}
-
-
-def normalizar(texto):
-    t = unicodedata.normalize("NFD", str(texto or "").casefold())
-    t = "".join(c for c in t if unicodedata.category(c) != "Mn")
-    return " ".join(re.findall(r"\w+", t, re.UNICODE))
 
 
 class GrafoConocimiento:

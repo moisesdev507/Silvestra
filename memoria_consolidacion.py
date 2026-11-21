@@ -1,20 +1,6 @@
 """Consolidación conservadora con historial, linaje y cancelación por grupo."""
-import re
 from memoria_almacen import _ahora
-
-
-def _tokens(texto):
-    return set(re.findall(r"\w+", str(texto or "").casefold()))
-
-
-def similitud(a, b):
-    x, y = _tokens(a), _tokens(b)
-    return len(x & y) / max(1, len(x | y))
-
-
-def _contradictorios(a, b):
-    x, y = _tokens(a), _tokens(b)
-    return bool(x & y) and (("no" in x) != ("no" in y))
+from memoria_consolidacion_validacion import incompatibilidad as _incompatibilidad, similitud
 
 
 def analizar(almacen, usuario_id="local"):
@@ -29,8 +15,9 @@ def analizar(almacen, usuario_id="local"):
             if b["id"] in usados or len(grupo) >= 20 or a["tipo_memoria"] != b["tipo_memoria"]:
                 continue
             score = similitud(a["contenido"], b["contenido"])
-            if _contradictorios(a["contenido"], b["contenido"]):
-                pares.append((a["id"], b["id"], "contradiccion"))
+            incompatibilidad = _incompatibilidad(a["contenido"], b["contenido"])
+            if incompatibilidad:
+                pares.append((a["id"], b["id"], incompatibilidad))
             elif score >= .90:
                 grupo.append(b)
             elif score >= .75:

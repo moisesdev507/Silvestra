@@ -1,8 +1,8 @@
 """Consultas acotadas reutilizadas por el grafo lógico."""
+from memoria_grafo_utils import normalizar
 
 
 def buscar_nodos(grafo, consulta, usuario_id=None, limite=20):
-    from memoria_grafo import normalizar
     uid = grafo._uid(usuario_id)
     q = set(normalizar(consulta).split())
     limite = max(1, min(int(limite), 100))

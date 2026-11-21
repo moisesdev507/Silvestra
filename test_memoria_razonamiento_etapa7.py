@@ -59,7 +59,7 @@ class TestRazonamientoEtapa7(unittest.TestCase):
         self.assertTrue(p["conocida"])
         self.assertTrue(p["inferencias"])
         self.assertTrue(all(x.get("no_confirmada") for x in p["inferencias"]))
-        self.assertEqual(p["hipotesis"], [])
+        self.assertTrue(p["hipotesis"])
 
     def test_06_se_abstiene_sin_datos(self):
         p = self.mem.razonar("¿Qué ocurrió en Marte ayer?")
@@ -144,6 +144,7 @@ class TestRazonamientoEtapa7(unittest.TestCase):
 
     def test_15_regresion_y_comparacion_de_alternativas(self):
         self.guardar("Mi lenguaje preferido es Python")
+        self.guardar("Mi base de datos preferida para el proyecto es SQLite")
         p = self.mem.razonar("¿Python o SQLite para mi proyecto?")
         self.assertGreaterEqual(len(p["alternativas"]), 2)
         self.assertTrue(self.mem.recuperar("Python")["resultados"])

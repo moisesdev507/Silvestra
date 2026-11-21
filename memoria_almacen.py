@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import memoria_esquema
 from memoria_transacciones import TransaccionesMemoria
 from memoria_modelos import validar_usuario_id
+import memoria_almacen_purga
 
 
 def normalizar(texto):
@@ -186,15 +187,19 @@ class AlmacenMemoriaCognitiva(TransaccionesMemoria):
 
     def eliminar_recuerdo(self, recuerdo_id, fisico=False, usuario_id=None):
         uid = self._uid(usuario_id)
+        if fisico:
+            return bool(self.eliminar_recuerdos_fisicos([recuerdo_id], uid))
         with self._lock:
-            if fisico:
-                self.conexion.execute("UPDATE recuerdos SET reemplaza_a_id=NULL WHERE reemplaza_a_id=? AND usuario_id=?",
-                                      (int(recuerdo_id), uid))
-            sql = "DELETE FROM recuerdos WHERE id=? AND usuario_id=?" if fisico else "UPDATE recuerdos SET estado='eliminado',actualizado_en=? WHERE id=? AND usuario_id=?"
-            args = (int(recuerdo_id), uid) if fisico else (_ahora(), int(recuerdo_id), uid)
-            cur = self.conexion.execute(sql, args)
+            cur = self.conexion.execute("UPDATE recuerdos SET estado='eliminado',actualizado_en=? WHERE id=? AND usuario_id=?",
+                (_ahora(), int(recuerdo_id), uid))
             self.conexion.commit()
             return cur.rowcount > 0
+
+    def eliminar_recuerdos_fisicos(self, ids, usuario_id=None):
+        return memoria_almacen_purga.eliminar_fisicos(self, ids, usuario_id)
+
+    def eliminar_todos(self, usuario_id=None):
+        return memoria_almacen_purga.eliminar_todos(self, usuario_id)
 
     def contar_recuerdos(self, solo_activos=True, usuario_id=None):
         uid = self._uid(usuario_id)

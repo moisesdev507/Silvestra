@@ -64,6 +64,7 @@ class Cerebro:
             "sonido", "audio", "situacion", "que pasa"))
         contexto_adicional = ""
         datos_multimodales = {}
+        contexto_engine = paquete_memoria = None
         if puente is not None and consulta:
             try:
                 datos = puente.consultar_entorno_actual(texto_actual) or {}
@@ -89,12 +90,13 @@ class Cerebro:
                 self._seguimiento_visual_pendiente = False
         else:
             self._seguimiento_visual_pendiente = False
-        if len(pregunta) >= 18 and hasattr(self.memoria, "razonar"):
+        if len(pregunta) >= 18 and not es_invitado and hasattr(self.memoria, "razonar"):
             try:
                 import contexto_motor
-                engine = contexto_motor.obtener_motor_contexto(app).obtener_contexto()
-                resultado = self.memoria.razonar(texto_actual, contexto_engine=engine,
+                contexto_engine = contexto_motor.obtener_motor_contexto(app).obtener_contexto()
+                resultado = self.memoria.razonar(texto_actual, contexto_engine=contexto_engine,
                     multimodal=datos_multimodales or None)
+                paquete_memoria = resultado.get("recuperacion")
                 from memoria_razonamiento import formatear
                 resumen = formatear(resultado, 650)
                 if resumen:
@@ -102,7 +104,8 @@ class Cerebro:
             except Exception as exc:
                 print(f"[cerebro] razonamiento de memoria no disponible ({type(exc).__name__})", flush=True)
         return construir_prompt(self.memoria, texto_actual, self._obtener_historial_podado(),
-            es_invitado=es_invitado, contexto_adicional=contexto_adicional)
+            es_invitado=es_invitado, contexto_adicional=contexto_adicional,
+            paquete_memoria=paquete_memoria, contexto_engine=contexto_engine)
 
     def _pedir(self, mensajes, tarea="charla"):
         import proveedores

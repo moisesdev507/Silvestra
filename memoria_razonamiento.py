@@ -1,8 +1,7 @@
 """Razonamiento trazable sobre memoria existente; no escribe ni ejecuta acciones."""
-import re
-
 import memoria_recuperacion
 import memoria_razonamiento_grafo
+import memoria_razonamiento_evidencia
 from memoria_modelos import validar_usuario_id
 
 
@@ -74,6 +73,7 @@ def razonar(gestor, consulta, usuario_id=None, contexto_engine=None, multimodal=
     except Exception as exc:
         salida["errores"].append("recuperacion:" + type(exc).__name__)
         paquete = {"resultados": [], "contradicciones": [], "relaciones": []}
+    salida["recuperacion"] = paquete
     if _cancelado(token_cancelacion):
         salida["cancelado"] = True
         return salida
@@ -95,29 +95,30 @@ def razonar(gestor, consulta, usuario_id=None, contexto_engine=None, multimodal=
         if ref["origen"] == "inferido" or temporal:
             salida["inferencias"].append({"descripcion": ref["contenido"], "certeza": "limitada",
                 "referencias": [ref["id"]], "no_confirmada": True})
+        if ref["origen"] == "inferido" and isinstance(ref["id"], int):
+            salida["hipotesis"].append({"descripcion": ref["contenido"], "recuerdo_ids": [ref["id"]],
+                "confianza": min(.65, ref["confianza"] or .0), "no_confirmada": True})
         if isinstance(ref["id"], int):
             evidencia_grafo.append(item)
             try:
                 ref["reemplaza_a_id"] = item.get("reemplaza_a_id")
-                ref["historial"] = len(gestor.almacen.listar_historial(ref["id"], uid))
+                ref["cronologia"] = memoria_razonamiento_evidencia.cronologia(
+                    gestor.almacen, item, uid, _texto, _confianza)
+                ref["historial"] = sum(len(x["snapshots"]) for x in ref["cronologia"])
                 ref["linaje"] = [x.get("origen_id") for x in gestor.almacen.listar_linaje(ref["id"], uid)]
             except Exception as exc:
                 salida["errores"].append("historial:" + type(exc).__name__)
         salida["trazabilidad"].append({k: ref.get(k) for k in
-            ("id", "tipo_memoria", "origen", "fecha", "confianza", "estado", "reemplaza_a_id", "historial", "linaje")})
+            ("id", "tipo_memoria", "origen", "fecha", "confianza", "estado", "reemplaza_a_id", "historial", "linaje", "cronologia")})
     for item in paquete.get("contradicciones", []):
         a, b = item.get("recuerdo_a", {}), item.get("recuerdo_b", {})
         salida["contradicciones"].append({"ids": [a.get("id"), b.get("id")],
             "estado": "posible_contradiccion", "fuentes": [a.get("origen"), b.get("origen")]})
-    opciones = re.search(r"\b([\wáéíóúñ -]{2,36}?)\s+o\s+([\wáéíóúñ -]{2,36})\b", str(consulta or ""), re.I)
-    if opciones:
-        for opcion in (opciones.group(1).strip(), opciones.group(2).strip()):
-            norm = opcion.casefold().strip(" ?¿.,")
-            ids = [e["id"] for e in salida["evidencia"] if norm and norm in e["contenido"].casefold()]
-            salida["alternativas"].append({"opcion": opcion, "recuerdo_ids": ids,
-                "respaldo": len(ids), "comparacion": "evidencia encontrada" if ids else "sin evidencia"})
-        if not any(x["respaldo"] for x in salida["alternativas"]):
-            salida["incertidumbre"].append("No hay evidencia para comparar las alternativas planteadas.")
+    comparables, comparacion = memoria_razonamiento_evidencia.comparar(consulta, salida["evidencia"])
+    if comparacion and len(comparables) >= 2:
+        salida["alternativas"] = comparables
+    elif comparacion:
+        salida["incertidumbre"].append("No hay evidencia para comparar las alternativas planteadas.")
     if _cancelado(token_cancelacion):
         salida["cancelado"] = True
         return salida
@@ -131,12 +132,16 @@ def razonar(gestor, consulta, usuario_id=None, contexto_engine=None, multimodal=
         salida["contradicciones"].extend({"relacion_id": r.get("id"), "estado": r.get("estado"),
             "origen": r.get("origen"), "confianza": r.get("confianza")} for r in grafo.get("relaciones_contradictorias", []))
         salida["inferencias"].extend({"descripcion": "Conexión relacional entre entidades",
-            "certeza": "probable", "relacion_ids": [r.get("id")], "no_confirmada": True}
+            "certeza": "probable", "relacion_ids": [r.get("id")], "confianza": min(.65, float(r.get("confianza", 0))), "no_confirmada": True}
             for r in grafo.get("relaciones_activas", []))
+        for r in grafo.get("relaciones_debiles", []):
+            if isinstance(r.get("id"), int):
+                salida["hipotesis"].append({"descripcion": "Relación débil entre entidades",
+                    "relacion_ids": [r["id"]], "confianza": min(.5, float(r.get("confianza", 0))), "no_confirmada": True})
     except Exception as exc:
         salida["errores"].append("grafo:" + type(exc).__name__)
-    fuertes = [x for x in salida["conocida"] if x["confianza"] >= .75]
-    if fuertes:
+    fuertes = [x for x in salida["conocida"] if x["confianza"] is not None and x["confianza"] >= .75]
+    if fuertes and not salida["contradicciones"]:
         elegido = max(fuertes, key=lambda x: x["confianza"])
         salida["conclusiones"].append({"texto": "El recuerdo explícito con mayor respaldo indica: " + elegido["contenido"],
             "tipo": "respaldada", "recuerdo_ids": [elegido["id"]], "confianza": elegido["confianza"]})
@@ -166,12 +171,15 @@ def formatear(resultado, limite=650):
     if not isinstance(resultado, dict) or resultado.get("cancelado"):
         return ""
     lineas = ["[RAZONAMIENTO DE MEMORIA — HISTÓRICO, TRAZABLE]"]
-    for e in resultado.get("evidencia", [])[:4]:
-        lineas.append(f"- Evidencia #{e.get('id')}: {e.get('contenido')} ({e.get('origen')}, {e.get('fecha')}, confianza {e.get('confianza')})")
+    if resultado.get("evidencia"):
+        lineas.append("Evidencias desarrolladas en el bloque de memoria; IDs: " +
+            ", ".join(str(e.get("id")) for e in resultado["evidencia"][:8]))
     for c in resultado.get("contradicciones", [])[:3]:
         lineas.append(f"- Contradicción posible, referencias {c.get('ids', c.get('relacion_id'))}; no resuelta.")
     for c in resultado.get("conclusiones", [])[:2]:
         lineas.append(f"- Conclusión limitada: {c.get('texto')} [IDs {c.get('recuerdo_ids')}]")
+    for h in resultado.get("hipotesis", [])[:3]:
+        lineas.append(f"- Hipótesis no confirmada [IDs {h.get('recuerdo_ids', h.get('relacion_ids'))}; confianza {h.get('confianza')}].")
     if resultado.get("incertidumbre"):
         lineas.append("- Incertidumbre: " + "; ".join(resultado["incertidumbre"][:2]))
     lineas.append("El contexto actual en vivo se conserva aparte; estas evidencias son históricas.")

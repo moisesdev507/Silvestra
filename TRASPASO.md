@@ -91,3 +91,5 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - Puente global con ciclo de vida no bloqueante; cámaras, micrófono, captura continua y envío externo desactivados por defecto.
 - Contexto conserva la última ventana externa no sensible; captura efímera cerrada en `finally`.
 - Cerebro incluye observaciones e hipótesis separadas. Suite `test_validacion_global_fase3.py`; pendientes pruebas físicas autorizadas.
+## Cierre Fase 4 — Etapa 8
+Integración validada: SQLite/FTS5, formación, recuperación, grafo, linaje, consolidación, olvido y razonamiento trazable. El razonador es de solo lectura; contexto Windows en vivo permanece separado de recuerdos históricos. Validación E2E y regresión completa ejecutadas en almacenamiento aislado. Sin inicio de Fase 5.

@@ -40,13 +40,4 @@ def olvidar(almacen, tema, usuario_id="local", explicito=False):
     uid = almacen._uid(usuario_id)
     filas = almacen.buscar_texto(tema, 500, solo_activos=False, usuario_id=uid)
     ids = [f["id"] for f in filas]
-    if not ids:
-        return 0
-    with almacen.transaccion():
-        for rid in ids:
-            almacen.conexion.execute("DELETE FROM recuerdos_historial WHERE recuerdo_id=? AND usuario_id=?", (rid, uid))
-            almacen.conexion.execute("DELETE FROM recuerdos_linaje WHERE usuario_id=? AND (recuerdo_id=? OR origen_id=?)", (uid, rid, rid))
-            almacen.conexion.execute("UPDATE relaciones SET recuerdo_id=NULL,estado='obsoleto',actualizado_en=datetime('now') WHERE recuerdo_id=? AND usuario_id=?", (rid, uid))
-            almacen.conexion.execute("UPDATE recuerdos SET reemplaza_a_id=NULL WHERE reemplaza_a_id=? AND usuario_id=?", (rid, uid))
-            almacen.conexion.execute("DELETE FROM recuerdos WHERE id=? AND usuario_id=?", (rid, uid))
-    return len(ids)
+    return almacen.eliminar_recuerdos_fisicos(ids, uid)
