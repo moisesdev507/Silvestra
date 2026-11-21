@@ -100,7 +100,19 @@ class Cerebro:
                     multimodal=datos_multimodales or None)
                 paquete_memoria = resultado.get("recuperacion")
                 from razonamiento_motor import razonar, formatear
-                cognicion = razonar(texto_actual, resultado_memoria=resultado)
+                experiencias = []
+                if hasattr(self.memoria, "almacen"):
+                    try:
+                        from experiencia_motor import MotorExperiencias
+                        motor_exp = getattr(self, "_motor_experiencias", None)
+                        if motor_exp is None or motor_exp.usuario_id != self.memoria.usuario_id:
+                            motor_exp = MotorExperiencias(self.memoria.almacen, self.memoria.usuario_id)
+                            self._motor_experiencias = motor_exp
+                        experiencias = motor_exp.recuperar(texto_actual, 4)
+                    except Exception:
+                        experiencias = []
+                cognicion = razonar(texto_actual, resultado_memoria=resultado,
+                    aprendizajes_experienciales=experiencias)
                 resumen = formatear(cognicion, 900)
                 if resumen:
                     contexto_adicional = (contexto_adicional + "\n" + resumen).strip()[:1800]
@@ -112,6 +124,7 @@ class Cerebro:
                         self._motor_planificacion = motor
                     contexto_plan = dict(contexto_engine or {})
                     contexto_plan["multimodal"] = datos_multimodales or {}
+                    contexto_plan["aprendizajes_experienciales"] = experiencias
                     plan = motor.crear_plan(texto_actual, cognicion, contexto_plan,
                         self, token_cancelacion=getattr(self, "token_cancelacion", None))
                     contexto_adicional = (contexto_adicional + "\n" + formatear_plan(plan)).strip()[:2800]

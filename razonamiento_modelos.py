@@ -98,6 +98,7 @@ class ResultadoRazonamientoInteligente:
     confianza_global: float | None = None
     incertidumbre: tuple[str, ...] = ()
     errores: tuple[str, ...] = ()
+    aprendizajes_experienciales: tuple[dict, ...] = ()
     cancelado: bool = False
 
     def __post_init__(self):

@@ -58,3 +58,6 @@ Motor determinista de razonamiento (`razonamiento_modelos.py`, `razonamiento_fue
 
 ## Fase 5 — Etapa 2
 Planificación reutiliza el DAG de `planificador_modelo.py`; evaluación de alternativas/riesgos, progreso y replanificación incremental se guardan por usuario en la SQLite cognitiva. Cerebro solo genera planes ante pedidos explícitos. Recomendación, aprobación humana y autorización de ejecución son estados independientes; no hay ejecución autónoma.
+
+## Fase 5 — Etapa 3
+Aprendizaje experiencial trazable sobre SQLite cognitiva: patrones requieren 3 fuentes independientes. Verificación publica informes a un adaptador de fondo; razonamiento y planificación reciben lecciones históricas orientativas. Sin cambios automáticos a permisos/código.

@@ -48,7 +48,8 @@ def _riesgos(objetivo, plan, contexto):
     return tuple(riesgos)
 
 
-def evaluar(objetivo, razonamiento=None, contexto=None, plan=None, alternativas=None, token_cancelacion=None):
+def evaluar(objetivo, razonamiento=None, contexto=None, plan=None, alternativas=None, token_cancelacion=None,
+            aprendizajes_experienciales=None):
     if token_cancelacion is not None and token_cancelacion.is_set():
         return AnalisisPlan(ObjetivoPlan(str(objetivo or "")), cancelado=True)
     if razonamiento is not None and not isinstance(razonamiento, (dict, ResultadoRazonamientoInteligente)):
@@ -90,9 +91,15 @@ def evaluar(objetivo, razonamiento=None, contexto=None, plan=None, alternativas=
         conf = max(0., min(1., float(conf) - min(.25, .08 * len(gaps) + .05 * len(riesgos))))
     just = (f"Se recomienda {mejor.titulo}: pondera beneficio, costo, complejidad y riesgo; "
             "la aprobación y autorización de ejecución siguen pendientes.") if mejor else "No hay alternativa evaluable."
+    lecciones = [x for x in (aprendizajes_experienciales or ()) if isinstance(x, dict)
+        and x.get("estado") in {"preliminar", "validado"}]
+    if lecciones:
+        just += " Lecciones históricas orientativas: " + "; ".join(
+            str(x.get("interpretacion", ""))[:120] for x in lecciones[:3])
     evs = _get(razonamiento, "evidencia", ()) if isinstance(razonamiento, dict) else (
         list(_get(razonamiento, "hechos", ())) + list(_get(razonamiento, "inferencias", ())) if razonamiento else ())
     refs = tuple(str(_get(x, "id", "")) for x in evs[:5] if _get(x, "id") is not None)
+    refs += tuple("aprendizaje:" + str(x.get("id_aprendizaje")) for x in lecciones[:3])
     decision = DecisionPlan(mejor.id if mejor else None, just, bool(mejor),
         "pendiente" if mejor else "no_requerida", "no_solicitada",
         refs, conf)

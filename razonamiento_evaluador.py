@@ -49,7 +49,7 @@ def _alternativas(memoria, token):
     return salida, pares
 
 
-def evaluar(consulta, memoria=None, token_cancelacion=None):
+def evaluar(consulta, memoria=None, token_cancelacion=None, aprendizajes_experienciales=None):
     problema, subs = _problema(consulta)
     if _cancelado(token_cancelacion):
         return {"problema": problema, "subproblemas": subs, "cancelado": True}
@@ -76,9 +76,12 @@ def evaluar(consulta, memoria=None, token_cancelacion=None):
         if score is not None and float(score) >= .75 and not contrad and refs and all(x in ids for x in refs):
             conclusiones.append(ConclusionJustificada(str(c.get("texto", ""))[:350], refs, refs,
                 (), tuple(x.id for x in opciones if x.descartada), min(float(score), confianza if confianza is not None else .65)))
+    lecciones = tuple(dict(x) for x in (aprendizajes_experienciales or ())
+        if isinstance(x, dict) and x.get("estado") in {"preliminar", "validado"})
     return {"problema": problema, "subproblemas": subs, "hechos": tuple(hechos), "contexto_vivo": tuple(vivo),
         "inferencias": tuple(inferencias), "hipotesis": tuple(x for x in opciones if x.tipo == "hipotesis"),
         "alternativas": tuple(x for x in opciones if x.tipo == "alternativa"), "conclusiones": tuple(conclusiones),
         "contradicciones": tuple(contrad), "informacion_faltante": tuple(dict.fromkeys(faltan)),
         "confianza_global": confianza, "incertidumbre": ("Evidencia incompleta o no numérica.",) if faltan or confianza is None else (),
-        "errores": tuple(memoria.get("errores", [])), "cancelado": _cancelado(token_cancelacion)}
+        "errores": tuple(memoria.get("errores", [])), "aprendizajes_experienciales": lecciones,
+        "cancelado": _cancelado(token_cancelacion)}

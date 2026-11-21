@@ -80,7 +80,8 @@ class _PlanificadorSQLite(legado.Planificador):
             self._planes = anteriores
             plan.id_plan = "plan_" + uuid.uuid4().hex
             self._planes[plan.id_plan] = plan
-            analisis = evaluar.evaluar(texto, razonamiento, contexto, plan, alternativas, token_cancelacion)
+            analisis = evaluar.evaluar(texto, razonamiento, contexto, plan, alternativas,
+                token_cancelacion, (contexto or {}).get("aprendizajes_experienciales", ()))
             self._analisis[plan.id_plan] = analisis.a_dict()
             self.repo.guardar_lote(self._planes, self._analisis, self.usuario_id)
             return plan, analisis
@@ -91,6 +92,21 @@ class PlanificacionMotor:
         self.repo = AlmacenPlanes(almacen)
         self.usuario_id = self.repo._uid(usuario_id)
         self.planificador = _PlanificadorSQLite(self.repo, self.usuario_id)
+        self._observadores_resultado = []
+
+    def suscribir_resultados(self, callback):
+        if not callable(callback):
+            return False
+        if callback not in self._observadores_resultado:
+            self._observadores_resultado.append(callback)
+        return True
+
+    def _emitir_resultado(self, plan_id, tarea_id, estado):
+        for callback in tuple(self._observadores_resultado):
+            try:
+                callback(plan_id, tarea_id, estado)
+            except Exception:
+                pass
 
     def crear_plan(self, objetivo, razonamiento=None, contexto=None, cerebro=None,
                    alternativas=None, token_cancelacion=None):
@@ -116,6 +132,7 @@ class PlanificacionMotor:
         try:
             impactadas = adapt.actualizar_estado(plan, id_tarea, estado, motivo)
             self.planificador.guardar()
+            self._emitir_resultado(id_plan, id_tarea, estado)
             return True, "Estado actualizado", impactadas
         except (KeyError, ValueError) as exc:
             return False, str(exc), []

@@ -48,6 +48,15 @@ class MotorVerificacionRecuperacion:
         self._informes: dict[str, InformeVerificacion] = {}
         self._id_solicitudes: set[str] = set()
         self._informe_ids: set[str] = set()
+        self._observadores_experiencia: list[Callable[..., Any]] = []
+
+    def suscribir_post_verificacion(self, callback: Callable[..., Any]) -> bool:
+        if not callable(callback):
+            return False
+        with self._bloqueo:
+            if callback not in self._observadores_experiencia:
+                self._observadores_experiencia.append(callback)
+        return True
 
     def suscribir_eventos(self) -> bool:
         if self.motor_ejecucion is None:
@@ -85,6 +94,13 @@ class MotorVerificacionRecuperacion:
         return self.registro.registrar(criterio, verificador, sobrescribir)
 
     def _emitir(self, informe: InformeVerificacion) -> None:
+        with self._bloqueo:
+            observadores = tuple(self._observadores_experiencia)
+        for callback in observadores:
+            try:
+                callback(informe)
+            except Exception:
+                pass
         payload = {"tipo": "verificacion", "informe": informe.a_dict()}
         if self.app_cola is not None:
             try:

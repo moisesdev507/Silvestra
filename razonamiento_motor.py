@@ -19,7 +19,8 @@ def _titulo(valor):
 
 
 def razonar(consulta, resultado_memoria=None, contexto_engine=None, multimodal=None,
-            memoria=None, gestor=None, usuario_id=None, token_cancelacion=None):
+            memoria=None, gestor=None, usuario_id=None, token_cancelacion=None,
+            aprendizajes_experienciales=None):
     """Estructura un resultado existente; consulta memoria una sola vez si falta."""
     bruto = resultado_memoria if isinstance(resultado_memoria, dict) else None
     errores = []
@@ -51,7 +52,7 @@ def razonar(consulta, resultado_memoria=None, contexto_engine=None, multimodal=N
                 win["titulo"] = "omitido por privacidad" if win.get("titulo_omitido") else _titulo(win.get("titulo"))
                 mm["ventana"] = win
             actual["multimodal"] = mm
-    evaluado = razonamiento_evaluador.evaluar(consulta, bruto, token_cancelacion)
+    evaluado = razonamiento_evaluador.evaluar(consulta, bruto, token_cancelacion, aprendizajes_experienciales)
     if errores:
         evaluado["errores"] = tuple(errores)
     p = evaluado.get("problema") or ProblemaEstructurado(str(consulta or ""), str(consulta or ""), "simple")
@@ -62,6 +63,7 @@ def razonar(consulta, resultado_memoria=None, contexto_engine=None, multimodal=N
         conclusiones=tuple(evaluado.get("conclusiones", ())), contradicciones=tuple(evaluado.get("contradicciones", ())),
         informacion_faltante=tuple(evaluado.get("informacion_faltante", ())), confianza_global=evaluado.get("confianza_global"),
         incertidumbre=tuple(evaluado.get("incertidumbre", ())), errores=tuple(evaluado.get("errores", ())),
+        aprendizajes_experienciales=tuple(evaluado.get("aprendizajes_experienciales", ())),
         cancelado=bool(evaluado.get("cancelado") or _cancelado(token_cancelacion)))
 
 
@@ -78,6 +80,11 @@ def formatear(resultado, limite=900):
     if resultado.hechos:
         lineas.append("Hechos/recuerdos explícitos con referencias: " + "; ".join(
             f"{x.contenido} [id {x.id}]" for x in resultado.hechos[:4]))
+    if resultado.aprendizajes_experienciales:
+        lineas.append("[APRENDIZAJES DE EXPERIENCIAS — HISTÓRICOS, NO HECHOS ACTUALES]")
+        lineas.extend("- " + str(x.get("interpretacion", ""))[:220] +
+            f" (estado={x.get('estado')}, confianza={x.get('confianza')}, origen={','.join(x.get('origen_ids',())[:3])})"
+            for x in resultado.aprendizajes_experienciales[:4])
     if resultado.inferencias:
         lineas.append("Inferencias no confirmadas: " + "; ".join(
             f"{x.contenido} [id {x.id}; confianza {x.confianza}]" for x in resultado.inferencias[:3]))
