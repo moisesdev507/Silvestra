@@ -19,6 +19,8 @@ class GestorMemoria:
         self.ttl_trabajo = max(1.0, float(ttl_trabajo))
         self._lock = threading.RLock()
         self._trabajo = {}
+        from memoria_grafo import GrafoConocimiento
+        self.grafo = GrafoConocimiento(almacen)
 
     def _uid(self, usuario_id=None):
         return validar_usuario_id(usuario_id if usuario_id is not None else self.usuario_id)

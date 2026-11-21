@@ -1,5 +1,6 @@
 """Esquema SQLite del almacenamiento cognitivo."""
 import os
+import memoria_esquema_relaciones
 
 
 DDL = """
@@ -65,4 +66,5 @@ def inicializar(conexion, ruta=None):
     if tabla and not fts:
         conexion.execute("INSERT INTO recuerdos_fts(recuerdos_fts) VALUES('rebuild')")
     conexion.commit()
+    memoria_esquema_relaciones.migrar(conexion)
     return conexion

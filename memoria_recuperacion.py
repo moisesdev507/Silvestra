@@ -150,11 +150,19 @@ def recuperar(gestor, consulta, usuario_id="local", contexto="", limite=5):
     puntuados.sort(key=lambda x: (x["puntuacion"], x.get("tipo_memoria") in preferidos,
                                   x.get("creado_en", "")), reverse=True)
     elegidos = puntuados[:limite]
+    relaciones = []
+    grafo = getattr(gestor, "grafo", None)
+    ids = [x.get("id") for x in elegidos if isinstance(x.get("id"), int)]
+    if grafo and ids:
+        try:
+            relaciones = grafo.relaciones_de_recuerdos(ids, usuario_id, .75, 8)
+        except Exception as exc:
+            error = error or type(exc).__name__
     cobertura = "insuficiente" if not elegidos or (analisis["ambigua"] and not analisis["resolucion"]) else "parcial" if elegidos[0]["puntuacion"] < .22 else "adecuada"
     return {"consulta": analisis, "resultados": elegidos, "contradicciones": _contradicciones(elegidos),
             "ambigua": analisis["ambigua"], "cobertura": cobertura,
             "sin_resultados": not bool(elegidos), "error_almacenamiento": error,
-            "usuario_id": usuario_id}
+            "usuario_id": usuario_id, "relaciones": relaciones}
 
 
 def formatear(paquete, limite_caracteres=1200):

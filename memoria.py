@@ -147,6 +147,11 @@ class Memoria:
         from memoria_recuperacion import recuperar
         return recuperar(self.gestor, consulta, self.usuario_id, contexto, limite)
 
+    def consultar_relacional(self, consulta, contexto="", max_profundidad=2, max_resultados=20):
+        from memoria_relaciones import consultar_relacional
+        return consultar_relacional(self.gestor.grafo, consulta, self.usuario_id,
+                                    contexto, max_profundidad, max_resultados)
+
     def consultar(self, tema=None):
         creador = self.creador
         t_norm = (tema or "").strip().lower()

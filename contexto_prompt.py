@@ -12,6 +12,17 @@ from typing import Any
 UMBRAL_STALENESS_SEG = 15.0
 
 
+def formatear_relaciones(relaciones, limite=500):
+    lineas = []
+    for r in (relaciones or [])[:8]:
+        if r.get("estado") != "activo" or float(r.get("confianza", 0)) < .75:
+            continue
+        marca = "confirmada" if r.get("origen") == "explicita" else "inferida"
+        linea = f"{r.get('nombre_origen','?')} —{r.get('tipo_relacion')}→ {r.get('nombre_destino','?')} ({marca}, confianza {float(r.get('confianza',0)):.2f})"
+        lineas.append(linea)
+    return ("Relaciones de alta confianza:\n" + "\n".join(lineas))[:max(0, int(limite))] if lineas else ""
+
+
 def formatear_contexto_para_prompt(ctx: dict[str, Any], t_ahora: float | None = None) -> str:
     """Sintetiza el contexto en una directiva ultra-breve respetando el presupuesto de tokens."""
     if not ctx or not isinstance(ctx, dict):

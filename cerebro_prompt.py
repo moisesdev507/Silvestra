@@ -65,6 +65,10 @@ def recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5, contexto=""):
             paquete = memoria.recuperar(texto_actual or "", contexto=contexto, limite=max_recuerdos)
             import memoria_recuperacion
             texto = memoria_recuperacion.formatear(paquete, 1050)
+            import contexto_prompt
+            texto_rel = contexto_prompt.formatear_relaciones(paquete.get("relaciones", []), 420)
+            if texto_rel:
+                texto = (texto + "\n" + texto_rel).strip()
             return texto or "- (todavía nada)", len(paquete.get("resultados", []))
         except Exception:
             return "[Recuperación de memoria no disponible.]", 0

@@ -35,7 +35,13 @@ def procesar_candidato(memoria, candidato, texto_usuario="", fuente="recuerdo_mo
     fecha = item.fecha_evento[:10]
     if not re.match(r"^\[\d{4}-\d{2}-\d{2}\]", item.contenido):
         item.contenido = f"[{fecha}] {item.contenido}"
-    memoria.gestor.guardar(item, usuario_id=uid)
+    guardado = memoria.gestor.guardar(item, usuario_id=uid)
+    try:
+        from memoria_relaciones import extraer_desde_recuerdo
+        extraer_desde_recuerdo(memoria.gestor.grafo, item.contenido, uid,
+            guardado.get("id"), item.origen, item.confianza)
+    except Exception:
+        pass
     memoria.datos.setdefault("hechos", []).append(item.contenido)
     if len(memoria.datos["hechos"]) > 200:
         import memoria_busqueda
