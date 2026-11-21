@@ -144,3 +144,9 @@ class GestorMemoria:
             return {"consolidacion": primero, "olvido": {"cancelado": True}}
         segundo = mantener(self.almacen, uid, token_cancelacion, progreso)
         return {"consolidacion": primero, "olvido": segundo}
+
+    def razonar(self, consulta, usuario_id=None, contexto_engine=None, multimodal=None,
+                token_cancelacion=None, limite=8):
+        from memoria_razonamiento import razonar
+        return razonar(self, consulta, self._uid(usuario_id), contexto_engine,
+                       multimodal, token_cancelacion, limite)

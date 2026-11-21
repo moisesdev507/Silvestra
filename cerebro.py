@@ -63,9 +63,11 @@ class Cerebro:
         consulta = visual or seguimiento or any(x in normal for x in (
             "sonido", "audio", "situacion", "que pasa"))
         contexto_adicional = ""
+        datos_multimodales = {}
         if puente is not None and consulta:
             try:
                 datos = puente.consultar_entorno_actual(texto_actual) or {}
+                datos_multimodales = datos
                 ventana = datos.get("ventana") or {}
                 proceso = ventana.get("ejecutable") or "no disponible"
                 titulo = ("omitido por privacidad" if ventana.get("titulo_omitido")
@@ -87,6 +89,18 @@ class Cerebro:
                 self._seguimiento_visual_pendiente = False
         else:
             self._seguimiento_visual_pendiente = False
+        if len(pregunta) >= 18 and hasattr(self.memoria, "razonar"):
+            try:
+                import contexto_motor
+                engine = contexto_motor.obtener_motor_contexto(app).obtener_contexto()
+                resultado = self.memoria.razonar(texto_actual, contexto_engine=engine,
+                    multimodal=datos_multimodales or None)
+                from memoria_razonamiento import formatear
+                resumen = formatear(resultado, 650)
+                if resumen:
+                    contexto_adicional = (contexto_adicional + "\n" + resumen).strip()[:1800]
+            except Exception as exc:
+                print(f"[cerebro] razonamiento de memoria no disponible ({type(exc).__name__})", flush=True)
         return construir_prompt(self.memoria, texto_actual, self._obtener_historial_podado(),
             es_invitado=es_invitado, contexto_adicional=contexto_adicional)
 

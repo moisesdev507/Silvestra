@@ -2,6 +2,9 @@
 
 
 class MantenimientoMemoria:
+    def razonar(self, consulta, **opciones):
+        return self.gestor.razonar(consulta, usuario_id=self.usuario_id, **opciones)
+
     def actualizar_recuerdo(self, recuerdo_id, nuevo_contenido=None, **campos):
         fila = self.gestor.actualizar(recuerdo_id, self.usuario_id,
                                       nuevo_contenido=nuevo_contenido, **campos)
