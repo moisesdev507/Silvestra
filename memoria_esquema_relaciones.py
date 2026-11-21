@@ -48,6 +48,17 @@ def migrar(conexion):
         conexion.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_entidades_usuario_norm ON entidades(usuario_id,nombre_norm)")
         conexion.execute("CREATE INDEX IF NOT EXISTS idx_relaciones_usuario_origen ON relaciones(usuario_id,origen_id,estado)")
         conexion.execute("CREATE INDEX IF NOT EXISTS idx_relaciones_usuario_destino ON relaciones(usuario_id,destino_id,estado)")
+        conexion.execute("""CREATE TABLE IF NOT EXISTS recuerdos_historial (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, recuerdo_id INTEGER NOT NULL,
+            usuario_id TEXT NOT NULL, accion TEXT NOT NULL, snapshot_json TEXT NOT NULL,
+            fecha TEXT NOT NULL, motivo TEXT DEFAULT '')""")
+        conexion.execute("""CREATE TABLE IF NOT EXISTS recuerdos_linaje (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, recuerdo_id INTEGER NOT NULL,
+            origen_id INTEGER NOT NULL, usuario_id TEXT NOT NULL,
+            fecha TEXT NOT NULL, motivo TEXT DEFAULT '')""")
+        conexion.execute("CREATE INDEX IF NOT EXISTS idx_historial_usuario_recuerdo ON recuerdos_historial(usuario_id,recuerdo_id)")
+        conexion.execute("CREATE INDEX IF NOT EXISTS idx_linaje_usuario_recuerdo ON recuerdos_linaje(usuario_id,recuerdo_id)")
+        conexion.execute("CREATE INDEX IF NOT EXISTS idx_linaje_usuario_origen ON recuerdos_linaje(usuario_id,origen_id)")
         conexion.execute("""DELETE FROM relaciones WHERE estado='activo' AND id NOT IN
             (SELECT MIN(id) FROM relaciones WHERE estado='activo' GROUP BY usuario_id,origen_id,
              tipo_relacion,destino_id,dirigida,COALESCE(recuerdo_id,0),origen,COALESCE(origen_dato,''))""")

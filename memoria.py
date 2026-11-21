@@ -12,11 +12,12 @@ from memoria_almacen import AlmacenMemoriaCognitiva
 from memoria_gestor import GestorMemoria
 from memoria_migrador import migrar_legado_a_sqlite
 from memoria_modelos import limpiar_nombre, validar_usuario_id
+from memoria_facade_mantenimiento import MantenimientoMemoria
 
 _memoria_instancia = None
 
 
-class Memoria:
+class Memoria(MantenimientoMemoria):
     def __init__(self, ruta_db=None, ruta_json=None, usuario_id="local"):
         global _memoria_instancia
         _memoria_instancia = self
@@ -114,33 +115,6 @@ class Memoria:
         resultado = procesar_candidato(self, hecho, texto_usuario, fuente, canal,
                                        contexto, origen == "explicito")
         return bool(resultado.get("aceptado"))
-
-    def olvidar(self, tema):
-        if not tema or not tema.strip():
-            return "No me dijiste qué recuerdo quieres que olvide."
-        t_limpio = tema.strip().lower()
-        palabras = set(re.findall(r"\b[a-zA-ZáéíóúÁÉÍÓÚñÑ]{3,}\b", t_limpio))
-
-        with self._bloqueo:
-            eliminados = []
-            nuevos_hechos = []
-            for h in self.datos.get("hechos", []):
-                h_texto = h.lower()
-                h_palabras = set(re.findall(r"\b[a-zA-ZáéíóúÁÉÍÓÚñÑ]{3,}\b", h_texto))
-                if t_limpio in h_texto or (palabras and len(palabras & h_palabras) >= min(len(palabras), 2)):
-                    eliminados.append(h)
-                else:
-                    nuevos_hechos.append(h)
-
-            if eliminados:
-                self.datos["hechos"] = nuevos_hechos
-                self.gestor.olvidar(tema)
-                self.guardar()
-                total = len(self.datos["hechos"])
-                print(f"[memoria] guardados=0 relevantes=0 total={total}", flush=True)
-                print(f"[memoria] olvidados={len(eliminados)}", flush=True)
-                return f"Listo. He olvidado lo que sabía sobre '{tema}'."
-        return f"No encontré ningún recuerdo guardado sobre '{tema}'."
 
     def recuperar(self, consulta, contexto="", limite=5):
         """Devuelve resultados trazables e incertidumbre sin filtrar otros perfiles."""

@@ -7,6 +7,7 @@ import threading
 from datetime import datetime, timezone
 
 import memoria_esquema
+from memoria_transacciones import TransaccionesMemoria
 from memoria_modelos import validar_usuario_id
 
 
@@ -18,12 +19,13 @@ def _ahora():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-class AlmacenMemoriaCognitiva:
+class AlmacenMemoriaCognitiva(TransaccionesMemoria):
     def __init__(self, ruta=":memory:", usuario_id="local"):
         self.ruta = os.fspath(ruta)
         self.usuario_id = validar_usuario_id(usuario_id)
         self._lock = threading.RLock()
         self._cerrado = False
+        self._tx_depth = 0
         self.conexion = sqlite3.connect(self.ruta, check_same_thread=False, timeout=10)
         self.conexion.row_factory = sqlite3.Row
         memoria_esquema.inicializar(self.conexion, self.ruta)
@@ -82,7 +84,8 @@ class AlmacenMemoriaCognitiva:
                 VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (uid, tipo_memoria, texto, norm, categoria or "general", origen, conf,
                  reemplaza_a_id, fecha_evento, ahora, ahora, meta))
-            self.conexion.commit()
+            if not self._tx_depth:
+                self.conexion.commit()
             fila = self.conexion.execute("SELECT * FROM recuerdos WHERE id=?", (cur.lastrowid,)).fetchone()
             return self._fila(fila)
 
@@ -143,26 +146,31 @@ class AlmacenMemoriaCognitiva:
             cambios.append("metadatos_json=?")
             args.append(json.dumps(metadatos, ensure_ascii=False, default=str))
         args += [int(recuerdo_id), uid]
-        with self._lock:
+        with self.transaccion():
+            anterior = self.conexion.execute("SELECT * FROM recuerdos WHERE id=? AND usuario_id=?", (int(recuerdo_id), uid)).fetchone()
+            if anterior is None:
+                return None
+            self.guardar_snapshot(anterior, "actualizacion", "campos actualizados")
             self.conexion.execute("UPDATE recuerdos SET " + ",".join(cambios) + " WHERE id=? AND usuario_id=?", args)
-            self.conexion.commit()
             return self._fila(self.conexion.execute("SELECT * FROM recuerdos WHERE id=? AND usuario_id=?",
                                                     (recuerdo_id, uid)).fetchone())
 
     def reemplazar_recuerdo(self, anterior_id, nuevo_contenido, tipo_memoria=None,
                             origen="explicito", confianza=1.0, usuario_id=None):
         uid = self._uid(usuario_id)
-        with self._lock:
+        with self.transaccion():
             anterior = self.conexion.execute("SELECT * FROM recuerdos WHERE id=? AND usuario_id=?",
                                               (anterior_id, uid)).fetchone()
             if anterior is None:
                 raise KeyError(anterior_id)
+            self.guardar_snapshot(anterior, "reemplazo", "corrección trazable")
             nuevo = self.guardar_recuerdo(nuevo_contenido, tipo_memoria or anterior["tipo_memoria"],
                 anterior["categoria"], origen, confianza, reemplaza_a_id=anterior_id, usuario_id=uid)
             if nuevo["id"] != anterior_id:
                 self.conexion.execute("UPDATE recuerdos SET estado='obsoleto',actualizado_en=? WHERE id=? AND usuario_id=?",
                                       (_ahora(), anterior_id, uid))
-                self.conexion.commit()
+                self.conexion.execute("INSERT INTO recuerdos_linaje(recuerdo_id,origen_id,usuario_id,fecha,motivo) VALUES(?,?,?,?,?)",
+                    (nuevo["id"], int(anterior_id), uid, _ahora(), "reemplazo"))
             return nuevo
 
     def olvidar_por_tema(self, tema, usuario_id=None):

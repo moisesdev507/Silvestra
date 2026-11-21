@@ -133,3 +133,14 @@ class GestorMemoria:
 
     def cerrar_perfil(self, usuario_id=None):
         return self.limpiar_memoria_trabajo(usuario_id)
+
+    def mantenimiento(self, usuario_id=None, token_cancelacion=None, progreso=None):
+        """Ejecuta consolidación y obsolescencia en grupos cancelables."""
+        from memoria_consolidacion import consolidar
+        from memoria_olvido import mantener
+        uid = self._uid(usuario_id)
+        primero = consolidar(self.almacen, uid, token_cancelacion, progreso)
+        if primero.get("cancelado"):
+            return {"consolidacion": primero, "olvido": {"cancelado": True}}
+        segundo = mantener(self.almacen, uid, token_cancelacion, progreso)
+        return {"consolidacion": primero, "olvido": segundo}
