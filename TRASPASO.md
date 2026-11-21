@@ -60,7 +60,6 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 ### Fase 2 — Etapa 1 cerrada
 - Contratos puros `ejecucion_modelo.py`, registro thread-safe y resolución normalizada.
 - Adaptador aislado de `acciones.py`: inventario descriptivo sin handlers ni efectos reales.
-- Preparados permisos, confirmación, cancelación, ejecución asíncrona y timeout para etapas futuras.
 
 ### Fase 2 — Etapa 2 cerrada
 - Políticas centralizadas y confirmación humana exclusiva en `permisos_motor.py`.
@@ -74,13 +73,16 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 
 ### Fase 2 — Etapa 4 cerrada
 - Sandbox de archivos explícito con rechazo de traversal, UNC, reparse points y nombres reservados.
-- Lectura, creación, modificación, copia, movimiento y renombrado dentro de raíces autorizadas.
 - Respaldo `.silvestra_respaldos`, escritura atómica y exclusión de respaldos en listados/búsquedas.
 
 ### Fase 2 — Etapa 5 cerrada
 - Catálogo deny-by-default y identidad PID/creación/ruta para procesos Windows.
 - Inicio con `shell=False`, supervisión acotada y cierre normal mediante `WM_CLOSE`.
 - Sin shells arbitrarios ni cierre forzado; integración con permisos y motor concurrente.
+
+### Fase 2 — Etapa 6 cerrada
+- Inspección GUI segura, foco controlado y selectores estructurados.
+- Credenciales protegidas, coordenadas relativas y capturas PNG en sandbox.
 
 ## 6. Guía de prompts para Gemini (Antigravity)
 ```text
