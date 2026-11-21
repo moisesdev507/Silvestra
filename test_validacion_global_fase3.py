@@ -171,6 +171,27 @@ class TestValidacionGlobal(unittest.TestCase):
         self.assertIn("Editor de texto", prompt)
         self.assertIn("hechos de hipótesis", prompt)
 
+    def test_19_seguimiento_voz_actualiza_ventana_en_cerebro(self):
+        from cerebro import Cerebro
+        ventanas = [
+            {"hwnd": 10, "pid": 51, "titulo": "Microsoft Edge", "ejecutable": "msedge.exe"},
+            {"hwnd": 11, "pid": 52, "titulo": "Visual Studio Code", "ejecutable": "code.exe"},
+            {"hwnd": 12, "pid": 53, "titulo": "Bloc de notas", "ejecutable": "notepad.exe"},
+        ]
+        self.sistema._activo = True
+        self.app.sistema_multimodal = self.sistema
+        with patch("contexto_windows.obtener_contexto_windows", side_effect=ventanas), \
+             patch.object(self.sistema, "_captura_temporal_segura", return_value="captura efimera"), \
+             patch("cerebro.construir_prompt", return_value="prompt base"):
+            cerebro = Cerebro(None, SimpleNamespace(), app=self.app)
+            primero = cerebro.instrucciones("¿Qué ves en la pantalla?")
+            transcripcion = cerebro.instrucciones("y ahora a que parte de a cambio")
+            seguimiento = cerebro.instrucciones("¿y ahora?")
+        self.assertIn("Microsoft Edge", primero)
+        self.assertIn("Visual Studio Code", transcripcion)
+        self.assertIn("Bloc de notas", seguimiento)
+        self.assertEqual(self.sistema.estado_salud()["ultima_ventana_externa"]["titulo"], "Bloc de notas")
+
     @staticmethod
     def _obs(modalidad, texto, tags, epistemico):
         return ObservacionIntegrada(modalidad, "prueba", texto,

@@ -1,6 +1,7 @@
 """Coordinador del cerebro de Silvestra, historial de diálogo y reflexión."""
 import re
 import time
+import unicodedata
 
 from config import MODELOS
 from cerebro_parser import separar, _respuesta_parcial, _cortar
@@ -27,6 +28,7 @@ class Cerebro:
         self.historial = []
         self.modelos = list(MODELOS)
         self.ultima_reflexion = 0.0
+        self._seguimiento_visual_pendiente = False
 
     def reiniciar(self):
         self.historial = []
@@ -51,9 +53,15 @@ class Cerebro:
         prompt = construir_prompt(self.memoria, texto_actual, self._obtener_historial_podado(), es_invitado=es_invitado)
         app = getattr(self, "app", None)
         puente = getattr(app, "sistema_multimodal", None) if app else None
-        pregunta = str(texto_actual or "").lower()
-        consulta = any(x in pregunta for x in
-            ("pantalla", "ventana", "aplicacion abierta", "aplicación abierta", "sonido", "audio", "situacion", "situación", "que pasa", "qué pasa"))
+        pregunta = str(texto_actual or "").strip().lower()
+        normal = unicodedata.normalize("NFKD", pregunta).encode("ascii", "ignore").decode("ascii")
+        normal = " ".join(re.sub(r"[^a-z0-9 ]", " ", normal).split())
+        visual = any(x in normal for x in (
+            "pantalla", "ventana", "aplicacion abierta", "cambie", "cambio",
+            "donde estoy", "que tengo", "ahora que", "a que parte", "a que ventana"))
+        seguimiento = self._seguimiento_visual_pendiente and len(pregunta) <= 70
+        consulta = visual or seguimiento or any(x in normal for x in (
+            "sonido", "audio", "situacion", "que pasa"))
         if puente is not None and consulta:
             try:
                 datos = puente.consultar_entorno_actual(texto_actual)
@@ -66,8 +74,12 @@ class Cerebro:
                     + "\nDistingue hechos de hipótesis. No afirmes causalidad ni inventes detalles visuales; "
                     "explica si faltan permisos, captura o datos.")
                 prompt += bloque[:1100]
+                self._seguimiento_visual_pendiente = visual or seguimiento
             except Exception:
                 prompt += "\nContexto multimodal no disponible; no infieras datos del entorno."
+                self._seguimiento_visual_pendiente = False
+        else:
+            self._seguimiento_visual_pendiente = False
         return prompt
 
     def _pedir(self, mensajes, tarea="charla"):
