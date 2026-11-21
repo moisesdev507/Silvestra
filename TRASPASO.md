@@ -41,14 +41,8 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 5. **Configuración y claves:** Exclusivamente en `config.py` (ignorado en git).
 
 ## 4. Estado actual (Fase 1 cerrada)
-- Avatar PySide6 compacto (208 px), anillos reactivos y 3 bailes rítmicos locales.
-- Doble confirmación de 3s en reinicio/despertar/renacer en menú y tablet HUD.
-- Naturalidad, autocorrección viva, barge-in (<500ms) y filtro de eco Silero VAD.
-- Context Engine Etapas 1-5 e Iniciativa Contextual supervisable (`iniciativa_contextual.py`).
-- Planificador Inteligente Etapa 6 (`planificador.py`, `planificador_modelo.py`).
-- Persistencia atómica blindada en `memoria.py` y `recordatorios.py` (`persistencia_segura.py`).
-- Código muerto eliminado (`cara.py`) y módulos > 15 KB modularizados (`resumen`, `telegram_medios`).
-- Suite `prueba_humo.py` 100% PASS sin listas blancas legacy (100% archivos <= 15 KB).
+- PySide6, voz, cámara, Context Engine, HUD, iniciativa y planificador cerrados.
+- Persistencia atómica y prueba de humo estricta operativas.
 
 ## 5. Tareas pendientes (Fase 2)
 - [ ] **Rotar clave de Groq:** Clave expuesta en el pasado; rotar en `config.py` y Groq.
@@ -82,12 +76,15 @@ Asistente personal con rostro interactivo PySide6, voz panameña (`es-PA-Margari
 - Credenciales protegidas y capturas PNG en sandbox.
 
 ### Fase 2 — Etapa 7 cerrada
-- Evidencia independiente positiva obligatoria.
-- Recuperación limitada a idempotentes con permisos vigentes.
+- Evidencia positiva obligatoria y recuperación limitada a idempotentes.
 
 ### Fase 2 — Etapa 8 cerrada
 - Orquestador global con modos restringido, supervisado y preautorizado.
 - DAG validado, integración de motores y snapshots no bloqueantes.
+
+### Fase 3 — Etapa 1 cerrada
+- Percepción multimodal, cola concurrente, TTL y dedupe.
+- Liberación de referencias y puentes pasivos a contexto/HUD/autonomía.
 
 ## 6. Guía de prompts para Gemini (Antigravity)
 ```text
