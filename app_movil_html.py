@@ -89,16 +89,19 @@ footer{padding:10px 12px;padding-bottom:max(10px,env(safe-area-inset-bottom));ba
     <button class="btn-action btn-send" id="btnSend" title="Enviar"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
   </div>
 </footer>
-<audio id="lyrisAudio" preload="none" playsinline></audio>
+<audio id="lyrisAudio" preload="auto" playsinline></audio>
 <script>
 let token=localStorage.getItem('lyris_device_token')||new URLSearchParams(window.location.search).get('token')||'';
 if(token)localStorage.setItem('lyris_device_token',token);
 let vozActiva=true,audioInit=false;
+const SILENT_WAV='data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
 function toggleVoz(){vozActiva=document.getElementById('btnVoz').classList.toggle('active-voz');}
 function initAudio(){
   if(audioInit)return;
   const p=document.getElementById('lyrisAudio');
-  p.play().then(()=>{p.pause();audioInit=true;}).catch(()=>{});
+  if(!p)return;
+  p.src=SILENT_WAV;
+  p.play().then(()=>{audioInit=true;}).catch(()=>{});
 }
 document.addEventListener('click',initAudio,{once:true});
 document.addEventListener('touchstart',initAudio,{once:true});

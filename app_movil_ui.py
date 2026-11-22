@@ -2,11 +2,8 @@
 from __future__ import annotations
 
 import io
-import ipaddress
 import json
 import os
-import socketserver
-import http.server
 import threading
 from typing import Any, Dict
 
@@ -16,91 +13,6 @@ from app_movil_html import PAGINA_MOVIL_HTML
 
 _bloqueo = threading.RLock()
 _cache_iconos: Dict[int, bytes] = {}
-_servidor_8766 = None
-_RED_TAILSCALE = ipaddress.ip_network("100.64.0.0/10")
-
-PAGINA_INSTALAR_HTML = """<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Instalar Lyris</title>
-<style>
-body{font-family:sans-serif;background:#0a0d14;color:#f3f4f6;padding:20px;text-align:center;margin:0;}
-.card{background:#111827;border:1px solid #1f2937;border-radius:18px;padding:22px 18px;max-width:380px;margin:20px auto;}
-h1{font-size:19px;color:#38bdf8;margin-bottom:10px;}
-p{font-size:13.5px;color:#9ca3af;line-height:1.45;margin-bottom:16px;}
-.btn{display:block;background:#38bdf8;color:#0a0d14;padding:12px;border-radius:24px;text-decoration:none;font-weight:700;margin-bottom:10px;}
-.btn-sec{background:#1f2937;color:#38bdf8;border:1px solid #374151;}
-.steps{text-align:left;font-size:12.5px;color:#cbd5e1;background:#0f172a;padding:12px;border-radius:12px;margin:14px 0;}
-.steps ol{margin:0;padding-left:18px;}
-.steps li{margin-bottom:6px;}
-</style>
-</head>
-<body>
-<div class="card">
-<h1>📲 Instalar Lyris en tu Celular</h1>
-<p>Para instalar Lyris con ícono nativo y sin avisos de certificado en tu red local o Tailscale:</p>
-<a href="http://{HOST}:8766/movil?token={TOKEN}" class="btn">🚀 Abrir en HTTP Local (Puerto 8766)</a>
-<div class="steps">
-<strong>Pasos para agregar ícono PWA:</strong>
-<ol>
-<li>Toca el botón azul superior para entrar en HTTP local.</li>
-<li>En Chrome, toca el menú de 3 puntos (⋮).</li>
-<li>Selecciona <strong>"Instalar aplicación"</strong> o <strong>"Agregar a pantalla principal"</strong>.</li>
-</ol>
-</div>
-<a href="/movil" class="btn btn-sec">⬅️ Volver a Lyris Central</a>
-</div>
-</body>
-</html>
-"""
-
-
-def _es_ip_permitida(ip_str: str) -> bool:
-    try:
-        ip = ipaddress.ip_address(ip_str)
-        return ip.is_loopback or ip.is_private or ip in _RED_TAILSCALE
-    except Exception:
-        return False
-
-
-class HandlerAuxiliar8766(http.server.BaseHTTPRequestHandler):
-    """Atiende peticiones en el puerto local 8766 para instalación sin barreras de certificado."""
-
-    def do_GET(self):
-        if not _es_ip_permitida(self.client_address[0]):
-            self.send_response(403)
-            self.end_headers()
-            return
-        p = self.path.split("?", 1)[0]
-        if p in ("/movil", "/movil/", "/movil/instalar", "/manifest.json", "/sw.js") or p.startswith("/icon-") or "cert" in p:
-            if despachar_get_movil(self, p):
-                return
-        self.send_response(302)
-        self.send_header("Location", "/movil")
-        self.end_headers()
-
-    def log_message(self, format, *args):
-        pass
-
-
-def iniciar_servidor_auxiliar_8766(puerto: int = 8766):
-    """Inicia el servidor HTTP auxiliar en segundo plano si no está corriendo."""
-    global _servidor_8766
-    with _bloqueo:
-        if _servidor_8766 is not None:
-            return
-        try:
-            class ThreadingServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
-                daemon_threads = True
-
-            srv = ThreadingServer(("0.0.0.0", puerto), HandlerAuxiliar8766)
-            th = threading.Thread(target=srv.serve_forever, daemon=True, name="LyrisHTTP8766")
-            th.start()
-            _servidor_8766 = srv
-        except Exception:
-            pass
 
 
 def generar_icono_png(tam: int = 192) -> bytes:
@@ -172,13 +84,10 @@ self.addEventListener('fetch', (e) => {
 
 def despachar_get_movil(handler: Any, path: str) -> bool:
     """Atiende rutas web PWA para el cliente móvil: /movil, /manifest.json, /sw.js, /icon-*.png."""
-    iniciar_servidor_auxiliar_8766()
     p = path.split("?", 1)[0].rstrip("/")
 
     if p in ("/movil", ""):
-        btn_app = '<a href="/movil/instalar" class="btn-badge" style="text-decoration:none;" title="Instalar App">📲 App</a>'
-        html_inyectado = PAGINA_MOVIL_HTML.replace("📜 Cert</a>", f"📜 Cert</a>\n    {btn_app}")
-        raw = html_inyectado.encode("utf-8")
+        raw = PAGINA_MOVIL_HTML.encode("utf-8")
         handler.send_response(200)
         handler.send_header("Content-Type", "text/html; charset=utf-8")
         handler.send_header("Content-Length", str(len(raw)))
@@ -191,21 +100,9 @@ def despachar_get_movil(handler: Any, path: str) -> bool:
         return True
 
     if p == "/movil/instalar":
-        host_h = handler.headers.get("Host", "127.0.0.1") if hasattr(handler, "headers") and handler.headers else "127.0.0.1"
-        host_req = str(host_h).split(":")[0] if host_h else "127.0.0.1"
-        tok = getattr(handler, "token_sesion", None)
-        if not tok or not isinstance(tok, str):
-            tok = "tablet_hud_owner"
-        html = PAGINA_INSTALAR_HTML.replace("{HOST}", host_req).replace("{TOKEN}", tok)
-        raw = html.encode("utf-8")
-        handler.send_response(200)
-        handler.send_header("Content-Type", "text/html; charset=utf-8")
-        handler.send_header("Content-Length", str(len(raw)))
+        handler.send_response(302)
+        handler.send_header("Location", "/movil")
         handler.end_headers()
-        try:
-            handler.wfile.write(raw)
-        except OSError:
-            pass
         return True
 
     if p in ("/movil/lyris.apk", "/lyris.apk"):
@@ -225,7 +122,7 @@ def despachar_get_movil(handler: Any, path: str) -> bool:
             return True
         else:
             handler.send_response(302)
-            handler.send_header("Location", "/movil/instalar")
+            handler.send_header("Location", "/movil")
             handler.end_headers()
             return True
 

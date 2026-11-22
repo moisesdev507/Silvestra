@@ -33,7 +33,10 @@ Asistente modular Python/Windows con avatar PySide6, voz/escucha, Context Engine
     - `app_movil_audio.py`: Endpoint `POST /api/movil/tts` para síntesis desacoplada MP3 en memoria (`mime: audio/mpeg`).
     - `app_movil_html.py`: Desbloqueo de audio en primer toque Android, indicador `"Lyris está pensando..."`, botón `🔊 Voz` y replay `🔊` en cada burbuja.
     - `app_movil_ui.py`: Descarga de certificado CA `hud_cert.pem` en `/movil/cert.pem` para instalación segura en Android.
-12. **Blindaje proactivo/flujo y asistente de instalación móvil (`cerebro_proactivo.py`, `respuesta_flujo.py`, `app_movil_ui.py`):**
+12. **Blindaje proactivo/flujo y robustez móvil (`cerebro_proactivo.py`, `respuesta_flujo.py`):**
     - `cerebro_proactivo.py`: Atributo `ultimo_sueno_ts = 0.0` blindado en `MotorProactivo.__init__` y `evaluar_sueno_cognitivo`.
     - `respuesta_flujo.py`: Cierre post-respuesta protegido con `try/except` aislados para garantizar entrega y voz en laptop.
-    - `app_movil_ui.py`: Servidor HTTP auxiliar en puerto 8766 y asistente `/movil/instalar` con botón `📲 App` inyectado dinámicamente.
+13. **Depuración de recordatorios, puerto 8765 único y audio TTS real (`recordatorios.py`, `app_movil_*.py`):**
+    - `recordatorios.py`: `verificar_arranque` filtra recordatorios <= 24h, marca completados y persiste de inmediato. Suites de test aisladas con JSON temporal; `recordatorios.json` limpio y recuerdo 153 marcado obsoleto.
+    - `app_movil_ui.py`: Eliminado puerto 8766; tráfico móvil unificado en HTTPS 8765 con barra de navegación limpia.
+    - `app_movil_audio.py` y `app_movil_html.py`: TTS con filtro > 500 B y mock para tests; micro-WAV silencioso para desbloqueo síncrono de audio en Android Chrome.

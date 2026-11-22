@@ -1,5 +1,7 @@
 """Pruebas unitarias para la arquitectura de cerebro sabio y auto-entrenable."""
 import os
+import tempfile
+import time
 import unittest
 
 import acciones
@@ -8,6 +10,7 @@ import cerebro_entrenamiento as ce
 import cerebro_grafo as cg
 import cerebro_parser as cp
 import cerebro_planificador as cplan
+import recordatorios
 from respuesta_flujo import responder_flujo
 
 
@@ -57,12 +60,23 @@ class TestCerebroGrafo(unittest.TestCase):
 
 class TestCerebroPlanificador(unittest.TestCase):
     def setUp(self):
+        self._orig_ruta_rec = recordatorios.RUTA_JSON
+        self.tmp_rec_json = os.path.join(tempfile.gettempdir(), f"test_rec_sabio_{os.getpid()}_{time.time()}.json")
+        recordatorios.RUTA_JSON = self.tmp_rec_json
+        with open(self.tmp_rec_json, "w", encoding="utf-8") as f:
+            f.write("[]\n")
         self.test_archivo = "ideas_planificador_test.txt"
         self.path_archivo = os.path.join("workspace_lyris", self.test_archivo)
         if os.path.exists(self.path_archivo):
             os.remove(self.path_archivo)
 
     def tearDown(self):
+        recordatorios.RUTA_JSON = self._orig_ruta_rec
+        if os.path.exists(self.tmp_rec_json):
+            try:
+                os.remove(self.tmp_rec_json)
+            except Exception:
+                pass
         if os.path.exists(self.path_archivo):
             os.remove(self.path_archivo)
 

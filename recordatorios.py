@@ -162,24 +162,27 @@ class Recordatorios:
         self._hilo.start()
 
     def verificar_arranque(self):
-        """Revisa recordatorios pendientes al encender y avisa de los vencidos."""
+        """Revisa recordatorios pendientes al encender y avisa de los vencidos recientes."""
         creador = getattr(getattr(self.app, "memoria", None), "creador", "Moisés") or "Moisés"
         ahora_ts = time.time()
         with self._bloqueo:
             datos = _cargar()
             vencidos = []
+            hubo_cambios = False
             for r in datos:
                 if not r.get("completado") and r.get("timestamp", 0) <= ahora_ts:
                     r["completado"] = True
-                    vencidos.append(r)
-            if vencidos:
+                    hubo_cambios = True
+                    if (ahora_ts - r.get("timestamp", 0)) <= 86400.0:
+                        vencidos.append(r)
+            if hubo_cambios:
                 _guardar(datos)
-                for v in vencidos:
-                    txt = v.get("texto", "")
-                    aviso = f"{creador}, mientras estaba apagada venció este recordatorio: {txt}."
-                    print(f"[recordatorio] vencido_arranque='{txt}'", flush=True)
-                    if hasattr(self.app, "cola") and self.app.cola:
-                        self.app.cola.put(("hablar_registro", (aviso, f"⏰ RECORDATORIO VENCIDO:\n{txt}")))
+            for v in vencidos:
+                txt = v.get("texto", "")
+                aviso = f"{creador}, mientras estaba apagada venció este recordatorio: {txt}."
+                print(f"[recordatorio] vencido_arranque='{txt}'", flush=True)
+                if hasattr(self.app, "cola") and self.app.cola:
+                    self.app.cola.put(("hablar_registro", (aviso, f"⏰ RECORDATORIO VENCIDO:\n{txt}")))
 
     def poner_recordatorio(self, arg):
         """Agrega un recordatorio relativo o absoluto y devuelve confirmación con hora exacta."""

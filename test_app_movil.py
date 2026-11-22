@@ -59,14 +59,21 @@ class TestAppMovilPWA(unittest.TestCase):
         handler_mock.headers = {"Host": "192.168.1.100:8765"}
         ok = amui.despachar_get_movil(handler_mock, "/movil/instalar")
         self.assertTrue(ok)
+        handler_mock.send_response.assert_called_with(302)
+        handler_mock.send_header.assert_any_call("Location", "/movil")
+
+    def test_despachar_movil_html_limpio_sin_8766(self):
+        handler_mock = MagicMock()
+        ok = amui.despachar_get_movil(handler_mock, "/movil")
+        self.assertTrue(ok)
         handler_mock.send_response.assert_called_with(200)
-        handler_mock.send_header.assert_any_call("Content-Type", "text/html; charset=utf-8")
+        escrito = b"".join(call[0][0] for call in handler_mock.wfile.write.call_args_list)
+        self.assertNotIn(b"8766", escrito)
 
     def test_despachar_apk_o_redireccion(self):
         handler_mock = MagicMock()
         ok = amui.despachar_get_movil(handler_mock, "/movil/lyris.apk")
         self.assertTrue(ok)
-        # Si no hay apk compilado, redirige a /movil/instalar
         self.assertIn(handler_mock.send_response.call_args[0][0], (200, 302))
 
 
@@ -165,6 +172,18 @@ class TestAudioYConversacionMovil(unittest.TestCase):
         self.assertTrue(data["ok"])
         self.assertEqual(data["audio_base64"], "fake_mp3_base64")
         self.assertEqual(data["mime"], "audio/mpeg")
+
+    def test_sintetizar_respuesta_movil_filtra_tamano(self):
+        try:
+            ama.sintetizar_respuesta_movil._mock_audio = lambda t, e: b"pequeno"
+            b64 = ama.sintetizar_respuesta_movil("hola", "neutral")
+            self.assertEqual(b64, "")
+
+            ama.sintetizar_respuesta_movil._mock_audio = lambda t, e: b"A" * 600
+            b64 = ama.sintetizar_respuesta_movil("hola", "neutral")
+            self.assertTrue(len(b64) > 10)
+        finally:
+            ama.sintetizar_respuesta_movil._mock_audio = None
 
 
 if __name__ == "__main__":

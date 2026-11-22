@@ -1,12 +1,15 @@
 """Pruebas unitarias para la suite de Memoria Evolutiva (Sueño, Progreso y Asociativa)."""
+import json
 import os
 import sqlite3
 import tempfile
+import time
 import unittest
 
 import memoria_asociativa
 import memoria_progreso
 import memoria_sueno
+import recordatorios
 
 
 class TestMemoriaSueno(unittest.TestCase):
@@ -179,6 +182,59 @@ class TestProactividadYBlindajePostRespuesta(unittest.TestCase):
         self.assertIn("Todo en orden", resp)
         self.assertEqual(emo, "neutral")
         self.assertGreaterEqual(len(cerebro_mock.historial), 1)
+
+
+class TestRecordatoriosArranqueLimpio(unittest.TestCase):
+    """Verifica que verificar_arranque marque como completados los recordatorios y no los repita."""
+
+    def setUp(self):
+        from unittest.mock import MagicMock
+        self._orig_ruta = recordatorios.RUTA_JSON
+        self.tmp_json = os.path.join(tempfile.gettempdir(), f"test_rec_arr_{os.getpid()}_{time.time()}.json")
+        recordatorios.RUTA_JSON = self.tmp_json
+
+    def tearDown(self):
+        recordatorios.RUTA_JSON = self._orig_ruta
+        if os.path.exists(self.tmp_json):
+            try:
+                os.remove(self.tmp_json)
+            except Exception:
+                pass
+
+    def test_recordatorio_vencido_se_marca_completado_y_no_se_repite(self):
+        from unittest.mock import MagicMock, patch
+        ahora = time.time()
+        rec_data = [
+            {
+                "id": 12345,
+                "texto": "tomar agua de prueba",
+                "timestamp": ahora - 600,
+                "hora_exacta": "10:00 a. m.",
+                "fecha": "2026-11-22",
+                "completado": False,
+            }
+        ]
+        with open(self.tmp_json, "w", encoding="utf-8") as f:
+            json.dump(rec_data, f)
+
+        app_mock = MagicMock()
+        app_mock.cola = MagicMock()
+        app_mock.memoria = MagicMock()
+        app_mock.memoria.creador = "Moisés"
+
+        with patch("threading.Thread"):
+            rec_obj = recordatorios.Recordatorios(app_mock)
+
+        app_mock.cola.put.assert_called()
+
+        with open(self.tmp_json, "r", encoding="utf-8") as f:
+            guardados = json.load(f)
+        self.assertTrue(guardados[0]["completado"])
+
+        # Segunda verificación (reinicio simulado): no debe volver a avisar
+        app_mock.cola.reset_mock()
+        rec_obj.verificar_arranque()
+        app_mock.cola.put.assert_not_called()
 
 
 if __name__ == "__main__":

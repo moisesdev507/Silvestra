@@ -1,6 +1,8 @@
 """Pruebas unitarias para recordatorios sin falso bloqueo, habilidades de archivos y aprendiz de habilidades."""
 import json
 import os
+import tempfile
+import time
 import unittest
 
 import acciones
@@ -20,6 +22,21 @@ class DummyCerebro:
 
 
 class TestRecordatoriosSinFalsoBloqueo(unittest.TestCase):
+    def setUp(self):
+        self._orig_ruta = recordatorios.RUTA_JSON
+        self.tmp_json = os.path.join(tempfile.gettempdir(), f"test_rec_{os.getpid()}_{time.time()}.json")
+        recordatorios.RUTA_JSON = self.tmp_json
+        with open(self.tmp_json, "w", encoding="utf-8") as f:
+            f.write("[]\n")
+
+    def tearDown(self):
+        recordatorios.RUTA_JSON = self._orig_ruta
+        if os.path.exists(self.tmp_json):
+            try:
+                os.remove(self.tmp_json)
+            except Exception:
+                pass
+
     def test_deteccion_recordatorio_temporal(self):
         t1 = "Recuerdame tomar agua en un minuto por favor"
         t2 = "Recuerda me tomar agua en un minuto"

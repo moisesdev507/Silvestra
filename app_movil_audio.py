@@ -69,12 +69,13 @@ async def _crear_audio_edge(texto: str, emocion: str = "neutral") -> bytes:
     """Sintetiza la voz panameña de Lyris con prosodia emocional en memoria."""
     import edge_tts
     import cara_emociones
+    import config
 
     pros = cara_emociones.obtener_prosodia(emocion)
     rate = pros.get("rate", "+0%")
     pitch = pros.get("pitch", "+0Hz")
     volume = pros.get("volume", "+0%")
-    voz_edge = "es-PA-MargaritaNeural"
+    voz_edge = getattr(config, "VOZ_EDGE", "es-PA-MargaritaNeural")
 
     datos = bytearray()
     async for trozo in edge_tts.Communicate(texto, voz_edge, rate=rate, pitch=pitch, volume=volume).stream():
@@ -91,16 +92,22 @@ def sintetizar_respuesta_movil(texto: str, emocion: str = "neutral", timeout_seg
     if not limpio:
         return ""
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            audio_bytes = loop.run_until_complete(
-                asyncio.wait_for(_crear_audio_edge(limpio, emocion), timeout=timeout_seg)
-            )
-        finally:
-            loop.close()
-        if audio_bytes:
+        mock_fn = getattr(sintetizar_respuesta_movil, "_mock_audio", None)
+        if callable(mock_fn):
+            audio_bytes = mock_fn(limpio, emocion)
+        else:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                audio_bytes = loop.run_until_complete(
+                    asyncio.wait_for(_crear_audio_edge(limpio, emocion), timeout=timeout_seg)
+                )
+            finally:
+                loop.close()
+        if audio_bytes and len(audio_bytes) > 500:
             return base64.b64encode(audio_bytes).decode("ascii")
+        elif audio_bytes:
+            print(f"[app_movil_audio] Edge-TTS audio muy pequeño ({len(audio_bytes)} B)", flush=True)
     except Exception as e:
         print(f"[app_movil_audio] Edge-TTS error: {e}", flush=True)
     return ""
