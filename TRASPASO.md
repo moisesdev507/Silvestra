@@ -43,3 +43,7 @@ Asistente modular Python/Windows con avatar PySide6, voz/escucha, Context Engine
 14. **Saludo único acorde a la hora y captura de token en móvil (`nacimiento.py`, `cerebro_proactivo.py`, `app_movil_html.py`):**
     - `nacimiento.py` y `cerebro_proactivo.py`: Saludo único al encender según franja horaria real (mañana/tarde/noche); eliminada duplicación de briefing al arranque y cero mención a 'no tienes recordatorios'.
     - `app_movil_html.py`: Captura de `?token=...` en URL con guardado en `localStorage` y limpieza por `history.replaceState`; reintento automático con prompt de token ante HTTP 401.
+15. **Persistencia de `remota_token` y autorización directa móvil (`pantalla_remota.py`, `pantalla_remota_api.py`, `pantalla_remota_accion.py`):**
+    - `pantalla_remota.py`: Sincroniza y persiste `remota_token` desde/hacia `estado.json` al inicializar el servidor HUD.
+    - `pantalla_remota_api.py`: Soporte para subred Tailscale IPv6 (`fd7a:115c:a1e0::/48`); validación segura con `hmac.compare_digest` contra `remota_token` en `POST /api/movil/*` y `GET /api/sesion` sin exigir previa sesión HUD/tablet.
+    - `pantalla_remota_accion.py`: Despacho modular de acciones de panel HUD (`despachar_accion_panel`) manteniendo `pantalla_remota_api.py` en 14,179 B.

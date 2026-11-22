@@ -1,12 +1,14 @@
 """REST/SSE del HUD; la identidad y ejecución se delegan al puente seguro."""
 from concurrent.futures import ThreadPoolExecutor
 from threading import BoundedSemaphore
+import hmac
 import http.server
 import ipaddress
 import json
 import socket
 import sys
 
+import estado
 from ecosistema_contratos import Scope, TipoDispositivo, serializar_seguro
 from pantalla_remota_datos import recolectar_estado_completo
 
@@ -33,6 +35,7 @@ def obtener_ip_local():
 
 
 _RED_TAILSCALE = ipaddress.ip_network("100.64.0.0/10")
+_RED_TAILSCALE_V6 = ipaddress.ip_network("fd7a:115c:a1e0::/48")
 
 
 def _instalar_rutas_movil(handler_cls):
@@ -83,12 +86,18 @@ _POOL_SLOTS = BoundedSemaphore(16)
 
 def _es_lan_cliente(client_ip):
     if not client_ip: return False
-    cip = str(client_ip).split(":")[0].strip("[]")
+    cip = str(client_ip).strip("[]")
+    if "%" in cip: cip = cip.split("%")[0]
     if cip in ("127.0.0.1", "localhost", "::1"): return True
     try:
         ip = ipaddress.ip_address(cip)
-        return ip.is_private or ip in _RED_TAILSCALE
+        return ip.is_private or ip.is_loopback or ip in _RED_TAILSCALE or ip in _RED_TAILSCALE_V6
     except Exception:
+        if ":" in cip and "::" not in cip:
+            try:
+                ip = ipaddress.ip_address(cip.split(":")[0])
+                return ip.is_private or ip in _RED_TAILSCALE
+            except Exception: pass
         return False
 
 
@@ -121,6 +130,11 @@ def _identidad(h, scope=None, mutacion=None):
     token = h.headers.get("X-Device-Token")
     if not _origen(h, mutacion, bool(cookie or token)): return None
     identity = p.autenticar(h.headers, cookie)
+    if not identity and token:
+        rem_tok = getattr(h.server.gestor, "token", "") or estado.cargar().get("remota_token", "")
+        if rem_tok and hmac.compare_digest(str(token).strip(), str(rem_tok).strip()):
+            identity = {"device_id": "movil_owner", "tipo_dispositivo": "movil",
+                        "scopes": frozenset([Scope.STATE_READ, Scope.UI_CONTROL, Scope.OPERATION_REQUEST])}
     if not identity and _es_lan_cliente(getattr(h, "client_address", ("",))[0]):
         pair = manager.emparejar_lan(TipoDispositivo.TABLET_HUD,
                                      (Scope.STATE_READ, Scope.UI_CONTROL, Scope.OPERATION_REQUEST))
@@ -144,6 +158,12 @@ def _body(h):
 
 def responder_sesion(h, identity):
     lan_c = getattr(h, "_lan_cookie", None)
+    if not identity:
+        tok = (h.headers.get("X-Device-Token") or "").strip()
+        rem_tok = getattr(h.server.gestor, "token", "") or estado.cargar().get("remota_token", "")
+        if tok and rem_tok and hmac.compare_digest(tok, str(rem_tok).strip()):
+            identity = {"device_id": "movil_owner", "tipo_dispositivo": "movil",
+                        "scopes": frozenset([Scope.STATE_READ, Scope.UI_CONTROL, Scope.OPERATION_REQUEST])}
     if not identity and _es_lan_cliente(getattr(h, "client_address", ("",))[0]):
         manager = h.server.gestor.ecosistema_gestor
         pair = manager.emparejar_lan(TipoDispositivo.TABLET_HUD,
@@ -197,7 +217,19 @@ def manejar_post(h, app, gestor):
     p = gestor.puente; manager = gestor.ecosistema_gestor
     ip = h.client_address[0]
     if path.startswith("/api/movil/"):
-        identity = _identidad(h)
+        tok = (h.headers.get("X-Device-Token") or "").strip()
+        if not tok and "Authorization" in h.headers:
+            auth = h.headers.get("Authorization", "").strip()
+            if auth.lower().startswith("bearer "): tok = auth[7:].strip()
+        if not tok and "?token=" in h.path:
+            try: tok = h.path.split("?token=", 1)[1].split("&", 1)[0].strip()
+            except Exception: pass
+        rem_tok = getattr(gestor, "token", "") or estado.cargar().get("remota_token", "")
+        rem_tok = str(rem_tok).strip()
+        es_valido = bool(tok and rem_tok and hmac.compare_digest(tok, rem_tok))
+        identity = ({"device_id": "movil_owner", "tipo_dispositivo": "movil",
+                     "scopes": frozenset([Scope.STATE_READ, Scope.UI_CONTROL, Scope.OPERATION_REQUEST])}
+                    if es_valido else _identidad(h))
         if not identity:
             return _respuesta(h, 401, {"ok": False, "error": "unauthorized"})
         import app_movil_audio
@@ -245,66 +277,9 @@ def manejar_post(h, app, gestor):
         elif path == "/api/panel/reforzar_voz": name = "reforzar_voz"
         if not name or name not in ACCIONES_PERMITIDAS:
             return _respuesta(h, 400, {"error": "action_not_allowed"})
-
-        bio = None
-        try:
-            import pantalla_biometria
-            bio = pantalla_biometria.obtener_estado_biometria(app)
-        except Exception:
-            pass
-
-        if name == "activar_modo":
-            modo = str(body.get("modo", "normal"))
-            try:
-                import modos_sistema
-                ok, msg, _ = modos_sistema.activar_modo(app, modo, origen="tablet")
-                try: bio = pantalla_biometria.obtener_estado_biometria(app)
-                except Exception: pass
-                gestor.registrar_evento(f"Modo {modo.upper()} activado desde tablet")
-                return _respuesta(h, 200, {"ok": ok, "accion": name, "modo": modo, "mensaje": msg, "biometria": bio})
-            except Exception as e:
-                return _respuesta(h, 500, {"ok": False, "error": str(e)})
-
-        if name == "toggle_solo_dueno":
-            try:
-                import pantalla_biometria
-                nuevo = pantalla_biometria.toggle_solo_dueno(app)
-                try: bio = pantalla_biometria.obtener_estado_biometria(app)
-                except Exception: pass
-                gestor.registrar_evento(f"Solo Dueño {'ON' if nuevo else 'OFF'} desde tablet")
-                return _respuesta(h, 200, {"ok": True, "accion": name, "solo_dueno": nuevo, "biometria": bio})
-            except Exception as e:
-                return _respuesta(h, 500, {"ok": False, "error": str(e)})
-
-        if name in {"reforzar_voz", "reforzar_mi_voz"}:
-            try:
-                import pantalla_biometria
-                pantalla_biometria.disparar_reforzar_voz(app)
-                try: bio = pantalla_biometria.obtener_estado_biometria(app)
-                except Exception: pass
-                gestor.registrar_evento("Refuerzo de voz solicitado desde tablet")
-                return _respuesta(h, 200, {"ok": True, "accion": name, "mensaje": "Muestra reforzada", "biometria": bio})
-            except Exception as e:
-                return _respuesta(h, 500, {"ok": False, "error": str(e)})
-
-        if name == "crear_respaldo":
-            try:
-                import respaldo
-                respaldo.generar_respaldo()
-                gestor.registrar_evento("Copia de respaldo generada desde tablet")
-                return _respuesta(h, 200, {"ok": True, "accion": name, "mensaje": "Respaldo generado"})
-            except Exception as e:
-                return _respuesta(h, 500, {"ok": False, "error": str(e)})
-
-        if name in {"tablet_modo_privado", "tablet_modo_normal"}:
-            priv = (name == "tablet_modo_privado")
-            manager.set_privado(priv)
-            gestor.registrar_evento("Modo privado " + ("activado" if priv else "desactivado"))
-            return _respuesta(h, 200, {"ok": True, "accion": name})
-
-        if name == "ocultar_tarjeta":
-            gestor.ocultar_tarjeta()
-            return _respuesta(h, 200, {"ok": True, "accion": name})
+        import pantalla_remota_accion as pra
+        code, resp = pra.despachar_accion_panel(app, gestor, manager, name, body)
+        return _respuesta(h, code, resp)
 
     identity = _identidad(h, Scope.OPERATION_REQUEST)
     if not identity: return _respuesta(h, 403, {"error": "unauthorized_or_scope_missing"})

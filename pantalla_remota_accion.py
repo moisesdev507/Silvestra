@@ -124,3 +124,68 @@ def detectar_orden_hud(texto):
         "el hud en la tabla", "activa el hud", "abre el hud", "inicia el hud"
     )
     return any(f in t for f in frases_directas)
+
+
+def despachar_accion_panel(app, gestor, manager, name, body):
+    """Ejecuta acciones enviadas desde el panel de la tablet."""
+    bio = None
+    try:
+        import pantalla_biometria
+        bio = pantalla_biometria.obtener_estado_biometria(app)
+    except Exception:
+        pass
+
+    if name == "activar_modo":
+        modo = str(body.get("modo", "normal"))
+        try:
+            import modos_sistema
+            ok, msg, _ = modos_sistema.activar_modo(app, modo, origen="tablet")
+            try: bio = pantalla_biometria.obtener_estado_biometria(app)
+            except Exception: pass
+            gestor.registrar_evento(f"Modo {modo.upper()} activado desde tablet")
+            return 200, {"ok": ok, "accion": name, "modo": modo, "mensaje": msg, "biometria": bio}
+        except Exception as e:
+            return 500, {"ok": False, "error": str(e)}
+
+    if name == "toggle_solo_dueno":
+        try:
+            import pantalla_biometria
+            nuevo = pantalla_biometria.toggle_solo_dueno(app)
+            try: bio = pantalla_biometria.obtener_estado_biometria(app)
+            except Exception: pass
+            gestor.registrar_evento(f"Solo Dueño {'ON' if nuevo else 'OFF'} desde tablet")
+            return 200, {"ok": True, "accion": name, "solo_dueno": nuevo, "biometria": bio}
+        except Exception as e:
+            return 500, {"ok": False, "error": str(e)}
+
+    if name in {"reforzar_voz", "reforzar_mi_voz"}:
+        try:
+            import pantalla_biometria
+            pantalla_biometria.disparar_reforzar_voz(app)
+            try: bio = pantalla_biometria.obtener_estado_biometria(app)
+            except Exception: pass
+            gestor.registrar_evento("Refuerzo de voz solicitado desde tablet")
+            return 200, {"ok": True, "accion": name, "mensaje": "Muestra reforzada", "biometria": bio}
+        except Exception as e:
+            return 500, {"ok": False, "error": str(e)}
+
+    if name == "crear_respaldo":
+        try:
+            import respaldo
+            respaldo.generar_respaldo()
+            gestor.registrar_evento("Copia de respaldo generada desde tablet")
+            return 200, {"ok": True, "accion": name, "mensaje": "Respaldo generado"}
+        except Exception as e:
+            return 500, {"ok": False, "error": str(e)}
+
+    if name in {"tablet_modo_privado", "tablet_modo_normal"}:
+        priv = (name == "tablet_modo_privado")
+        manager.set_privado(priv)
+        gestor.registrar_evento("Modo privado " + ("activado" if priv else "desactivado"))
+        return 200, {"ok": True, "accion": name}
+
+    if name == "ocultar_tarjeta":
+        gestor.ocultar_tarjeta()
+        return 200, {"ok": True, "accion": name}
+
+    return 400, {"error": "action_not_allowed"}

@@ -140,6 +140,12 @@ class GestorPantallaRemota:
         d = estado.cargar()
         self.puerto = d.get("remota_puerto", PUERTO_DEFECTO)
         self.activa = d.get("remota_activa", False)
+        self.token = d.get("remota_token", "")
+        if not self.token:
+            import secrets
+            self.token = secrets.token_urlsafe(24)
+            d["remota_token"] = self.token
+            estado.guardar(d)
 
         if self.activa:
             if os.path.exists("hud_cert.pem") and os.path.exists("hud_key.pem"):
@@ -295,18 +301,13 @@ class GestorPantallaRemota:
         self.ventana_qr.show(); self.ventana_qr.raise_(); self.ventana_qr.activateWindow()
 
     def accion_ocultar_en_tablet(self):
-        """Detiene el servidor y su publicación de eventos."""
         self.detener_servidor()
         if self.ventana_qr is not None:
-            try:
-                self.ventana_qr.close()
-                self.ventana_qr = None
-            except Exception:
-                pass
+            try: self.ventana_qr.close(); self.ventana_qr = None
+            except Exception: pass
         self.app.cola.put(("hablar", "Pantalla remota desactivada."))
 
     def accion_modo_privado(self):
-        """Activa el filtro privado del ecosistema sin alterar estado.json."""
         self.ecosistema_gestor.set_privado(True)
         self.registrar_evento("Modo privado activado")
         self.app.cola.put(("hablar", "Modo privado de la tablet activado. Datos confidenciales ocultos."))
@@ -315,7 +316,6 @@ class GestorPantallaRemota:
         with _lock: self.tarjeta_principal = "LYRIS VIRTUAL INTERFACE // SISTEMA OPERATIVO"
 
     def accion_modo_normal(self):
-        """Desactiva el filtro privado del ecosistema."""
         self.ecosistema_gestor.set_privado(False)
         self.registrar_evento("Modo normal activado")
         self.app.cola.put(("hablar", "Modo normal de la tablet activado. Mostrando datos."))
