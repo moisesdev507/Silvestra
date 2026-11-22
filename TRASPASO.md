@@ -8,6 +8,7 @@ Asistente personal modular Python/Windows con avatar PySide6, voz/escucha, perce
 - `voz*.py`, `oido*.py`, `audio_*.py`: TTS, reproducción/RMS, captura y VAD.
 - `cerebro*.py`, `respuesta_flujo.py`, `proveedores*.py`: conversación, prompt e identidad Lyris.
 - `cerebro_grafo.py`, `cerebro_planificador.py`, `cerebro_entrenamiento.py`: grafo de conocimiento, multi-paso y auto-aprendizaje.
+- `cerebro_trabajo.py`, `cerebro_proactivo.py`: memoria de trabajo corta, resolución anafórica y proactividad situacional.
 - `memoria*.py`, `persistencia_segura.py`: memoria SQLite/FTS5, linaje y consolidación.
 - `contexto_*.py`, `multimodal_*.py`: contexto Windows y percepción pasiva.
 - `razonamiento_*.py`, `planificacion_*.py`: planes y aprendizaje trazable.
@@ -39,3 +40,6 @@ Asistente personal modular Python/Windows con avatar PySide6, voz/escucha, perce
    - Whisper tolerante fonéticamente (`llea`, `lea`, `crea`) y saneo de extensiones mal transcritas (`.tgit`, `.tequisde` -> `.txt`).
    - Generación automática de contenido estructurado para archivos en órdenes compuestas.
    - Exclusión de `openai/gpt-oss-20b` en Groq para prevenir enfriamientos por HTTP 429 TPM.
+12. **Memoria de trabajo corta y motor proactivo situacional (`cerebro_trabajo.py`, `cerebro_proactivo.py`):**
+   - `cerebro_trabajo.py` mantiene los últimos 5 elementos contextuales (`ultimo_archivo`, `ultima_carpeta`, `ultima_ventana`, `ultimo_recordatorio`, `ultima_habilidad`) y resuelve anáforas implícitas (*'léelo'*, *'agrégale...'*). Inyecta directiva compacta $\le$ 140 B en prompt.
+   - `cerebro_proactivo.py` implementa guardarraíles anti-interrupción (cooldown de 15 min, bloqueo en modo Privado, restricción en modo Noche) y reglas situacionales: briefing diario ($\le$ 25 palabras), contexto de proyecto en IDE y cuidado nocturno.

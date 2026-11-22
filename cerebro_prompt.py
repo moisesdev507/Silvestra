@@ -149,6 +149,13 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         pass
     if contexto_adicional:
         ctx_texto = (ctx_texto + "\n" + str(contexto_adicional)).strip()
+    try:
+        import cerebro_trabajo
+        res_t = cerebro_trabajo.resumen_contexto_trabajo()
+        if res_t:
+            ctx_texto = (ctx_texto + "\n" + res_t).strip()
+    except Exception:
+        pass
 
     if es_invitado:
         hechos_str = f"- (Protegido: datos privados de {m.creador} ocultos para invitados)"

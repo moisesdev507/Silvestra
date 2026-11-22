@@ -155,11 +155,16 @@ class PalabraClave:
         if not self.modelo or not self.vivo:
             return False
         # Escuchar si está descansando O si está en modo siempre_atenta (sin conversación activa)
-        activo = self.app.descansando or (self.siempre_atenta and not self.app.conversacion)
+        descansando = getattr(self.app, "descansando", False)
+        conversacion = getattr(self.app, "conversacion", False)
+        activo = descansando or (self.siempre_atenta and not conversacion)
         if not activo:
             return False
         # Detener si la voz está ocupada, si Whisper graba o si no puede hablar sola
-        if self.app.voz.ocupada() or self.app.escuchando or not self.app.puede_hablar_sola():
+        voz_ocupada = self.app.voz.ocupada() if hasattr(self.app, "voz") and hasattr(self.app.voz, "ocupada") else False
+        escuchando = getattr(self.app, "escuchando", False)
+        puede_hablar = self.app.puede_hablar_sola() if hasattr(self.app, "puede_hablar_sola") else True
+        if voz_ocupada or escuchando or not puede_hablar:
             return False
         return True
 

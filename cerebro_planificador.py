@@ -158,6 +158,12 @@ def ejecutar_plan_multipaso(pasos, app=None):
             try:
                 ok, mensaje = acciones.ejecutar(nom_accion, arg)
                 resultados.append((nom_accion, ok, mensaje))
+                if ok and nom_accion == "escribir_archivo" and arg:
+                    try:
+                        import cerebro_trabajo
+                        cerebro_trabajo.actualizar_archivo(arg.split("|")[0].strip())
+                    except Exception:
+                        pass
                 if not ok:
                     break
             except Exception as e:

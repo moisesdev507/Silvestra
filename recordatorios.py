@@ -208,6 +208,12 @@ class Recordatorios:
             datos.append(item)
             _guardar(datos)
 
+        try:
+            import cerebro_trabajo
+            cerebro_trabajo.actualizar_recordatorio(texto, hora_str)
+        except Exception:
+            pass
+
         print(f"[recordatorio] creado='{texto}' hora='{hora_str}'", flush=True)
         return f"Listo, {creador}. Te recordaré {texto} a las {hora_str}."
 

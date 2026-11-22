@@ -7,6 +7,12 @@ import proveedores_cadenas as pc
 
 def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     """Genera la respuesta con streaming y conmutación automática de proveedores si hay fallos."""
+    try:
+        import cerebro_trabajo
+        texto = cerebro_trabajo.resolver_referencias(texto)
+    except Exception:
+        pass
+
     app = getattr(cerebro, "app", None)
     import pantalla_remota_accion as pra
     if pra.detectar_orden_hud(texto):

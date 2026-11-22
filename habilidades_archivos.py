@@ -156,6 +156,11 @@ def escribir_archivo(arg):
                 os.fsync(f.fileno())
             os.replace(tmp_path, ruta_abs)
             nom = os.path.basename(ruta_abs)
+            try:
+                import cerebro_trabajo
+                cerebro_trabajo.actualizar_archivo(ruta_abs)
+            except Exception:
+                pass
             return True, f"Listo. Archivo '{nom}' guardado correctamente ({len(contenido_bytes)} bytes)."
         except Exception as e:
             return False, f"Error al escribir archivo: {e}"
@@ -185,6 +190,11 @@ def leer_archivo(arg):
             nom = os.path.basename(ruta_abs)
             if total > MAX_BYTES_LECTURA:
                 texto += f"\n\n[... Truncado a {MAX_BYTES_LECTURA} de {total} bytes]"
+            try:
+                import cerebro_trabajo
+                cerebro_trabajo.actualizar_archivo(ruta_abs)
+            except Exception:
+                pass
             return True, f"=== {nom} ===\n{texto}"
         except Exception as e:
             return False, f"Error al leer archivo: {e}"
@@ -208,6 +218,12 @@ def listar_archivos(arg=None):
 
     if not os.path.exists(directorio):
         return True, "El directorio no existe todavía."
+
+    try:
+        import cerebro_trabajo
+        cerebro_trabajo.actualizar_carpeta(directorio)
+    except Exception:
+        pass
 
     with _bloqueo:
         try:

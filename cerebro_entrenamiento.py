@@ -76,6 +76,11 @@ def buscar_habilidad_difusa(texto, umbral_similitud=0.72):
     if mejor_nombre and max_score >= umbral_similitud:
         if mejor_nombre not in acciones.VIVAS:
             aprendiz_habilidades._activar_modulo_habilidad(mejor_nombre, mejor_info)
+        try:
+            import cerebro_trabajo
+            cerebro_trabajo.actualizar_habilidad(mejor_nombre)
+        except Exception:
+            pass
         return mejor_nombre, mejor_info
 
     return None, None
@@ -118,6 +123,12 @@ def gestionar_autoaprendizaje_proactivo(texto, app=None):
             nom_habilidad = _propuesta_proactiva_pendiente
             _propuesta_proactiva_pendiente = None
         ok, msg = aprendiz_habilidades.aprender_habilidad(nom_habilidad, app=app)
+        if ok:
+            try:
+                import cerebro_trabajo
+                cerebro_trabajo.actualizar_habilidad(nom_habilidad)
+            except Exception:
+                pass
         return True, msg
 
     # 2. Detectar si pide una habilidad técnica nueva

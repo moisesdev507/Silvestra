@@ -49,6 +49,12 @@ class Iniciativa:
         except Exception as e:
             print(f"[iniciativa] Error en revisión contextual: {e}", flush=True)
 
+        try:
+            import cerebro_proactivo
+            cerebro_proactivo.evaluar_proactividad(self.app, motivo="periodico")
+        except Exception as e:
+            pass
+
         if hasattr(self.app, "cara") and hasattr(self.app.cara, "root"):
             self.app.cara.root.after(30000, self.revisar)
 

@@ -170,6 +170,13 @@ class SistemaMultimodalSilvestra:
                     ventana["ejecutable"] or ventana["pid"], titulo_log, fuente)
         obs = self.integrador.ingerir_contexto_windows(ventana)
         self._interpretar(obs)
+        try:
+            import cerebro_trabajo
+            cerebro_trabajo.actualizar_ventana(ventana)
+            import cerebro_proactivo
+            cerebro_proactivo.evaluar_proactividad(self.app, motivo="ventana", ventana=ventana)
+        except Exception:
+            pass
         return dict(ventana)
 
     def _actualizar_contexto(self, forzar_en_vivo=False):
