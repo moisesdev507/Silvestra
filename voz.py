@@ -34,10 +34,8 @@ EMOCIONES_VALIDAS = set(EMOCIONES_VOZ.keys())
 GUION_WINDOWS = (
     "Add-Type -AssemblyName System.Speech;"
     "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;"
-    "$v = $s.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -like 'es*' } | Select-Object -First 1;"
-    "if ($v) { $s.SelectVoice($v.VoiceInfo.Name) };"
-    "$s.Rate = 0;"
-    "$s.Speak($env:SILVESTRA_TEXTO)"
+    "$v = $s.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -like 'es*' } | Select -First 1;"
+    "if ($v) { $s.SelectVoice($v.VoiceInfo.Name) }; $s.Speak($env:SILVESTRA_TEXTO)"
 )
 
 
@@ -146,14 +144,14 @@ class Voz:
             flujo.agregar(frase, emocion=frase_emo)
         flujo.cerrar()
 
-    def flujo(self, al_terminar=None, emocion="neutral", t_fin_habla=None, metricas=None):
+    def flujo(self, al_terminar=None, emocion="neutral", t_fin_habla=None, metricas=None, t_inicio_texto=None):
         with self._estado_lock:
             self.version += 1
             version = self.version
             self._activos = 1
         emo = normalizar_emocion(emocion)
         flujo = Flujo(emocion=emo)
-        threading.Thread(target=self._hablar, args=(flujo, al_terminar, version, emo, t_fin_habla, metricas), daemon=True).start()
+        threading.Thread(target=self._hablar, args=(flujo, al_terminar, version, emo, t_fin_habla, metricas, t_inicio_texto), daemon=True).start()
         return flujo
 
     def _parar(self):
@@ -239,7 +237,7 @@ class Voz:
             except Exception:
                 pass
 
-    def _hablar(self, flujo, al_terminar, version, emocion_defecto="neutral", t_fin_habla=None, metricas=None):
+    def _hablar(self, flujo, al_terminar, version, emocion_defecto="neutral", t_fin_habla=None, metricas=None, t_inicio_texto=None):
         if not hasattr(self, "_generacion_audio"):
             self._generacion_audio = 0
         if not hasattr(self, "sincronia_labial"):
@@ -266,13 +264,17 @@ class Voz:
                             print(f"[latencia] fin_habla->texto={d_trans:.2f}s, texto->primer_token={d_token:.2f}s, primer_token->audio={d_audio:.2f}s, total={d_total:.2f}s", flush=True)
                     if t_fin_habla is not None:
                         dt = t_audio - t_fin_habla
-                        ant = getattr(self, "ult_primera_palabra", None)
-                        if ant is not None:
-                            diff = dt - ant
-                            print(f"[tiempo] primera_palabra={dt:.2f}s desde que terminé de hablar (anterior={ant:.2f}s, diff={diff:+.2f}s)", flush=True)
-                        else:
-                            print(f"[tiempo] primera_palabra={dt:.2f}s desde que terminé de hablar", flush=True)
-                        self.ult_primera_palabra = dt
+                        if dt <= 30.0:
+                            ant = getattr(self, "ult_primera_palabra", None)
+                            if ant is not None:
+                                diff = dt - ant
+                                print(f"[tiempo] primera_palabra={dt:.2f}s desde que terminé de hablar (anterior={ant:.2f}s, diff={diff:+.2f}s)", flush=True)
+                            else:
+                                print(f"[tiempo] primera_palabra={dt:.2f}s desde que terminé de hablar", flush=True)
+                            self.ult_primera_palabra = dt
+                    elif t_inicio_texto is not None:
+                        dt = max(0.0, t_audio - t_inicio_texto)
+                        print(f"[tiempo] primera_palabra={dt:.2f}s (turno de texto/HUD)", flush=True)
 
             def productor():
                 while True:

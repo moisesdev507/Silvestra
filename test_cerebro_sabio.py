@@ -123,25 +123,80 @@ class TestCerebroEntrenamiento(unittest.TestCase):
         self.assertEqual(ce.normalizar_fonetico("Genera contrasiña"), "genera contrasena")
 
     def test_flujo_autoaprendizaje_proactivo(self):
-        # 1. Petición de capacidad técnica no existente
-        ok_prop, msg_prop = ce.gestionar_autoaprendizaje_proactivo("Calcula el hash sha256 de un texto")
-        self.assertTrue(ok_prop)
-        self.assertIn("Aún no tengo una acción", msg_prop)
-        self.assertIn("¿quieres que la programe", msg_prop)
+        slug = "el_hash_sha256_de_un_texto"
+        p = os.path.join("habilidades_aprendidas", f"habilidad_{slug}.py")
 
-        # 2. Confirmación afirmativa del dueño
-        ok_conf, msg_conf = ce.gestionar_autoaprendizaje_proactivo("Sí, hazlo por favor")
-        self.assertTrue(ok_conf)
-        self.assertIn("He preparado la nueva habilidad", msg_conf)
+        def _limpiar():
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
+            reg = aprendiz_habilidades._cargar_registro()
+            if slug in reg.get("habilidades", {}):
+                del reg["habilidades"][slug]
+                aprendiz_habilidades._guardar_registro(reg)
+            if slug in acciones.VIVAS:
+                del acciones.VIVAS[slug]
 
-        # Limpiar habilidad generada de prueba
-        p = os.path.join("habilidades_aprendidas", "habilidad_el_hash_sha256_de_un_texto.py")
-        if os.path.exists(p):
-            os.remove(p)
-        reg = aprendiz_habilidades._cargar_registro()
-        if "el_hash_sha256_de_un_texto" in reg.get("habilidades", {}):
-            del reg["habilidades"]["el_hash_sha256_de_un_texto"]
-            aprendiz_habilidades._guardar_registro(reg)
+        _limpiar()
+        try:
+            # 1. Petición de capacidad técnica no existente
+            ok_prop, msg_prop = ce.gestionar_autoaprendizaje_proactivo("Calcula el hash sha256 de un texto")
+            self.assertTrue(ok_prop)
+            self.assertIn("Aún no tengo una acción", msg_prop)
+            self.assertIn("¿quieres que la programe", msg_prop)
+
+            # 2. Confirmación afirmativa del dueño
+            ok_conf, msg_conf = ce.gestionar_autoaprendizaje_proactivo("Sí, hazlo por favor")
+            self.assertTrue(ok_conf)
+            self.assertIn("activado", msg_conf.lower())
+        finally:
+            _limpiar()
+
+    def test_unicode_no_trunca_palabras_con_enie(self):
+        pet = "genera una contraseña segura de 16 caracteres"
+        candidato = ce.detectar_peticion_tecnica_nueva(pet)
+        self.assertIsNotNone(candidato)
+        self.assertIn("contraseña", candidato)
+        self.assertNotIn("contrase ", candidato + " ")
+
+    def test_propuesta_proactiva_confirmar_y_activar_inmediato(self):
+        slug = "una_contrasena_personalizada_test"
+        nom_hab = f"habilidad_{slug}.py"
+        ruta_hab = os.path.join("habilidades_aprendidas", nom_hab)
+
+        def _limpiar():
+            if os.path.exists(ruta_hab):
+                try:
+                    os.remove(ruta_hab)
+                except Exception:
+                    pass
+            reg = aprendiz_habilidades._cargar_registro()
+            if slug in reg.get("habilidades", {}):
+                del reg["habilidades"][slug]
+                aprendiz_habilidades._guardar_registro(reg)
+            if slug in acciones.VIVAS:
+                del acciones.VIVAS[slug]
+
+        _limpiar()
+        try:
+            # 1. Propuesta
+            ok_prop, msg_prop = ce.gestionar_autoaprendizaje_proactivo(f"genera {slug.replace('_', ' ')}")
+            self.assertTrue(ok_prop)
+            self.assertIn("Aún no tengo una acción", msg_prop)
+
+            # 2. Confirmación inmediata con activación en un solo paso
+            ok_conf, msg_conf = ce.gestionar_autoaprendizaje_proactivo("Sí, hazlo por favor")
+            self.assertTrue(ok_conf)
+            self.assertIn("activado", msg_conf.lower())
+            self.assertIn(slug, acciones.VIVAS)
+
+            # 3. Búsqueda y ejecución directa con variantes fonéticas
+            nom_match, _ = ce.buscar_habilidad_difusa(f"dame {slug.replace('_', ' ')}")
+            self.assertEqual(nom_match, slug)
+        finally:
+            _limpiar()
 
     def test_deteccion_leccion_o_correccion(self):
         ok, msg = ce.detectar_y_guardar_leccion("No, mejor hazlo de forma más breve y sin rodeos", creador="Moisés")

@@ -7,12 +7,10 @@ def es_confirmacion_rutinaria(texto):
         return True
     t = str(texto).strip().lower()
 
-    # 1. Avisos de error, fallo, advertencia o bloqueo NUNCA se silencian
     alertas = (
-        "error", "fallo", "falló", "no pude", "no puedo", "no se pudo",
-        "no está", "no esta", "no existe", "no encontré", "no encontre",
-        "no tengo", "bloquead", "prohibid", "cuidado", "advertencia",
-        "contraseña", "seguridad", "invalido", "inválido", "rechazad"
+        "error", "fallo", "falló", "no pude", "no puedo", "no se pudo", "no está", "no esta",
+        "no existe", "no encontré", "no encontre", "no tengo", "bloquead", "prohibid",
+        "cuidado", "advertencia", "contraseña", "seguridad", "invalido", "inválido", "rechazad"
     )
     if any(a in t for a in alertas):
         return False
@@ -24,16 +22,13 @@ def es_confirmacion_rutinaria(texto):
     if any(d in t for d in datos):
         return False
 
-    # 3. Frases de confirmación rutinaria de acciones
     rutinas = (
-        "panel jarvis listo",
-        "subiendo volumen", "bajando volumen", "cambiando silencio",
+        "panel jarvis listo", "subiendo volumen", "bajando volumen", "cambiando silencio",
         "pausando o reanudando", "siguiente canción", "cancion anterior", "canción anterior",
-        "abriendo ",
-        "pantalla remota desactivada", "modo privado de la tablet", "modo normal de la tablet",
-        "detección de presencia", "deteccion de presencia",
-        "subiendo brillo", "bajando brillo",
-        "listo", "hecho", "anotado", "abierto", "cerrado", "activado", "desactivado"
+        "abriendo ", "pantalla remota desactivada", "modo privado de la tablet",
+        "modo normal de la tablet", "detección de presencia", "deteccion de presencia",
+        "subiendo brillo", "bajando brillo", "listo", "hecho", "anotado", "abierto",
+        "cerrado", "activado", "desactivado"
     )
     if any(r in t for r in rutinas):
         return True
@@ -62,13 +57,18 @@ def atender_evento(app, tipo, texto):
         if app.flujo is None:
             app.texto_flujo = ""
             t_fin = getattr(app, "t_fin_habla", None)
+            if t_fin and (time.time() - t_fin > 30.0 or getattr(app, "_ecosistema_origen", None)):
+                t_fin, app.t_fin_habla, app.metricas_turno = None, None, None
             metricas = getattr(app, "metricas_turno", None)
+            t_in_txt = getattr(app, "t_inicio_texto", None)
             app.flujo = app.voz.flujo(
                 lambda: app.cola.put(("fin_voz", None)),
                 emocion=frase_emo or "neutral",
                 t_fin_habla=t_fin,
                 metricas=metricas,
+                t_inicio_texto=t_in_txt,
             )
+            app.t_inicio_texto = None
         app.texto_flujo = (app.texto_flujo + " " + frase_txt).strip()
         app.flujo.agregar(frase_txt, emocion=frase_emo)
         app.cara.decir(app.texto_flujo, None, emocion=frase_emo)
@@ -221,10 +221,8 @@ def atender_evento(app, tipo, texto):
                     _animar_aparicion(0.0)
                 except Exception:
                     try:
-                        import qt_estabilidad_ui
-                        if qt_estabilidad_ui.puede_actualizar_ui():
-                            app.cara.show()
-                            app.cara.raise_()
+                        app.cara.show()
+                        app.cara.raise_()
                     except Exception:
                         pass
 
@@ -353,6 +351,7 @@ def atender_evento(app, tipo, texto):
             texto = texto.get("texto", "")
         app._t_accion_llm = 0
         app.origen_entrada_actual = "chat"
+        app.t_fin_habla, app.t_inicio_texto = None, time.time()
         if hasattr(app, "iniciativa"):
             app.iniciativa.interaccion()
         app.enviar(texto)

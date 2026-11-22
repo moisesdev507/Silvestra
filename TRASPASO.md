@@ -22,15 +22,15 @@ Asistente personal modular Python/Windows con avatar PySide6, voz/escucha, perce
 - Fase 6 (Etapas 1 y 2): contratos sanitizados, puente de seguridad, SSE resiliente y fail-closed.
 
 ## Mejoras de Identidad y Experiencia (Fase 6 Base)
-1. **Aros HUD en reposo (`cara_dibujo.py`):** Tono cian/verde esmeralda calmado (`vel=24.0`) con micrófono apagado o en reposo. Ámbar exclusivo para escucha activa o pensamiento.
-2. **Auto-enlace LAN sin fricción (`pantalla_remota*.py`, `ecosistema_*.py`):** HTTPS en `0.0.0.0:8765` con `hud_cert.pem`. Clientes en LAN privada (RFC 1918) emparejados automáticamente en `/api/sesion` sin PIN.
-3. **Identidad vocal y visual "Lyris":** Prompt (`SOBRE_MI`), `alma.txt`, `memoria.json` y HUD identifican a Lyris. Vosk offline reconoce "lyris", variantes fonéticas y "silvestra".
-4. **HUD Galaxy Tab A7 & Esfera de Energía (`pantalla_remota_tema.py`, `pantalla_remota_ui.py`):** Orbe central con estética de energía cibernética, botones táctiles $\ge 48$ px, barras CSS fluidas y reloj local instantáneo.
-5. **Acción `activar_hud` y cascada rápida (`pantalla_remota_accion.py`, `proveedores_stream.py`):** Acción `activar_hud` en `acciones.py`. Detección inmediata en `respuesta_flujo.py` para arrancar en LAN sin latencia LLM. Groq prioriza `llama-3.1-8b-instant` con timeout $\le 3.5$ s.
-6. **Botones y SSE HUD Tablet (`pantalla_remota_*.py`, `ecosistema_*.py`):** Servidor asigna puente. Validación de origen en GET y `/eventos`. Polling de respaldo cada 2s a `/api/panel/estado` manteniendo `EN LÍNEA`. Ejecución directa de botones. Altura `100dvh` sin recorte.
-7. **Consola Tablet y Visión Fresca (`ecosistema_gestor.py`, `multimodal_puente_app.py`, `multimodal_ventana_win32.py`):** `device_id` con UUID puro. Prompt anti-alucinación sobre estado en vivo. `consultar_entorno_actual` invalida caché en vivo (`fuente=zorder` vía `EnumDesktopWindows`).
-8. **Recordatorios sin falso bloqueo y archivos seguros (`recordatorios.py`, `memoria_formacion.py`, `habilidades_archivos.py`):** Admite números en palabras (`un`, `medio`, `dos`). Sin falsos rechazos en memoria. `escribir_archivo` admite pipe, JSON y multilínea, rechazando nombres sin contenido con mensaje instructivo impidiendo archivos vacíos de 0 B.
-9. **Filtro de calidad lingüística (`calidad_respuesta.py`):** Tokens alfanuméricos (`any(c.isdigit()) and any(c.isalpha())`) reconocidos como contraseñas, tokens y hashes (ej. `V9k!`), suprimiendo falsos positivos de `token_corrupto` en respuestas coherentes en español.
+1. **Aros HUD en reposo (`cara_dibujo.py`):** Cian/esmeralda calmado (`vel=24.0`) en reposo. Ámbar exclusivo para escucha activa o pensamiento.
+2. **Auto-enlace LAN sin fricción (`pantalla_remota*.py`, `ecosistema_*.py`):** HTTPS en `0.0.0.0:8765` con `hud_cert.pem`. Clientes LAN emparejados en `/api/sesion` sin PIN.
+3. **Identidad vocal y visual "Lyris":** Prompt (`SOBRE_MI`), `alma.txt`, `memoria.json` y HUD identifican a Lyris. Vosk reconoce "lyris" y "silvestra".
+4. **HUD Galaxy Tab A7 & Esfera de Energía (`pantalla_remota_tema.py`, `pantalla_remota_ui.py`):** Orbe central de energía, botones $\ge 48$ px, CSS fluido y reloj instantáneo.
+5. **Acción `activar_hud` y cascada rápida (`pantalla_remota_accion.py`, `proveedores_stream.py`):** Detección inmediata en `respuesta_flujo.py` para arrancar en LAN sin latencia LLM. Groq prioriza `llama-3.1-8b-instant`.
+6. **Botones y SSE HUD Tablet (`pantalla_remota_*.py`, `ecosistema_*.py`):** Asignación de puente, validación de origen, polling 2s de respaldo manteniendo `EN LÍNEA` y altura `100dvh`.
+7. **Consola Tablet y Visión Fresca (`ecosistema_gestor.py`, `multimodal_puente_app.py`, `multimodal_ventana_win32.py`):** `device_id` UUID puro, prompt anti-alucinación y caché invalidada en vivo (`fuente=zorder`).
+8. **Recordatorios y archivos seguros (`recordatorios.py`, `memoria_formacion.py`, `habilidades_archivos.py`):** Números en palabras. `escribir_archivo` admite pipe, JSON y multilínea, impidiendo archivos vacíos de 0 B.
+9. **Filtro lingüístico (`calidad_respuesta.py`):** Tokens alfanuméricos reconocidos como claves y hashes (ej. `V9k!`), suprimiendo falsos positivos de `token_corrupto`.
 10. **Cerebro sabio y auto-entrenable (`cerebro_grafo.py`, `cerebro_planificador.py`, `cerebro_entrenamiento.py`, `cerebro_parser.py`):**
    - Grafo de Conocimiento Vivo: Tablas aditivas `grafo_nodos` y `grafo_relaciones` en SQLite con sobreescritura de datos obsoletos y consulta contextual compacta en prompt.
    - Planificador multi-paso: Encadena hasta 3 acciones reales (`planificar -> ejecutar -> verificar`) con auto-crítica verídica ante fallos parciales sin alucinaciones.
@@ -41,5 +41,9 @@ Asistente personal modular Python/Windows con avatar PySide6, voz/escucha, perce
    - Generación automática de contenido estructurado para archivos en órdenes compuestas.
    - Exclusión de `openai/gpt-oss-20b` en Groq para prevenir enfriamientos por HTTP 429 TPM.
 12. **Memoria de trabajo corta y motor proactivo situacional (`cerebro_trabajo.py`, `cerebro_proactivo.py`):**
-   - `cerebro_trabajo.py` mantiene los últimos 5 elementos contextuales (`ultimo_archivo`, `ultima_carpeta`, `ultima_ventana`, `ultimo_recordatorio`, `ultima_habilidad`) y resuelve anáforas implícitas (*'léelo'*, *'agrégale...'*). Inyecta directiva compacta $\le$ 140 B en prompt.
-   - `cerebro_proactivo.py` implementa guardarraíles anti-interrupción (cooldown de 15 min, bloqueo en modo Privado, restricción en modo Noche) y reglas situacionales: briefing diario ($\le$ 25 palabras), contexto de proyecto en IDE y cuidado nocturno.
+   - `cerebro_trabajo.py` mantiene los últimos 5 elementos contextuales y resuelve anáforas implícitas (*'léelo'*, *'agrégale...'*). Inyecta directiva compacta $\le$ 140 B en prompt.
+   - `cerebro_proactivo.py` implementa guardarraíles anti-interrupción (cooldown 15 min, modo Privado/Noche) y reglas situacionales: briefing diario ($\le$ 25 palabras), contexto de proyecto en IDE y cuidado nocturno.
+13. **Soporte Unicode en auto-aprendizaje y latencia real en texto (`cerebro_entrenamiento.py`, `respuesta_flujo.py`, `voz.py`, `eventos.py`):**
+   - Extracción de peticiones técnicas con soporte Unicode completo (`áéíóúüñ`), impidiendo que palabras como *'contraseña'* se corten en *'contrase'*.
+   - Activación inmediata de habilidades en 1 paso tras confirmación y eliminación de propuestas duplicadas en log.
+   - Saneo de métrica de latencia en turnos de texto/HUD descartando marcas de voz obsoletas (> 30s).

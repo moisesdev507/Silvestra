@@ -35,7 +35,7 @@ def normalizar_fonetico(texto):
     return limpio
 
 
-def buscar_habilidad_difusa(texto, umbral_similitud=0.72):
+def buscar_habilidad_difusa(texto, umbral_similitud=0.70):
     """Busca habilidades aprobadas mediante coincidencia difusa tolerante a Whisper (< 50 ms)."""
     if not texto or len(str(texto).strip()) < 3:
         return None, None
@@ -64,16 +64,18 @@ def buscar_habilidad_difusa(texto, umbral_similitud=0.72):
             mejor_nombre = nombre
             mejor_info = info
 
-        # 2. Similitud por palabras clave individuales
+        # 2. Similitud por palabras clave individuales (lemas y tokens normalizados)
         for pu in palabras_usuario:
+            pu_base = pu.rstrip("s").rstrip("r")
             for pn in partes_nom:
-                sim_palabra = difflib.SequenceMatcher(None, pu, pn).ratio()
-                if (sim_palabra >= 0.80 or pu in pn or pn in pu) and sim_palabra > max_score:
+                pn_base = pn.rstrip("s").rstrip("r")
+                sim_palabra = difflib.SequenceMatcher(None, pu_base, pn_base).ratio()
+                if (sim_palabra >= 0.75 or pu_base in pn_base or pn_base in pu_base) and sim_palabra > max_score:
                     max_score = sim_palabra
                     mejor_nombre = nombre
                     mejor_info = info
 
-    if mejor_nombre and max_score >= umbral_similitud:
+    if mejor_nombre and (max_score >= umbral_similitud or max_score >= 0.75):
         if mejor_nombre not in acciones.VIVAS:
             aprendiz_habilidades._activar_modulo_habilidad(mejor_nombre, mejor_info)
         try:
@@ -92,21 +94,31 @@ def detectar_peticion_tecnica_nueva(texto):
         return None
 
     t = str(texto).strip()
-    patron = r"\b(?:calcula|genera|convierte|obten|extrae|crea\s+un|haz\s+un)\s+([a-zA-Z0-9_\s]+)"
+    patron = r"\b(?:calcula|genera|convierte|obten|obtén|extrae|crea\s+un[a]?|haz\s+un[a]?)\s+([a-zA-Z0-9_áéíóúüñÁÉÍÓÚÜÑ\s\-]+)"
     m = re.search(patron, t, re.I)
     if not m:
         return None
 
     candidato = m.group(1).strip().lower()
-    # Si ya existe como acción o habilidad aprobada, no es nueva
-    todas_acciones = set(acciones.ACCIONES.keys()) | set(acciones.VIVAS.keys())
-    candidato_slug = candidato.replace(" ", "_")
-    if any(candidato_slug in acc or acc in candidato_slug for acc in todas_acciones):
-        return None
+    candidato = re.sub(r"[\.,;:!\?]+$", "", candidato).strip()
 
     # Filtrar peticiones comunes que ya tienen enrutamiento nativo
     excluidos = ("recordatorio", "foto", "captura", "hud", "musica", "modo", "archivo", "volumen")
     if any(exc in candidato for exc in excluidos):
+        return None
+
+    # Si ya existe como habilidad aprobada (difusa o por intención), no es nueva
+    nom_existente, _ = buscar_habilidad_difusa(texto, umbral_similitud=0.65)
+    if not nom_existente:
+        import aprendiz_habilidades
+        nom_existente, _ = aprendiz_habilidades.buscar_habilidad_por_intencion(texto)
+    if nom_existente:
+        return None
+
+    # Si ya existe como acción viva o nativa
+    todas_acciones = set(acciones.ACCIONES.keys()) | set(acciones.VIVAS.keys())
+    candidato_slug = normalizar_fonetico(candidato).replace(" ", "_")
+    if any(candidato_slug in acc or acc in candidato_slug for acc in todas_acciones):
         return None
 
     return candidato
@@ -118,17 +130,20 @@ def gestionar_autoaprendizaje_proactivo(texto, app=None):
     t = str(texto).strip().lower()
 
     # 1. Si el usuario confirma una propuesta previa ("sí", "hazlo", "apréndelo", "adelante")
-    if _propuesta_proactiva_pendiente and re.search(r"\b(?:si|sí|hazlo|aprende|aprendelo|apréndelo|adelante|dale|prográmala|programala)\b", t):
+    if _propuesta_proactiva_pendiente and re.search(r"\b(?:si|sí|hazlo|aprende|aprendelo|apréndelo|adelante|dale|prográmala|programala|actívala|activala|activar)\b", t):
         with _bloqueo:
             nom_habilidad = _propuesta_proactiva_pendiente
             _propuesta_proactiva_pendiente = None
         ok, msg = aprendiz_habilidades.aprender_habilidad(nom_habilidad, app=app)
         if ok:
+            # Activar de inmediato tal como se le preguntó al usuario
+            ok_conf, msg_conf = aprendiz_habilidades.confirmar_habilidad(nom_habilidad, app=app)
             try:
                 import cerebro_trabajo
                 cerebro_trabajo.actualizar_habilidad(nom_habilidad)
             except Exception:
                 pass
+            return True, f"Listo. He programado, auditado y activado la habilidad '{nom_habilidad}' con éxito. Ya puedes usarla."
         return True, msg
 
     # 2. Detectar si pide una habilidad técnica nueva

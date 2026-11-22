@@ -92,6 +92,10 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
             return msg_lec, "guardar_leccion", "alegre"
 
         nom_difuso, info_difuso = cerebro_entrenamiento.buscar_habilidad_difusa(texto)
+        if not nom_difuso:
+            import aprendiz_habilidades
+            nom_difuso, info_difuso = aprendiz_habilidades.buscar_habilidad_por_intencion(texto)
+
         if nom_difuso:
             import acciones
             ok_d, res_d = acciones.ejecutar(nom_difuso, texto)
@@ -113,7 +117,7 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
             cerebro.historial.append({"role": "assistant", "content": msg_proactivo})
             if hasattr(cerebro, "_podar_historial"):
                 cerebro._podar_historial()
-            return msg_proactivo, "autoaprendizaje_proactivo", "animada"
+            return msg_proactivo, None, "animada"
     except Exception as e:
         print(f"[entrenamiento] Error: {e}", flush=True)
 
@@ -139,20 +143,6 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         if hasattr(cerebro, "_podar_historial"):
             cerebro._podar_historial()
         return msg, "aprender_habilidad", "alegre" if ok else "preocupada"
-
-    nom_ejec, info_ejec = aprendiz_habilidades.buscar_habilidad_por_intencion(texto)
-    if nom_ejec:
-        import acciones
-        ok, res_ejec = acciones.ejecutar(nom_ejec, texto)
-        if ok and res_ejec:
-            msg = str(res_ejec)
-            if callable(al_frase):
-                al_frase(msg)
-            cerebro.historial.append({"role": "user", "content": texto})
-            cerebro.historial.append({"role": "assistant", "content": msg})
-            if hasattr(cerebro, "_podar_historial"):
-                cerebro._podar_historial()
-            return msg, nom_ejec, "alegre"
 
     from memoria_adaptadores import atender_turno
     directo = atender_turno(cerebro, texto)
