@@ -39,20 +39,22 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
 
     def _identidad(self, scope, mutacion=False):
         try:
+            puente = getattr(self.server, "puente", None) or getattr(getattr(self.server, "gestor", None), "puente", None)
             manager = self.server.gestor.ecosistema_gestor
             cookie_val = manager.cookie_value(self.headers.get("Cookie"))
-            identity = self.server.puente.autenticar(self.headers, cookie_val)
+            identity = puente.autenticar(self.headers, cookie_val)
             origin = self.headers.get("Origin", "")
-            if not self.server.puente.validar_origen(
+            if not puente.validar_origen(
                     origin, self.headers.get("Host", ""), self.server.tls,
-                    mutacion, bool(self.headers.get("Cookie"))):
+                    mutacion, bool(cookie_val or self.headers.get("X-Device-Token"))):
                 return None
             if not identity and _api._es_lan_cliente(self.client_address[0]):
                 pair = manager.emparejar_lan(TipoDispositivo.TABLET_HUD,
                                              (Scope.STATE_READ, Scope.UI_CONTROL, Scope.OPERATION_REQUEST))
                 if pair:
-                    identity = pair
+                    identity = manager.autenticar_token(pair["token"]) or pair
                     self._lan_cookie = manager.cookie_header(pair["cookie"], secure=self.server.tls)
+                    self._lan_token = pair.get("token", "")
             if not identity: return None
             if not manager.autorizar(identity, scope): return None
             if not self.server.bus_sse.permitir_peticion(identity["device_id"]): return None
@@ -78,7 +80,6 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         parsed = urllib.parse.urlsplit(self.path)
-        if parsed.query: return self._denegar(400)
         path = parsed.path
         if path in ("/", "/index.html"):
             contenido = PAGINA_JARVIS_HTML.encode("utf-8")
@@ -93,9 +94,9 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
                 pass
             return
         if path == "/api/sesion":
-            identity = self._identidad(Scope.STATE_READ)
+            identity = self._identidad(Scope.STATE_READ, mutacion=False)
             return _api.responder_sesion(self, identity)
-        identity = self._identidad(Scope.STATE_READ)
+        identity = self._identidad(Scope.STATE_READ, mutacion=False)
         if not identity: return self._denegar()
         if path == "/api/panel/estado":
             return _api.responder_estado(self, self.server.app, self.server.gestor)
@@ -177,6 +178,7 @@ class GestorPantallaRemota:
             servidor.gestor = self
             servidor.app = self.app
             servidor.bus_sse = self.bus_sse
+            servidor.puente = self.puente
             scheme = "https" if contexto_tls else "http"
             ip_loc = obtener_ip_local()
             origins = [

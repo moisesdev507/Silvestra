@@ -14,9 +14,9 @@ class DetectorVozSilero:
         self,
         ruta_modelo=None,
         sample_rate=16000,
-        threshold=0.5,
-        min_silence_duration=1.0,
-        min_speech_duration=0.25,
+        threshold=0.40,
+        min_silence_duration=0.85,
+        min_speech_duration=0.20,
         max_speech_duration=15.0,
         buffer_size=20.0,
     ):
@@ -130,12 +130,12 @@ class DetectorVozSilero:
             # Fallback RMS sencillo
             self._fb_audio.append(muestras)
             nivel = float(np.mean(np.abs(muestras))) * 32768.0
-            if nivel > 160.0:
+            if nivel > 120.0:
                 self._fb_hablando = True
                 self._fb_silencio_count = 0
             elif self._fb_hablando:
                 self._fb_silencio_count += 1
-                if self._fb_silencio_count >= 20:  # ~1.0s de silencio
+                if self._fb_silencio_count >= 16:  # ~0.8s de silencio
                     self._fb_segmento_listo = True
 
     def detectando_voz(self):

@@ -3,44 +3,7 @@
 JS_JARVIS = """
 (function() {
 
-  // 1. Wake Lock API para evitar suspensión de la pantalla
-  if ('wakeLock' in navigator) {
-    navigator.wakeLock.request('screen').catch(() => {});
-  }
-
-  // 2. Control de Pantalla Completa (1 toque)
-  const btnFs = document.getElementById('btnFullscreen');
-  function toggleFullscreen() {
-    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-      const docEl = document.documentElement;
-      if (docEl.requestFullscreen) {
-        docEl.requestFullscreen().catch(() => {});
-      } else if (docEl.webkitRequestFullscreen) {
-        docEl.webkitRequestFullscreen();
-      }
-      if (btnFs) btnFs.innerHTML = '🗗 SALIR';
-    } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen().catch(() => {});
-      } else if (document.webkitExitFullscreen) {
-        document.webkitExitFullscreen();
-      }
-      if (btnFs) btnFs.innerHTML = '⛶ PANTALLA COMPLETA';
-    }
-  }
-
-  if (btnFs) {
-    btnFs.addEventListener('click', toggleFullscreen);
-  }
-
-  document.addEventListener('fullscreenchange', () => {
-    if (btnFs) {
-      const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
-      btnFs.innerHTML = isFs ? '🗗 SALIR' : '⛶ PANTALLA COMPLETA';
-    }
-  });
-
-  // 3. Canvas del Orbe Jarvis interactivo
+  // 1. Canvas del Orbe Jarvis interactivo
   const canvas = document.getElementById('orbCanvas');
   const ctx = canvas.getContext('2d');
   let orbState = 'reposo';
@@ -143,6 +106,8 @@ JS_JARVIS = """
     }
     if (window.fijarEstadoEnlaceContexto) window.fijarEstadoEnlaceContexto('RECONECTANDO');
   }
+  window.marcarConectado = marcarConectado;
+  window.marcarReconectando = marcarReconectando;
 
   // 5. Renderizado de datos del HUD
   function aplicarDatos(d) {
@@ -221,7 +186,7 @@ JS_JARVIS = """
 
       const esPrivado = d.telemetria && d.telemetria.modo_privado;
 
-      // Recordatorios
+      // Recordatorios y Notas
       const recBox = document.getElementById('recsContainer');
       if (esPrivado) {
         recBox.innerHTML = '<div class="private-banner">🔒 MODO PRIVADO ACTIVO<br>Recordatorios protegidos</div>';
@@ -231,10 +196,9 @@ JS_JARVIS = """
         recBox.innerHTML = dt.recordatorios.map(r => '<div class="list-item"><div class="item-top"><span>HORA</span><span>' + r.hora + '</span></div><div class="item-text">' + r.texto + '</div></div>').join('');
       } else {
         document.getElementById('recsCount').textContent = '0';
-        recBox.innerHTML = '<div style="font-size:11px; color:var(--text-muted)">Sin recordatorios pendientes.</div>';
+        recBox.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">Sin recordatorios pendientes.</div>';
       }
 
-      // Notas
       const notesBox = document.getElementById('notesContainer');
       if (esPrivado) {
         notesBox.innerHTML = '<div class="private-banner">🔒 MODO PRIVADO ACTIVO<br>Notas protegidas</div>';
@@ -244,14 +208,20 @@ JS_JARVIS = """
         notesBox.innerHTML = dt.notas.map(n => '<div class="list-item"><div class="item-top"><span>' + (n.materia||'General') + '</span><span>' + (n.fecha||'') + '</span></div><div class="item-text">' + n.texto + '</div></div>').join('');
       } else {
         document.getElementById('notesCount').textContent = '0';
-        notesBox.innerHTML = '<div style="font-size:11px; color:var(--text-muted)">Sin notas recientes.</div>';
+        notesBox.innerHTML = '<div style="font-size:11px;color:var(--text-muted)">Sin notas recientes.</div>';
       }
 
-      // Eventos
       if (dt.eventos && dt.eventos.length > 0) {
         document.getElementById('eventLog').innerHTML = dt.eventos.map(e => '<div class="log-entry">[' + e.hora + '] ' + e.texto + '</div>').join('');
       }
     }
+  }
+  window.aplicarDatos = aplicarDatos;
+
+  function _hdr() {
+    var h = {};
+    if (window._hudToken) h['X-Device-Token'] = window._hudToken;
+    return h;
   }
 
   const sseUrl = '/eventos';
@@ -262,42 +232,35 @@ JS_JARVIS = """
       try { evtSource.close(); } catch(e) {}
     }
     evtSource = new EventSource(sseUrl);
-
-    evtSource.onopen = function() {
-      marcarConectado();
-    };
-
+    evtSource.onopen = function() { marcarConectado(); };
     evtSource.onmessage = function(e) {
-      try {
-        aplicarDatos(JSON.parse(e.data));
-      } catch(err) {}
+      try { aplicarDatos(JSON.parse(e.data)); } catch(err) {}
     };
-
     evtSource.onerror = function() {
-      // Intento de fallback inmediato por endpoint JSON
-      fetch('/api/panel/estado')
-        .then(r => r.json())
-        .then(d => {
-          aplicarDatos(d);
-        })
-        .catch(() => {
-          marcarReconectando();
-        });
+      fetch('/api/panel/estado', { headers: _hdr() })
+        .then(r => r.json()).then(d => aplicarDatos(d)).catch(() => marcarReconectando());
     };
   }
 
   function iniciarSesion() {
     fetch('/api/sesion').then(function(r) {
-      if (r.ok) return true;
+      if (r.ok) return r.json();
       var codigo = prompt('Código de emparejamiento de Silvestra');
-      if (!codigo) return false;
+      if (!codigo) return { ok: false };
       return fetch('/api/emparejar', {method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({codigo:codigo})}).then(function(x){return x.ok;});
-    }).then(function(ok) {
-      if (!ok) { marcarReconectando(); return; }
-      fetch('/api/panel/estado').then(r=>r.json()).then(d=>aplicarDatos(d)).catch(()=>{});
+        body:JSON.stringify({codigo:codigo})}).then(function(x){return x.json();});
+    }).then(function(d) {
+      if (!d || !d.ok) { marcarReconectando(); return; }
+      if (d.token) window._hudToken = d.token;
+      marcarConectado();
+      fetch('/api/panel/estado', { headers: _hdr() })
+        .then(r=>r.json()).then(dt=>aplicarDatos(dt)).catch(()=>{});
       iniciarSSE();
-      setInterval(function(){fetch('/api/heartbeat',{method:'POST'}).catch(()=>{});},30000);
+      setInterval(function() {
+        fetch('/api/panel/estado', { headers: _hdr() })
+          .then(r=>r.json()).then(dt=>aplicarDatos(dt)).catch(()=>{});
+      }, 2000);
+      setInterval(function(){fetch('/api/heartbeat',{method:'POST',headers:_hdr()}).catch(()=>{});},30000);
     }).catch(function(){marcarReconectando();});
   }
   iniciarSesion();
@@ -314,7 +277,7 @@ JS_JARVIS = """
     if (fb) { fb.textContent = 'ENVIANDO...'; fb.style.color = 'var(--gold)'; }
     fetch('/api/panel/comando', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: Object.assign({ 'Content-Type': 'application/json' }, _hdr()),
       body: JSON.stringify({ texto: texto })
     })
     .then(function(r) {
@@ -339,77 +302,6 @@ JS_JARVIS = """
   }
   var btnEnviar = document.getElementById('btnEnviar');
   if (btnEnviar) { btnEnviar.addEventListener('click', enviarComando); }
-
-  // 8. Acciones rápidas de la tablet (delegación de eventos en action-grid)
-  let _accionPending = false;
-  function ejecutarAccion(nombre) {
-    if (_accionPending) return;
-    var fb = document.getElementById('accionFb');
-    _accionPending = true;
-    if (fb) { fb.textContent = 'EJECUTANDO...'; fb.style.color = 'var(--gold)'; }
-    fetch('/api/panel/accion', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accion: nombre })
-    })
-    .then(function(r) {
-      var status = r.status;
-      return r.json().then(function(d) { return { d: d, status: status }; });
-    })
-    .then(function(res) {
-      var d = res.d;
-      if (fb) {
-        fb.textContent = d.ok ? ('✔ ' + nombre.toUpperCase()) : ('✖ HTTP ' + res.status + ' — ' + (d.error || 'Error'));
-        fb.style.color  = d.ok ? 'var(--green)' : '#f87171';
-      }
-    })
-    .catch(function() { if (fb) { fb.textContent = '✖ SIN CONEXIÓN'; fb.style.color = '#f87171'; } })
-    .finally(function() { _accionPending = false; setTimeout(function() { if (fb) fb.textContent = ''; }, 3500); });
-  }
-
-  // Delegación con blindaje de doble confirmación (3s) para acciones críticas
-  var _confirmPending = null;
-  var _confirmTimer = null;
-  document.querySelectorAll('[data-accion]').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      var act = btn.getAttribute('data-accion') || '';
-      var esCritica = btn.hasAttribute('data-confirm') ||
-                      /reiniciar|renacer|despertar|apagar|suspender/.test(act);
-      if (esCritica) {
-        if (_confirmPending !== btn) {
-          if (_confirmTimer) clearTimeout(_confirmTimer);
-          if (_confirmPending) {
-            _confirmPending.textContent = _confirmPending.getAttribute('data-orig-text') || _confirmPending.textContent;
-            _confirmPending.style.borderColor = '';
-            _confirmPending.style.color = '';
-          }
-          _confirmPending = btn;
-          if (!btn.getAttribute('data-orig-text')) {
-            btn.setAttribute('data-orig-text', btn.textContent);
-          }
-          btn.textContent = '¿Confirmar? (3s)';
-          btn.style.borderColor = '#f87171';
-          btn.style.color = '#f87171';
-          _confirmTimer = setTimeout(function() {
-            if (_confirmPending === btn) {
-              btn.textContent = btn.getAttribute('data-orig-text') || btn.textContent;
-              btn.style.borderColor = '';
-              btn.style.color = '';
-              _confirmPending = null;
-            }
-          }, 3000);
-          return;
-        } else {
-          if (_confirmTimer) clearTimeout(_confirmTimer);
-          btn.textContent = btn.getAttribute('data-orig-text') || btn.textContent;
-          btn.style.borderColor = '';
-          btn.style.color = '';
-          _confirmPending = null;
-        }
-      }
-      ejecutarAccion(act);
-    });
-  });
 
 })();
 """

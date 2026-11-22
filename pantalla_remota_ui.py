@@ -4,6 +4,7 @@ from pantalla_remota_contexto_ui import (
     HTML_CONTEXTO_PANEL,
     JS_CONTEXTO_PANEL,
 )
+from pantalla_remota_cliente_aux import JS_CLIENTE_AUX
 from pantalla_remota_estilos import CSS_JARVIS
 from pantalla_remota_js import JS_JARVIS
 from pantalla_remota_js_bio import JS_BIOMETRIA
@@ -208,6 +209,7 @@ PAGINA_JARVIS_HTML = f"""<!DOCTYPE html>
 {JS_JARVIS}
 {JS_BIOMETRIA}
 {JS_CONTEXTO_PANEL}
+{JS_CLIENTE_AUX}
   </script>
 {JS_TEMA_LYRIS}
 </body>

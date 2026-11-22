@@ -151,7 +151,7 @@ class GestorEcosistema(GestorSesiones):
 
     @staticmethod
     def cookie_header(cookie, secure=False, ttl=_TTL_SESION):
-        flags = "; HttpOnly; SameSite=Strict; Path=/; Max-Age=" + str(int(ttl))
+        flags = "; HttpOnly; SameSite=Lax; Path=/; Max-Age=" + str(int(ttl))
         return "SilvestraSession=" + cookie + flags + ("; Secure" if secure else "")
 
     @staticmethod

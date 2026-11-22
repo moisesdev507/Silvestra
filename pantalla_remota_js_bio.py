@@ -2,11 +2,14 @@
 
 JS_BIOMETRIA = """
 (function() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const token = urlParams.get('token') || '';
-
   let _soloDuenoPending = false;
   let _reforzarPending = false;
+
+  function _headers() {
+    const h = { 'Content-Type': 'application/json' };
+    if (window._hudToken) { h['X-Device-Token'] = window._hudToken; }
+    return h;
+  }
 
   window.actualizarBiometria = function(b) {
     if (!b) return;
@@ -58,6 +61,11 @@ JS_BIOMETRIA = """
           btn.classList.remove('active');
         }
       });
+      const mp = document.getElementById('modePill');
+      if (mp) {
+        mp.textContent = 'MODO ' + b.modo_activo.toUpperCase();
+        mp.className = 'mode-pill mode-' + b.modo_activo;
+      }
     }
   };
 
@@ -67,9 +75,18 @@ JS_BIOMETRIA = """
     const fb = document.getElementById('bioFb');
     _modoPending = true;
     if (fb) { fb.textContent = 'ACTIVANDO...'; fb.style.color = 'var(--gold)'; }
-    fetch('/api/panel/modo?token=' + encodeURIComponent(token), {
+    document.querySelectorAll('.btn-mode').forEach(function(btn) {
+      if (btn.getAttribute('data-modo') === modo) btn.classList.add('active');
+      else btn.classList.remove('active');
+    });
+    const mp = document.getElementById('modePill');
+    if (mp) {
+      mp.textContent = 'MODO ' + modo.toUpperCase();
+      mp.className = 'mode-pill mode-' + modo;
+    }
+    fetch('/api/panel/accion', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: _headers(),
       body: JSON.stringify({ accion: 'activar_modo', modo: modo })
     })
     .then(function(r) { return r.json(); })
@@ -97,15 +114,18 @@ JS_BIOMETRIA = """
     const fb = document.getElementById('bioFb');
     _soloDuenoPending = true;
     if (fb) { fb.textContent = 'CAMBIANDO...'; fb.style.color = 'var(--gold)'; }
-    fetch('/api/panel/solo_dueno?token=' + encodeURIComponent(token), {
+    fetch('/api/panel/accion', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: _headers(),
       body: JSON.stringify({ accion: 'toggle_solo_dueno' })
     })
     .then(function(r) { return r.json(); })
     .then(function(d) {
       if (d.biometria) {
         window.actualizarBiometria(d.biometria);
+      } else if (d.ok && d.solo_dueno !== undefined && btn) {
+        btn.textContent = d.solo_dueno ? 'Solo Dueño: ON' : 'Solo Dueño: OFF';
+        btn.className = d.solo_dueno ? 'btn-bio bio-on' : 'btn-bio';
       }
       if (fb) {
         fb.textContent = d.ok ? '✔ ACTUALIZADO' : '✖ ERROR';
@@ -128,9 +148,9 @@ JS_BIOMETRIA = """
     _reforzarPending = true;
     if (btn) { btn.disabled = true; btn.textContent = 'Escuchando...'; }
     if (fb) { fb.textContent = 'SOLICITANDO...'; fb.style.color = 'var(--gold)'; }
-    fetch('/api/panel/reforzar_voz?token=' + encodeURIComponent(token), {
+    fetch('/api/panel/accion', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: _headers(),
       body: JSON.stringify({ accion: 'reforzar_voz' })
     })
     .then(function(r) { return r.json(); })

@@ -92,7 +92,7 @@ class VozDueno:
         self.vector_dueno = None  # Alias para retrocompatibilidad
         self.ultimo_embedding = None
         self.activa = False
-        self.umbral = 0.45
+        self.umbral = 0.35
         self.modo_solo_dueno = False
         self.ultima_verificacion = {"es_dueno": True, "similitud": 1.0, "motivo": "inicial"}
         self._cargar_configuracion()
@@ -102,11 +102,11 @@ class VozDueno:
         try:
             datos = estado.cargar()
             self.activa = bool(datos.get("verificacion_voz_activa", False))
-            self.umbral = float(datos.get("umbral_voz_dueno", 0.45))
+            self.umbral = float(datos.get("umbral_voz_dueno", 0.35))
             self.modo_solo_dueno = bool(datos.get("modo_solo_dueno", False))
         except Exception:
             self.activa = False
-            self.umbral = 0.45
+            self.umbral = 0.35
             self.modo_solo_dueno = False
 
     def _cargar_vector(self):
@@ -158,10 +158,10 @@ class VozDueno:
             self.ultimo_embedding = emb.copy()
             score, max_sim, n_muestras = calcular_similitud_banco(emb, self.banco_dueno)
 
-            # Tolerancia en clips cortos del dueño (0.8s a 1.8s) con pocos fonemas
+            # Tolerancia en clips cortos del dueño (<= 2.5s) con pocos fonemas
             umbral_efectivo = self.umbral
-            if 0.8 <= dur_filtrada <= 1.8:
-                umbral_efectivo = max(0.38, self.umbral - 0.03)
+            if dur_filtrada <= 2.5:
+                umbral_efectivo = max(0.30, self.umbral - 0.05)
 
             # Log exacto con score (top-2 promedio para N>=3) y max_sim
             print(f"[voz_dueno] similitud={score:.2f} (max={max_sim:.2f} n={n_muestras}) umbral={self.umbral:.2f} duracion={duracion:.2f}s filtrado={dur_filtrada:.2f}s camara={camara_ok}", flush=True)

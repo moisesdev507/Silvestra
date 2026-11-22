@@ -31,7 +31,7 @@ def obtener_gestor():
     return _gestor_ref
 
 
-def activar_hud(arg=None, app=None):
+def activar_hud(arg=None, app=None, hablar_cola=False):
     """Inicia el servidor HUD en red local HTTPS y devuelve la URL para la tablet."""
     ap = app or obtener_app()
     gestor = getattr(ap, "pantalla_remota", None) or obtener_gestor()
@@ -70,7 +70,7 @@ def activar_hud(arg=None, app=None):
         pass
 
     msg = f"Listo, el HUD ya está activo en tu tablet. Puedes abrir {url}"
-    if ap and hasattr(ap, "cola") and ap.cola:
+    if hablar_cola and ap and hasattr(ap, "cola") and ap.cola:
         try:
             ap.cola.put(("hablar", msg))
         except Exception:
@@ -86,7 +86,7 @@ def registrar_acciones_hud(app, gestor=None):
 
     desc = "activa el HUD de la tablet en la red local y entrega la dirección de acceso."
     for alias in ("activar_hud", "activar_pantalla_remota", "activar_tablet", "abrir_hud"):
-        acciones.registrar(alias, lambda a=None: activar_hud(a, app), desc)
+        acciones.registrar(alias, lambda a=None: activar_hud(a, app, hablar_cola=True), desc)
 
 
 def normalizar_texto(texto):

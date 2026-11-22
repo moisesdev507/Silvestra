@@ -17,7 +17,7 @@ import acciones
 import estado
 
 # Umbral de similitud difflib y palabra objetivo (fácilmente modificables)
-UMBRAL_RATIO = 0.6
+UMBRAL_RATIO = 0.55
 OBJETIVO = "lyris"
 OBJETIVO_SECUNDARIO = "silvestra"
 
@@ -39,6 +39,8 @@ CANDIDATAS = [
     "lirios",
     "liria",
     "lyra",
+    "sris",
+    "srisla",
     "silvestra",
     "silvestre",
     "silvestri",
@@ -79,7 +81,7 @@ def coincide_palabra(texto, objetivo=OBJETIVO, umbral=UMBRAL_RATIO):
     if not palabras:
         return False
 
-    prefijos = ("lyri", "liri", "lyr", "iris", "lira", "silvest", "sylvest", "silvi")
+    prefijos = ("lyri", "liri", "lyr", "iris", "lira", "liras", "sris", "silvest", "sylvest", "silvi")
     for i, p in enumerate(palabras):
         if p in PALABRAS_EXCLUIDAS:
             continue

@@ -90,27 +90,112 @@ CSS_TEMA_LYRIS = """
 }
 
 /* Botones y controles táctiles >= 48px para Galaxy Tab A7 */
-.btn-action, .btn-bio, .btn-hud, .console-send {
+html, body {
+  height: 100vh;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden !important;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+main.hud-grid {
+  height: calc(100dvh - 50px) !important;
+  max-height: calc(100dvh - 50px) !important;
+  gap: 6px !important;
+  padding: 6px 10px !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.hud-panel {
+  gap: 6px !important;
+  overflow: hidden !important;
+}
+
+.hud-card {
+  padding: 6px 10px !important;
+  margin-bottom: 0 !important;
+}
+
+.metric-row {
+  margin-bottom: 4px !important;
+}
+
+#btnFullscreen, .btn-hud {
+  min-height: 38px !important;
+  background: rgba(0, 240, 255, 0.25) !important;
+  border: 1.5px solid #00f0ff !important;
+  color: #00f0ff !important;
+  font-family: var(--font-mono) !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  letter-spacing: 1.5px !important;
+  padding: 6px 14px !important;
+  border-radius: 6px !important;
+  text-shadow: 0 0 10px rgba(0, 240, 255, 0.9) !important;
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.35) !important;
+  cursor: pointer !important;
+}
+
+#btnFullscreen:hover, #btnFullscreen:active, .btn-hud:active {
+  background: #00f0ff !important;
+  color: #050811 !important;
+  font-weight: 900 !important;
+  box-shadow: 0 0 22px rgba(0, 240, 255, 0.9) !important;
+  text-shadow: none !important;
+}
+
+.btn-action, .btn-bio, .console-send {
   min-height: 48px !important;
   font-size: 13px !important;
-  font-weight: 700 !important;
+  font-weight: 800 !important;
   border-radius: 8px !important;
-  cursor: pointer;
+  border: 1.5px solid rgba(0, 240, 255, 0.4) !important;
+  background: rgba(0, 240, 255, 0.12) !important;
+  color: #f1f5f9 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35) !important;
+  cursor: pointer !important;
   touch-action: manipulation;
   transition: all 0.2s ease-in-out;
 }
 
+.btn-action.gold {
+  border-color: rgba(245, 158, 11, 0.6) !important;
+  color: #fbbf24 !important;
+  background: rgba(245, 158, 11, 0.14) !important;
+}
+
+.btn-bio.bio-on {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.35) 0%, rgba(5, 150, 105, 0.5) 100%) !important;
+  border-color: #10b981 !important;
+  color: #34d399 !important;
+  text-shadow: 0 0 8px rgba(16, 185, 129, 0.6) !important;
+}
+
 .btn-mode {
   min-height: 44px !important;
-  font-size: 12px !important;
-  font-weight: 600 !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
   border-radius: 6px !important;
+  border: 1.2px solid rgba(255, 255, 255, 0.18) !important;
+  background: rgba(15, 23, 42, 0.65) !important;
+  color: #94a3b8 !important;
   touch-action: manipulation;
 }
 
-.btn-action:active, .btn-bio:active, .btn-hud:active, .btn-mode:active {
+.btn-mode.active {
+  background: linear-gradient(135deg, #00f0ff 0%, #0284c7 100%) !important;
+  color: #050811 !important;
+  font-weight: 900 !important;
+  border-color: #00f0ff !important;
+  box-shadow: 0 0 16px rgba(0, 240, 255, 0.7) !important;
+}
+
+.btn-action:active, .btn-bio:active, .btn-mode:active {
   transform: scale(0.96);
-  filter: brightness(1.2);
+  filter: brightness(1.25);
 }
 
 .clock-digits {

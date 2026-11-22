@@ -90,17 +90,21 @@ def _origen(h, mutacion=False, cookie=False):
                             h.server.tls, mutacion, cookie)
 
 
-def _identidad(h, scope=None):
+def _identidad(h, scope=None, mutacion=None):
+    if mutacion is None:
+        mutacion = (getattr(h, "command", "") == "POST")
     p = h.server.gestor.puente; manager = h.server.gestor.ecosistema_gestor
-    if not _origen(h, True, bool(h.headers.get("Cookie"))): return None
     cookie = manager.cookie_value(h.headers.get("Cookie"))
+    token = h.headers.get("X-Device-Token")
+    if not _origen(h, mutacion, bool(cookie or token)): return None
     identity = p.autenticar(h.headers, cookie)
     if not identity and _es_lan_cliente(getattr(h, "client_address", ("",))[0]):
         pair = manager.emparejar_lan(TipoDispositivo.TABLET_HUD,
                                      (Scope.STATE_READ, Scope.UI_CONTROL, Scope.OPERATION_REQUEST))
         if pair:
-            identity = pair
+            identity = manager.autenticar_token(pair["token"]) or pair
             h._lan_cookie = manager.cookie_header(pair["cookie"], secure=h.server.tls)
+            h._lan_token = pair.get("token", "")
     if identity and scope and not manager.autorizar(identity, scope): return None
     if identity and not h.server.bus_sse.permitir_peticion(identity["device_id"]): return None
     return identity
@@ -122,11 +126,14 @@ def responder_sesion(h, identity):
         pair = manager.emparejar_lan(TipoDispositivo.TABLET_HUD,
                                      (Scope.STATE_READ, Scope.UI_CONTROL, Scope.OPERATION_REQUEST))
         if pair:
-            identity = pair
+            identity = manager.autenticar_token(pair["token"]) or pair
             lan_c = manager.cookie_header(pair["cookie"], secure=h.server.tls)
+            h._lan_token = pair.get("token", "")
     if not identity:
         return _respuesta(h, 401, {"ok": False, "error": "No autenticado"})
+    tok = getattr(h, "_lan_token", "") or (identity.get("token", "") if isinstance(identity, dict) else "")
     _respuesta(h, 200, {"ok": True, "device_id": identity["device_id"],
+                        "token": tok,
                         "tipo_dispositivo": identity["tipo_dispositivo"]}, cookie=lan_c)
 
 
@@ -164,7 +171,6 @@ def manejar_options(h):
 
 def manejar_post(h, app, gestor):
     path = h.path.split("?", 1)[0]
-    if "?" in h.path: return _respuesta(h, 400, {"error": "query_credentials_forbidden"})
     p = gestor.puente; manager = gestor.ecosistema_gestor
     ip = h.client_address[0]
     if path == "/api/emparejar":
@@ -174,6 +180,7 @@ def manejar_post(h, app, gestor):
         if not result: return _respuesta(h, 403, {"error": "pairing_rejected"})
         cookie = manager.cookie_header(result["cookie"], secure=h.server.tls)
         return _respuesta(h, 200, {"ok": True, "device_id": result["device_id"],
+            "token": result.get("token", ""),
             "tipo_dispositivo": result["tipo_dispositivo"]}, cookie)
     if path == "/api/heartbeat":
         identity = _identidad(h)
@@ -195,19 +202,82 @@ def manejar_post(h, app, gestor):
         except (ValueError, PermissionError): return _respuesta(h, 403, {"error": "approval_rejected"})
         if not _lanzar(h, request_identity, cmd, approval): return _respuesta(h, 429, {"error": "execution_queue_full"})
         return _respuesta(h, 202, {"ok": True, "estado": "en_validacion_central", "message_id": mid})
-    body = _body(h) if path == "/api/panel/accion" else None
-    if path == "/api/panel/accion":
-        name = str((body or {}).get("accion", ""))
-        if name not in ACCIONES_PERMITIDAS: return _respuesta(h, 400, {"error": "action_not_allowed"})
-        if name in {"tablet_modo_privado", "tablet_modo_normal", "ocultar_tarjeta"}:
-            identity = _identidad(h, Scope.UI_CONTROL)
-            if not identity: return _respuesta(h, 403, {"error": "ui_scope_required"})
-            if name == "ocultar_tarjeta": gestor.ocultar_tarjeta()
-            else: manager.set_privado(name == "tablet_modo_privado")
+
+    rutas_accion = {"/api/panel/accion", "/api/panel/modo", "/api/panel/solo_dueno", "/api/panel/reforzar_voz"}
+    if path in rutas_accion:
+        identity = _identidad(h, Scope.UI_CONTROL) or _identidad(h, Scope.OPERATION_REQUEST)
+        if not identity: return _respuesta(h, 403, {"error": "unauthorized"})
+        body = _body(h) or {}
+        name = str(body.get("accion", ""))
+        if path == "/api/panel/modo": name = "activar_modo"
+        elif path == "/api/panel/solo_dueno": name = "toggle_solo_dueno"
+        elif path == "/api/panel/reforzar_voz": name = "reforzar_voz"
+        if not name or name not in ACCIONES_PERMITIDAS:
+            return _respuesta(h, 400, {"error": "action_not_allowed"})
+
+        bio = None
+        try:
+            import pantalla_biometria
+            bio = pantalla_biometria.obtener_estado_biometria(app)
+        except Exception:
+            pass
+
+        if name == "activar_modo":
+            modo = str(body.get("modo", "normal"))
+            try:
+                import modos_sistema
+                ok, msg, _ = modos_sistema.activar_modo(app, modo, origen="tablet")
+                try: bio = pantalla_biometria.obtener_estado_biometria(app)
+                except Exception: pass
+                gestor.registrar_evento(f"Modo {modo.upper()} activado desde tablet")
+                return _respuesta(h, 200, {"ok": ok, "accion": name, "modo": modo, "mensaje": msg, "biometria": bio})
+            except Exception as e:
+                return _respuesta(h, 500, {"ok": False, "error": str(e)})
+
+        if name == "toggle_solo_dueno":
+            try:
+                import pantalla_biometria
+                nuevo = pantalla_biometria.toggle_solo_dueno(app)
+                try: bio = pantalla_biometria.obtener_estado_biometria(app)
+                except Exception: pass
+                gestor.registrar_evento(f"Solo Dueño {'ON' if nuevo else 'OFF'} desde tablet")
+                return _respuesta(h, 200, {"ok": True, "accion": name, "solo_dueno": nuevo, "biometria": bio})
+            except Exception as e:
+                return _respuesta(h, 500, {"ok": False, "error": str(e)})
+
+        if name in {"reforzar_voz", "reforzar_mi_voz"}:
+            try:
+                import pantalla_biometria
+                pantalla_biometria.disparar_reforzar_voz(app)
+                try: bio = pantalla_biometria.obtener_estado_biometria(app)
+                except Exception: pass
+                gestor.registrar_evento("Refuerzo de voz solicitado desde tablet")
+                return _respuesta(h, 200, {"ok": True, "accion": name, "mensaje": "Muestra reforzada", "biometria": bio})
+            except Exception as e:
+                return _respuesta(h, 500, {"ok": False, "error": str(e)})
+
+        if name == "crear_respaldo":
+            try:
+                import respaldo
+                respaldo.generar_respaldo()
+                gestor.registrar_evento("Copia de respaldo generada desde tablet")
+                return _respuesta(h, 200, {"ok": True, "accion": name, "mensaje": "Respaldo generado"})
+            except Exception as e:
+                return _respuesta(h, 500, {"ok": False, "error": str(e)})
+
+        if name in {"tablet_modo_privado", "tablet_modo_normal"}:
+            priv = (name == "tablet_modo_privado")
+            manager.set_privado(priv)
+            gestor.registrar_evento("Modo privado " + ("activado" if priv else "desactivado"))
             return _respuesta(h, 200, {"ok": True, "accion": name})
+
+        if name == "ocultar_tarjeta":
+            gestor.ocultar_tarjeta()
+            return _respuesta(h, 200, {"ok": True, "accion": name})
+
     identity = _identidad(h, Scope.OPERATION_REQUEST)
     if not identity: return _respuesta(h, 403, {"error": "unauthorized_or_scope_missing"})
-    body = body if body is not None else _body(h)
+    body = _body(h)
     if path == "/api/panel/comando":
         text = str((body or {}).get("texto", "")).strip()
         if not text or len(text) > 500: return _respuesta(h, 400, {"error": "invalid_text"})
@@ -217,13 +287,4 @@ def manejar_post(h, app, gestor):
             return _respuesta(h, 429, {"error": "turn_in_progress_or_queue_full"})
         gestor.registrar_evento("Consulta recibida de dispositivo " + identity["device_id"][:8])
         return _respuesta(h, 202, {"ok": True, "message_id": command.message_id})
-    if path == "/api/panel/accion":
-        name = str((body or {}).get("accion", ""))
-        cmd = p.command(identity, name, {"parametros": {}}, name in _SENSIBLES)
-        if cmd.payload["sensible"]:
-            pending = p.guardar_pendiente(identity, cmd)
-            p.bus.publicar({"device_id": identity["device_id"], "message_id": pending}, "approval_required")
-            return _respuesta(h, 202, {"ok": True, "estado": "pendiente_autorizacion", "message_id": pending})
-        if not _lanzar(h, identity, cmd): return _respuesta(h, 429, {"error": "execution_queue_full"})
-        return _respuesta(h, 202, {"ok": True, "estado": "en_validacion_central", "message_id": cmd.message_id})
     return _respuesta(h, 404, {"error": "not_found"})
