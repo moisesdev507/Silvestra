@@ -19,6 +19,41 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
             cerebro._podar_historial()
         return msg, "activar_hud", "alegre"
 
+    import recordatorios
+    if recordatorios.es_recordatorio_temporal(texto):
+        rec_mgr = getattr(app, "recordatorios", None)
+        if rec_mgr and hasattr(rec_mgr, "poner_recordatorio"):
+            msg = rec_mgr.poner_recordatorio(texto)
+        else:
+            ts, hora_str, que = recordatorios.parsear_tiempo(texto)
+            if ts:
+                import datetime
+                import time
+                tz = recordatorios._obtener_tz()
+                dt_target = datetime.datetime.fromtimestamp(ts, tz) if tz else datetime.datetime.fromtimestamp(ts)
+                item = {
+                    "id": int(time.time() * 1000),
+                    "texto": que,
+                    "timestamp": ts,
+                    "hora_exacta": hora_str,
+                    "fecha": dt_target.strftime("%Y-%m-%d"),
+                    "completado": False,
+                }
+                datos = recordatorios._cargar()
+                datos.append(item)
+                recordatorios._guardar(datos)
+                creador = getattr(getattr(app, "memoria", None), "creador", "Moisés") or "Moisés"
+                msg = f"Listo, {creador}. Te recordaré {que} a las {hora_str}."
+            else:
+                msg = "No entendí la hora o el tiempo para el recordatorio."
+        if callable(al_frase):
+            al_frase(msg)
+        cerebro.historial.append({"role": "user", "content": texto})
+        cerebro.historial.append({"role": "assistant", "content": msg})
+        if hasattr(cerebro, "_podar_historial"):
+            cerebro._podar_historial()
+        return msg, "poner_recordatorio", "alegre"
+
     from memoria_adaptadores import atender_turno
     directo = atender_turno(cerebro, texto)
     if directo:

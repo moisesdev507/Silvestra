@@ -36,6 +36,31 @@ def _activar_hud(arg=None):
     return pantalla_remota_accion.activar_hud(arg)
 
 
+def _escribir_archivo(arg=None):
+    import habilidades_archivos
+    return habilidades_archivos.escribir_archivo(arg)
+
+
+def _leer_archivo(arg=None):
+    import habilidades_archivos
+    return habilidades_archivos.leer_archivo(arg)
+
+
+def _listar_archivos(arg=None):
+    import habilidades_archivos
+    return habilidades_archivos.listar_archivos(arg)
+
+
+def _aprender_habilidad(arg=None):
+    import aprendiz_habilidades
+    return aprendiz_habilidades.aprender_habilidad(arg)
+
+
+def _confirmar_habilidad(arg=None):
+    import aprendiz_habilidades
+    return aprendiz_habilidades.confirmar_habilidad(arg)
+
+
 # nombre -> (función, necesita_texto, descripción para el cerebro)
 ACCIONES = {
     "abrir_navegador": (_web("https://www.google.com"), False, "abre el navegador en Google"),
@@ -54,6 +79,11 @@ ACCIONES = {
     "activar_pantalla_remota": (_activar_hud, False, "activa la pantalla remota en la tablet"),
     "activar_tablet": (_activar_hud, False, "conecta e inicia la pantalla de la tablet"),
     "abrir_hud": (_activar_hud, False, "abre e inicia el HUD de la tablet"),
+    "escribir_archivo": (_escribir_archivo, True, "escribe contenido en un archivo seguro (ruta | contenido)"),
+    "leer_archivo": (_leer_archivo, True, "lee un archivo de texto seguro autorizado"),
+    "listar_archivos": (_listar_archivos, False, "lista los archivos existentes en el workspace de Lyris"),
+    "aprender_habilidad": (_aprender_habilidad, True, "aprende una nueva habilidad programando código seguro"),
+    "confirmar_habilidad": (_confirmar_habilidad, False, "aprueba y activa una habilidad aprendida pendiente"),
 }
 
 # Acciones especiales que maneja el programa principal (main.py).
@@ -94,9 +124,13 @@ def ejecutar(nombre, arg=None):
     if nombre in VIVAS:
         try:
             if nombre in CON_TEXTO:
-                VIVAS[nombre][0](arg)
+                ret = VIVAS[nombre][0](arg)
             else:
-                VIVAS[nombre][0]()
+                ret = VIVAS[nombre][0]()
+            if isinstance(ret, tuple) and len(ret) == 2:
+                return ret
+            if isinstance(ret, str):
+                return True, ret
             return True, "Listo."
         except Exception as e:
             print(f"[acciones] Error ejecutando acción viva '{nombre}': {e}", flush=True)
@@ -105,9 +139,13 @@ def ejecutar(nombre, arg=None):
         return False, "Eso todavía no sé hacerlo."
     funcion, necesita_texto, _ = ACCIONES[nombre]
     if necesita_texto and not arg:
-        return False, "No me dijiste qué buscar."
+        return False, "Falta el argumento para ejecutar la acción."
     try:
-        funcion(arg)
+        ret = funcion(arg)
+        if isinstance(ret, tuple) and len(ret) == 2:
+            return ret
+        if isinstance(ret, str):
+            return True, ret
         return True, "Listo."
     except Exception as e:
         return False, "No pude hacerlo: " + str(e)[:100]

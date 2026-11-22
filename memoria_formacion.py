@@ -21,6 +21,9 @@ def detectar_directiva(texto):
     no = r"\b(no guardes|no recuerdes|no almacenes|no memorices|no lo guardes|no lo recuerdes|no quiero que guardes|no quiero que recuerdes|prefiero que no guardes)\b"
     if re.search(no, t):
         return {"accion": "no_guardar", "contenido": ""}
+    # Si es un recordatorio temporal / alarma, no clasificar como orden de memoria episódica a largo plazo
+    if re.search(r"\b(?:en\s+(?:\d+|un|una|uno|medio|media|dos|tres|cinco|diez|quince|veinte|treinta)\s*(?:minutos?|mins?|segundos?|segs?|horas?|h\b)|mañana|\ba\s+las\s+\d+)\b", original, re.I):
+        return {"accion": "ninguna"}
     guardar = re.search(r"\b(?:recuerda(?:me)?(?: que| esto)?|guarda(?: que)?|anota(?: que)?|apunta(?: que)?)\b\s*[:,-]?\s*(.+)", original, re.I)
     if guardar:
         return {"accion": "guardar", "contenido": guardar.group(1).strip()}

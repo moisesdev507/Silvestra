@@ -45,6 +45,26 @@ def formatear_hora_es(dt):
     return f"{h}:{m} {mer}"
 
 
+MAPA_NUMEROS = {
+    "un": 1, "una": 1, "uno": 1, "medio": 0.5, "media": 0.5,
+    "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5, "diez": 10,
+    "quince": 15, "veinte": 20, "treinta": 30,
+}
+
+
+def es_recordatorio_temporal(texto):
+    """Detecta si una frase del usuario pide programar un aviso/alarma temporal."""
+    if not texto or not str(texto).strip():
+        return False
+    t = str(texto).strip().lower()
+    patron_intencion = r"\b(?:recuerda\s*me|recuérdame|recuerda|avisame|avísame|alarma|recordatorio|pon(?:\s+un)?\s+recordatorio)\b"
+    patron_tiempo = (
+        r"(?:en\s+(?:\d+|un|una|uno|medio|media|dos|tres|cinco|diez|quince|veinte|treinta)\s*(?:minutos?|mins?|segundos?|segs?|horas?|h\b)|"
+        r"mañana|\ba\s+las\s+\d+)"
+    )
+    return bool(re.search(patron_intencion, t) and re.search(patron_tiempo, t))
+
+
 def parsear_tiempo(arg):
     """Interpreta expresiones relativas y absolutas con hora de Panamá."""
     if not arg or not str(arg).strip():
@@ -60,7 +80,7 @@ def parsear_tiempo(arg):
     else:
         # Extraer patrón temporal del inicio o en medio de la frase
         m_t = re.search(
-            r"(?:(?:en\s+)?\d+\s*(?:minutos?|mins?|segundos?|horas?|h\b)|"
+            r"(?:(?:en\s+)?(?:\d+|un|una|uno|medio|media|dos|tres|cinco|diez|quince|veinte|treinta)\s*(?:minutos?|mins?|segundos?|segs?|horas?|h\b)|"
             r"mañana(?:\s+a\s+las)?\s+\d+(?::\d+)?(?:\s*(?:am|pm|a\.?\s*m\.?|p\.?\s*m\.?))?|"
             r"a\s+las\s+\d+(?::\d+)?(?:\s*(?:am|pm|a\.?\s*m\.?|p\.?\s*m\.?))?)",
             arg,
@@ -70,11 +90,12 @@ def parsear_tiempo(arg):
             tiempo_str = m_t.group(0).strip().lower()
             resto = (arg[:m_t.start()] + " " + arg[m_t.end():]).strip()
             resto = re.sub(
-                r"\b(avísame|avisame|recuérdame|recuerdame|pon(?:er)?\s+recordatorio|recordar|que\s+tengo\s+que|que|de\s+que|de|para|sobre)\b",
+                r"\b(avísame|avisame|recuérdame|recuerdame|recuerda\s*me|recuerda|pon(?:er)?\s+recordatorio|recordar|que\s+tengo\s+que|que|de\s+que|de|para|sobre|por\s+favor)\b",
                 "",
                 resto,
                 flags=re.I,
             ).strip()
+            resto = re.sub(r"^(?:a|de)\s+", "", resto, flags=re.I).strip()
             texto = resto or "lo que me pediste"
         else:
             tiempo_str = arg.lower()
@@ -94,16 +115,19 @@ def parsear_tiempo(arg):
         return target.timestamp(), f"mañana a las {formatear_hora_es(target)}", texto
 
     # 2. Relativo: en X minutos / segundos / horas
-    m_rel = re.search(r"(?:en\s+)?(\d+)\s*(minutos?|mins?|segundos?|segs?|horas?|h\b)", tiempo_str)
+    m_rel = re.search(r"(?:en\s+)?(\d+|un|una|uno|medio|media|dos|tres|cinco|diez|quince|veinte|treinta)\s*(minutos?|mins?|segundos?|segs?|horas?|h\b)", tiempo_str, re.I)
     if m_rel:
-        val = int(m_rel.group(1))
-        unidad = m_rel.group(2)
+        num_raw = m_rel.group(1).lower()
+        val = MAPA_NUMEROS.get(num_raw, None)
+        if val is None:
+            val = float(num_raw) if "." in num_raw else int(num_raw)
+        unidad = m_rel.group(2).lower()
         if "seg" in unidad:
-            delta = datetime.timedelta(seconds=val)
+            delta = datetime.timedelta(seconds=float(val))
         elif "hora" in unidad or unidad == "h":
-            delta = datetime.timedelta(hours=val)
+            delta = datetime.timedelta(hours=float(val))
         else:
-            delta = datetime.timedelta(minutes=val)
+            delta = datetime.timedelta(minutes=float(val))
         target = ahora + delta
         return target.timestamp(), formatear_hora_es(target), texto
 

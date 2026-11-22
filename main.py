@@ -164,6 +164,11 @@ class Silvestra:
         respaldo.instalar(self)
         conversacion.instalar(self)
         try:
+            import aprendiz_habilidades
+            aprendiz_habilidades.cargar_habilidades_aprendidas(self)
+        except Exception as e:
+            print(f"[aprendiz] Error cargando habilidades: {e}", flush=True)
+        try:
             import contexto_motor
             self.contexto_motor = contexto_motor.obtener_motor_contexto(self)
             self.contexto_motor.iniciar()

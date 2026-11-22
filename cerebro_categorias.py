@@ -110,4 +110,12 @@ CATEGORIAS_ACCIONES = {
         {"modo", "modos", "programacion", "codigo", "programar", "estudio", "estudiar", "concentracion", "enfoque", "noche", "nocturno", "descanso", "normal"},
         {"activar_modo"}
     ),
+    "archivos": (
+        {"archivo", "archivos", "crear archivo", "guardar archivo", "escribir archivo", "leer archivo", "listar archivos", "documento", "texto", "workspace", "codigo"},
+        {"escribir_archivo", "leer_archivo", "listar_archivos"}
+    ),
+    "habilidades_aprendidas": (
+        {"aprender habilidad", "aprende a", "nueva habilidad", "aprende hacer", "habilidad", "habilidades", "aprobar habilidad", "confirmar habilidad"},
+        {"aprender_habilidad", "confirmar_habilidad"}
+    ),
 }
