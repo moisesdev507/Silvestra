@@ -70,11 +70,12 @@ class MotorProactivo:
 
     def __init__(self):
         self.arranque_ts = time.time()
-        self.ultimo_aviso = 0.0
+        self.ultimo_aviso = time.time()
         self.ultimo_sueno_ts = 0.0
-        self.ultimo_briefing_fecha = None
+        self.ultimo_briefing_fecha = datetime.date.today().isoformat()
         self.ultimo_aviso_nocturno_fecha = None
         self.proyectos_comentados_sesion = set()
+        self._ultimo_texto_briefing = ""
 
     def reiniciar(self):
         """Restablece los marcadores temporales (útil para pruebas unitarias)."""
@@ -85,6 +86,7 @@ class MotorProactivo:
             self.ultimo_briefing_fecha = None
             self.ultimo_aviso_nocturno_fecha = None
             self.proyectos_comentados_sesion.clear()
+            self._ultimo_texto_briefing = ""
 
     def puede_intervenir(self, app=None, forzar_cooldown=False, motivo=None):
         """Evalúa si se cumplen los guardarraíles para hablar de forma espontánea."""
@@ -92,7 +94,10 @@ class MotorProactivo:
             return False, "modo_privado"
 
         ahora = time.time()
-        if not forzar_cooldown and motivo == "ventana" and (ahora - self.arranque_ts) < 15.0:
+        if not forzar_cooldown and (ahora - self.ultimo_aviso) < COOLDOWN_MINIMO_SEGUNDOS:
+            return False, "cooldown_activo"
+
+        if not forzar_cooldown and (ahora - self.arranque_ts) < 15.0:
             return False, "gracia_inicial"
 
         if turno_activo(app):
@@ -109,9 +114,6 @@ class MotorProactivo:
                         return False, "audio_encolado"
                 except Exception:
                     pass
-
-        if not forzar_cooldown and (ahora - self.ultimo_aviso) < COOLDOWN_MINIMO_SEGUNDOS:
-            return False, "cooldown_activo"
 
         return True, "ok"
 
@@ -140,7 +142,7 @@ class MotorProactivo:
         return "Proyecto Silvestra"
 
     def evaluar_briefing_diario(self, app=None, forzar=False):
-        """Genera el briefing ejecutivo diario (máx. 1 vez al día, <= 25 palabras)."""
+        """Genera el briefing ejecutivo diario variado y acorde a la hora (<= 25 palabras)."""
         hoy_str = datetime.date.today().isoformat()
         if not forzar and self.ultimo_briefing_fecha == hoy_str:
             return None
@@ -149,12 +151,32 @@ class MotorProactivo:
         n_rec = self._obtener_resumen_recordatorios()
         proyecto = self._obtener_proyecto_grafo(creador)
 
-        if n_rec > 0:
-            rec_str = f"Tienes {n_rec} recordatorios pendientes"
+        hora = datetime.datetime.now().hour
+        if 5 <= hora < 12:
+            saludo_hora = "Buenos días"
+        elif 12 <= hora < 19:
+            saludo_hora = "Buenas tardes"
         else:
-            rec_str = "No tienes recordatorios pendientes"
+            saludo_hora = "Buenas noches"
 
-        saludo = f"Buenos días, {creador}. {rec_str} y seguimos con {proyecto}. ¿En qué avanzamos?"
+        if n_rec > 0:
+            pl_rec = "recordatorio" if n_rec == 1 else "recordatorios"
+            variantes = [
+                f"{saludo_hora}, {creador}. Tienes {n_rec} {pl_rec} pendiente{'s' if n_rec > 1 else ''} y seguimos con {proyecto}. ¿En qué avanzamos?",
+                f"{saludo_hora}, {creador}. Recuerda que hay {n_rec} {pl_rec} pendiente{'s' if n_rec > 1 else ''}. ¿Retomamos {proyecto}?",
+            ]
+        else:
+            variantes = [
+                f"{saludo_hora}, {creador}. Seguimos con {proyecto}. ¿En qué avanzamos?",
+                f"{saludo_hora}, {creador}. Lista para continuar con {proyecto}. ¿Por dónde empezamos?",
+                f"{saludo_hora}, {creador}. ¿Retomamos los avances en {proyecto}?",
+            ]
+
+        ultimo = getattr(self, "_ultimo_texto_briefing", "")
+        candidatos = [v for v in variantes if v != ultimo]
+        saludo = candidatos[0] if candidatos else variantes[0]
+        self._ultimo_texto_briefing = saludo
+
         palabras = saludo.split()
         if len(palabras) > 25:
             saludo = " ".join(palabras[:25])

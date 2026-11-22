@@ -3,6 +3,7 @@ import os
 import queue
 import time
 import unittest
+from unittest.mock import patch
 
 import cerebro_proactivo as cp
 import cerebro_trabajo as ct
@@ -142,6 +143,54 @@ class TestCerebroProactivo(unittest.TestCase):
         # Segundo llamado sin forzar debe ser None (máx 1 vez al día)
         self.assertIsNone(self.motor.evaluar_briefing_diario(self.app, forzar=False))
 
+    def test_saludo_briefing_respeta_hora_del_dia(self):
+        from unittest.mock import patch
+        import datetime
+
+        # A las 09:00 -> Buenos días
+        dt_manana = datetime.datetime(2026, 11, 22, 9, 0, 0)
+        with patch("datetime.datetime") as mock_dt:
+            mock_dt.now.return_value = dt_manana
+            self.motor.ultimo_briefing_fecha = None
+            msg_manana, _ = self.motor.evaluar_briefing_diario(self.app, forzar=True)
+            self.assertTrue(msg_manana.startswith("Buenos días"))
+            self.assertNotIn("Buenas tardes", msg_manana)
+
+        # A las 17:51 -> Buenas tardes (NUNCA Buenos días)
+        dt_tarde = datetime.datetime(2026, 11, 22, 17, 51, 0)
+        with patch("datetime.datetime") as mock_dt:
+            mock_dt.now.return_value = dt_tarde
+            self.motor.ultimo_briefing_fecha = None
+            msg_tarde, _ = self.motor.evaluar_briefing_diario(self.app, forzar=True)
+            self.assertTrue(msg_tarde.startswith("Buenas tardes"))
+            self.assertNotIn("Buenos días", msg_tarde)
+
+        # A las 22:30 -> Buenas noches (NUNCA Buenos días)
+        dt_noche = datetime.datetime(2026, 11, 22, 22, 30, 0)
+        with patch("datetime.datetime") as mock_dt:
+            mock_dt.now.return_value = dt_noche
+            self.motor.ultimo_briefing_fecha = None
+            msg_noche, _ = self.motor.evaluar_briefing_diario(self.app, forzar=True)
+            self.assertTrue(msg_noche.startswith("Buenas noches"))
+            self.assertNotIn("Buenos días", msg_noche)
+
+    def test_cero_mencion_de_recordatorios_si_no_hay_pendientes(self):
+        with patch.object(self.motor, "_obtener_resumen_recordatorios", return_value=0):
+            self.motor.ultimo_briefing_fecha = None
+            msg, _ = self.motor.evaluar_briefing_diario(self.app, forzar=True)
+            self.assertNotIn("No tienes recordatorios pendientes", msg)
+            self.assertNotIn("recordatorio", msg.lower())
+
+    def test_bloqueo_arranque_evita_saludo_doble(self):
+        import cerebro_proactivo
+        motor_fresco = cerebro_proactivo.MotorProactivo()
+        # Recién instanciado al encender, no debe poder intervenir espontáneamente
+        puede, razon = motor_fresco.puede_intervenir(self.app)
+        self.assertFalse(puede)
+        self.assertIn(razon, ("cooldown_activo", "gracia_inicial"))
+        # El briefing diario al inicio sin forzar debe ser None (ya marcado para hoy)
+        self.assertIsNone(motor_fresco.evaluar_briefing_diario(self.app, forzar=False))
+
     def test_contexto_proyecto_cambio_ventana(self):
         ventana_code = {"ejecutable": "Code.exe", "titulo": "C:\\Proyecto_Silvestra - Visual Studio Code"}
         res = self.motor.evaluar_cambio_ventana(self.app, ventana_code, forzar=True)
@@ -225,6 +274,28 @@ class TestEjecucionLocalArchivos(unittest.TestCase):
         self.assertIn("Punto inicial sobre arquitectura.", resp_leer)
         self.assertIn("punto dos sobre base de datos", resp_leer)
         self.assertIn(self.archivo_test, resp_leer)
+
+
+class TestNacimientoSaludo(unittest.TestCase):
+    def test_saludo_nacimiento_fallback_respeta_franja_horaria(self):
+        import nacimiento
+        app = DummyApp()
+        def fail_pedir(msgs):
+            raise RuntimeError("Simulando offline")
+        app.cerebro = type("DummyCerebro", (), {"_pedir": fail_pedir})()
+
+        # A las 17:30 (tarde) -> debe saludar con Buenas tardes
+        with patch("time.localtime") as mock_lt:
+            mock_lt.return_value = time.struct_time((2026, 11, 22, 17, 30, 0, 6, 326, 0))
+            nacimiento.generar_saludo(app)
+
+        self.assertFalse(app.cola.empty())
+        item = app.cola.get()
+        self.assertEqual(item[0], "saludo_inicial")
+        texto_saludo, emocion = item[1]
+        self.assertTrue(texto_saludo.startswith("Buenas tardes"))
+        self.assertNotIn("Buenos días", texto_saludo)
+        self.assertEqual(emocion, "calida")
 
 
 if __name__ == "__main__":

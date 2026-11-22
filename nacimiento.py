@@ -49,19 +49,31 @@ def generar_saludo(app):
     ultima_vez = est.get("ultima_vez")
     ultimo_saludo = est.get("ultimo_saludo", "")
     tiempo_txt = estado.tiempo_transcurrido_texto(ultima_vez)
-    frase_fija = f"Hola, {app.memoria.creador}. Soy {app.memoria.nombre}. Aquí estoy."
+    hora_actual = time.localtime().tm_hour
+    if 5 <= hora_actual < 12:
+        saludo_hora = "Buenos días"
+        emocion_saludo = "alegre"
+    elif 12 <= hora_actual < 19:
+        saludo_hora = "Buenas tardes"
+        emocion_saludo = "calida"
+    else:
+        saludo_hora = "Buenas noches"
+        emocion_saludo = "calida"
+    creador = getattr(getattr(app, "memoria", None), "creador", "Moisés") or "Moisés"
+    nombre = getattr(getattr(app, "memoria", None), "nombre", "Lyris") or "Lyris"
+    frase_fija = f"{saludo_hora}, {creador}. Soy {nombre}. Lista para lo que necesites."
     try:
         sistema = (
-            f"Eres {app.memoria.nombre or 'Silvestra'}, asistente de {app.memoria.creador or 'tu creador'}.\n"
+            f"Eres {nombre}, asistente de {creador}.\n"
             f"Momento actual: {ahora_texto()}.\n"
             f"Tiempo transcurrido desde la última vez que hablaron: {tiempo_txt}.\n"
             f"Saludo anterior (OBLIGATORIO: NO repitas este saludo ni su estructura):\n{ultimo_saludo or 'Ninguno'}\n"
             f"Hilos y temas pendientes: {hilos.resumen()}.\n\n"
             "Genera un saludo inicial cálido, natural y cercano en español panameño (sin exagerar modismos).\n"
-            "Reglas:\n"
-            "1. De 1 a 2 frases cortas (máximo 25 palabras), aptas para decir en voz alta.\n"
-            "2. Menciona con naturalidad la hora del día o el tiempo que pasó.\n"
-            "3. Como máximo incluye un hilo pendiente si de verdad viene al caso; si no, solo saluda con calidez.\n"
+            "Reglas OBLIGATORIAS:\n"
+            f"1. Saludo según la hora: Si mencionas la hora o franja, debe ser '{saludo_hora}' (NUNCA digas 'buenos días' si es tarde o noche).\n"
+            "2. De 1 a 2 frases cortas (máximo 25 palabras), aptas para decir en voz alta.\n"
+            "3. Solo menciona recordatorios si realmente hay alguno pendiente o recién vencido en tus notas.\n"
             "4. Sin asteriscos, sin listas, sin comillas, sin emojis.\n"
             "Responde ÚNICAMENTE con el saludo que dirás en voz alta."
         )
@@ -75,15 +87,21 @@ def generar_saludo(app):
         est["ultima_vez"] = time.time()
         est["ultimo_saludo"] = limpio
         estado.guardar(est)
-        hora_actual = time.localtime().tm_hour
-        emocion_saludo = "alegre" if 5 <= hora_actual < 12 else "calida"
         app.cola.put(("saludo_inicial", (limpio, emocion_saludo)))
     except Exception:
         est["ultima_vez"] = time.time()
+        est["ultimo_saludo"] = frase_fija
         estado.guardar(est)
-        hora_actual = time.localtime().tm_hour
-        emocion_saludo = "alegre" if 5 <= hora_actual < 12 else "calida"
         app.cola.put(("saludo_inicial", (frase_fija, emocion_saludo)))
+    finally:
+        try:
+            import cerebro_proactivo
+            m = cerebro_proactivo.obtener_motor_proactivo()
+            m.ultimo_aviso = time.time()
+            import datetime
+            m.ultimo_briefing_fecha = datetime.date.today().isoformat()
+        except Exception:
+            pass
 
 
 def renacer(app):

@@ -185,6 +185,21 @@ class TestAudioYConversacionMovil(unittest.TestCase):
         finally:
             ama.sintetizar_respuesta_movil._mock_audio = None
 
+    def test_html_movil_contiene_captura_token_url_y_replace_state(self):
+        import app_movil_html as amh
+        html = amh.PAGINA_MOVIL_HTML
+        self.assertIn("history.replaceState", html)
+        self.assertIn("URLSearchParams", html)
+        self.assertIn("lyris_device_token", html)
+
+    def test_html_movil_contiene_manejo_401_y_prompt_token(self):
+        import app_movil_html as amh
+        html = amh.PAGINA_MOVIL_HTML
+        self.assertIn("fetchConToken", html)
+        self.assertIn("pedirTokenPrompt", html)
+        self.assertIn("401", html)
+        self.assertIn("Ingresa el token de dispositivo de Lyris", html)
+
 
 if __name__ == "__main__":
     unittest.main()

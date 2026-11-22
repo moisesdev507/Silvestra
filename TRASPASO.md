@@ -40,3 +40,6 @@ Asistente modular Python/Windows con avatar PySide6, voz/escucha, Context Engine
     - `recordatorios.py`: `verificar_arranque` filtra recordatorios <= 24h, marca completados y persiste de inmediato. Suites de test aisladas con JSON temporal; `recordatorios.json` limpio y recuerdo 153 marcado obsoleto.
     - `app_movil_ui.py`: Eliminado puerto 8766; tráfico móvil unificado en HTTPS 8765 con barra de navegación limpia.
     - `app_movil_audio.py` y `app_movil_html.py`: TTS con filtro > 500 B y mock para tests; micro-WAV silencioso para desbloqueo síncrono de audio en Android Chrome.
+14. **Saludo único acorde a la hora y captura de token en móvil (`nacimiento.py`, `cerebro_proactivo.py`, `app_movil_html.py`):**
+    - `nacimiento.py` y `cerebro_proactivo.py`: Saludo único al encender según franja horaria real (mañana/tarde/noche); eliminada duplicación de briefing al arranque y cero mención a 'no tienes recordatorios'.
+    - `app_movil_html.py`: Captura de `?token=...` en URL con guardado en `localStorage` y limpieza por `history.replaceState`; reintento automático con prompt de token ante HTTP 401.
