@@ -217,13 +217,21 @@ def refrescar_clave_proveedor(prov_dict):
     return prov_dict
 
 
+MODELOS_RAPIDOS_GROQ = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"]
+
+
 def obtener_modelos_tarea(prov_dict, tarea):
     """Devuelve la lista de modelos priorizados para una tarea específica."""
+    nombre = prov_dict.get("nombre", "")
     clave_tarea = f"modelos_{tarea}"
     modelos = prov_dict.get(clave_tarea)
-    if modelos is not None:
-        return list(modelos)
-    return list(prov_dict.get("modelos", []))
+    if modelos is None:
+        modelos = prov_dict.get("modelos", [])
+    modelos = list(modelos)
+    if nombre == "Groq":
+        restantes = [m for m in modelos if m not in MODELOS_RAPIDOS_GROQ]
+        modelos = list(MODELOS_RAPIDOS_GROQ) + restantes
+    return modelos
 
 
 def obtener_candidatos_tarea(tarea, enfriamientos):

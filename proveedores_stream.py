@@ -124,9 +124,10 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
         cola = queue.Queue()
         cancelar = threading.Event()
 
+        limite_espera = min(float(timeout_espera), 3.5)
         hilo = threading.Thread(
             target=_intentar_stream_proveedor,
-            args=(p, m_list, mensajes, 8.0, cancelar, cola, marcar_enfriamiento_fn, registrar_fn),
+            args=(p, m_list, mensajes, limite_espera, cancelar, cola, marcar_enfriamiento_fn, registrar_fn),
             daemon=True,
         )
         hilo.start()
@@ -136,7 +137,7 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
         mod_activo = m_list[0] if m_list else "default"
         primer_token_recibido = False
 
-        while time.time() - t_inicio < timeout_espera:
+        while time.time() - t_inicio < limite_espera:
             try:
                 msg = cola.get(timeout=0.2)
                 tipo, prov_nom = msg[0], msg[1]
@@ -164,7 +165,7 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
             cancelar.set()
             dt_perdido = time.time() - t_inicio
             tiempo_perdido_fallos += dt_perdido
-            registrar_fn(f"cerebro {nombre_p} superó tiempo de espera ({timeout_espera:.1f}s) sin responder, pasando al siguiente")
+            registrar_fn(f"cerebro {nombre_p} superó tiempo de espera ({limite_espera:.1f}s) sin responder, pasando al siguiente")
             idx += 1
             continue
 

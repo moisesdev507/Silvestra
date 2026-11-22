@@ -12,7 +12,7 @@ Asistente personal modular Python/Windows con avatar PySide6, voz/escucha, perce
 - `razonamiento_*.py`, `planificacion_*.py`, `experiencia_*.py`: planes y aprendizaje trazable.
 - `ejecucion_*.py`, `permisos_*.py`, `acciones.py`: ejecución validada y permisos por niveles.
 - `iniciativa*.py`, `recordatorios.py`, `telegram_*.py`: iniciativa cancelable y puente Telegram.
-- `pantalla_remota*.py`, `ecosistema_*.py`: HUD web Galaxy Tab A7, SSE y auto-enlace LAN seguro.
+- `pantalla_remota*.py`, `ecosistema_*.py`: HUD web Galaxy Tab A7, SSE, tema esfera de energía y auto-enlace LAN.
 
 ## Fases cerradas
 - Fase 1 a Fase 5: núcleo cognitivo, percepción, permisos supervisados, memoria y aprendizaje validados.
@@ -20,6 +20,7 @@ Asistente personal modular Python/Windows con avatar PySide6, voz/escucha, perce
 
 ## Mejoras de Identidad y Experiencia (Fase 6 Base)
 1. **Aros HUD en reposo (`cara_dibujo.py`):** Los aros orbitales alrededor del rostro muestran su tono cian y verde esmeralda calmado (`vel=24.0`, pulso suave) cuando el micrófono está apagado o en reposo. El ámbar/amarillo se activa exclusivamente ante escucha activa o procesamiento/pensamiento.
-2. **Auto-enlace LAN sin fricción (`pantalla_remota*.py`, `ecosistema_*.py`):** Si existen `hud_cert.pem` y `hud_key.pem`, el servidor arranca automáticamente en HTTPS escuchando en `0.0.0.0:8765`. Clientes en la red local privada (RFC 1918) son emparejados automáticamente en `/api/sesion` mediante `emparejar_lan()` recibiendo cookies de sesión sin ventanas emergentes de PIN ni contraseñas. Orígenes externos no autorizados continúan bloqueados fail-closed.
+2. **Auto-enlace LAN sin fricción (`pantalla_remota*.py`, `ecosistema_*.py`):** Si existen `hud_cert.pem` y `hud_key.pem`, el servidor arranca automáticamente en HTTPS escuchando en `0.0.0.0:8765`. Clientes en la red local privada (RFC 1918) son emparejados automáticamente en `/api/sesion` mediante `emparejar_lan()` recibiendo cookies de sesión sin ventanas emergentes de PIN ni contraseñas.
 3. **Identidad vocal y visual "Lyris":** Ventana de PC, prompt del sistema (`SOBRE_MI`), `alma.txt`, `memoria.json` y HUD identifican a Lyris. Vosk offline reconoce "lyris", variantes fonéticas ("liris", "iris", "lira", "liria") y compatibilidad con "silvestra".
 4. **HUD Galaxy Tab A7 & Esfera de Energía (`pantalla_remota_tema.py`, `pantalla_remota_ui.py`):** Rediseño holográfico con estética de esfera de energía cibernética en el orbe central, controles táctiles ergonómicos $\ge 48$ px, barras fluidas con transición CSS para CPU/RAM/Batería y reloj local instantáneo al conectar.
+5. **Acción `activar_hud` y cascada rápida (`pantalla_remota_accion.py`, `proveedores_cadenas.py`, `proveedores_stream.py`):** Acción `activar_hud` y alias (`activar_pantalla_remota`, `activar_tablet`, `abrir_hud`) registrados en `acciones.py` y `cerebro_categorias.py`. Detección inmediata en `respuesta_flujo.py` y `cerebro.py` para arrancar el servidor en LAN (`0.0.0.0:8765`) y responder por voz sin latencia LLM. Groq prioriza `llama-3.1-8b-instant` y `llama-3.3-70b-versatile` con timeout acotado a $\le 3.5$ s para conmutar sin demora ante 429 TPM.

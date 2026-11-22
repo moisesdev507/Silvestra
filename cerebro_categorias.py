@@ -11,8 +11,8 @@ ACCIONES_BASE = {
 # Si la palabra clave tiene espacios, se busca como frase en el texto; si es una palabra, coincide palabra exacta.
 CATEGORIAS_ACCIONES = {
     "hud": (
-        {"hud", "jarvis", "reloj", "clima", "cpu", "ram", "orbe", "panel"},
-        {"mostrar_hud", "ocultar_hud", "clima"}
+        {"hud", "jarvis", "reloj", "clima", "cpu", "ram", "orbe", "panel", "had", "jud", "hvd"},
+        {"mostrar_hud", "ocultar_hud", "clima", "activar_hud", "activar_pantalla_remota", "activar_tablet", "abrir_hud"}
     ),
     "casa": (
         {"casa", "luz", "luces", "bombillo", "bombillos", "ventilador", "abanico", "puerta", "cuarto", "sala", "domotica", "habitacion"},
@@ -87,8 +87,8 @@ CATEGORIAS_ACCIONES = {
         {"resumir_pagina", "resumir_video", "resumir_portapapeles"}
     ),
     "tablet": (
-        {"tablet", "remota", "servidor tablet", "pantalla remota", "segunda pantalla"},
-        {"mostrar_en_tablet", "ocultar_en_tablet", "tablet_modo_normal", "tablet_modo_privado"}
+        {"tablet", "remota", "servidor tablet", "pantalla remota", "segunda pantalla", "tabla", "notable", "pantalla tablet"},
+        {"mostrar_en_tablet", "ocultar_en_tablet", "tablet_modo_normal", "tablet_modo_privado", "activar_hud", "activar_pantalla_remota", "activar_tablet", "abrir_hud"}
     ),
     "silencio_detener": (
         {"callate", "callar", "para", "parar", "silencio", "detener", "detente", "basta", "shh", "descansa", "duerme"},

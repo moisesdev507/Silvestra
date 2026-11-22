@@ -143,6 +143,14 @@ class Cerebro:
 
     def responder(self, texto):
         """Devuelve (respuesta, accion, emocion). accion es None o 'nombre' / 'nombre | texto'."""
+        import pantalla_remota_accion as pra
+        if pra.detectar_orden_hud(texto):
+            msg = pra.activar_hud(app=getattr(self, "app", None))
+            self.historial.append({"role": "user", "content": texto})
+            self.historial.append({"role": "assistant", "content": msg})
+            self._podar_historial()
+            return msg, "activar_hud", "alegre"
+
         import proveedores_cadenas as pc
         from memoria_adaptadores import atender_turno
         directo = atender_turno(self, texto)

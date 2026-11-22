@@ -328,5 +328,7 @@ def instalar(app):
     reg("ocultar_en_tablet", gestor.accion_ocultar_en_tablet, "apaga el servidor de pantalla remota para tablet.")
     reg("tablet_modo_privado", gestor.accion_modo_privado, "oculta datos sensibles en la tablet.")
     reg("tablet_modo_normal", gestor.accion_modo_normal, "muestra datos normales en la tablet.")
+    import pantalla_remota_accion as pra
+    pra.registrar_acciones_hud(app, gestor)
     log("Módulo de pantalla remota instalado.")
     return gestor

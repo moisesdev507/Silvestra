@@ -31,6 +31,11 @@ def _tecla(codigo):
     return f
 
 
+def _activar_hud(arg=None):
+    import pantalla_remota_accion
+    return pantalla_remota_accion.activar_hud(arg)
+
+
 # nombre -> (función, necesita_texto, descripción para el cerebro)
 ACCIONES = {
     "abrir_navegador": (_web("https://www.google.com"), False, "abre el navegador en Google"),
@@ -45,6 +50,10 @@ ACCIONES = {
     "subir_volumen": (_tecla(175), False, "sube el volumen"),
     "bajar_volumen": (_tecla(174), False, "baja el volumen"),
     "silenciar": (_tecla(173), False, "silencia o reactiva el sonido"),
+    "activar_hud": (_activar_hud, False, "activa el HUD de la tablet en red local y da el enlace"),
+    "activar_pantalla_remota": (_activar_hud, False, "activa la pantalla remota en la tablet"),
+    "activar_tablet": (_activar_hud, False, "conecta e inicia la pantalla de la tablet"),
+    "abrir_hud": (_activar_hud, False, "abre e inicia el HUD de la tablet"),
 }
 
 # Acciones especiales que maneja el programa principal (main.py).
