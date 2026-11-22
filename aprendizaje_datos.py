@@ -12,22 +12,18 @@ ARCHIVO_PERFIL = os.path.join(BASE, "perfil_conversacion.json")
 
 _lock = threading.RLock()
 
-PALABRAS_PRIVADAS = (
-    "clave", "password", "contraseñ", "contrasena", "token", "api_key",
-    "apikey", "secret", "gsk_", "sk-", "pin de acceso", "credencial", "tarjeta", "cvv",
+PATRONES_SENSIBLES = (
+    r"\b(?:mi\s+)?(?:contrase[ñn]a|password|clave|pin)\s*(?:es|actual|temporal|de\s+acceso|:|=)\s*\S+",
+    r"\b(?:api[_-]?key|apikey|secret_key|token)\s*[:=]\s*\S+",
+    r"\b(?:sk-|gsk_|ghp_|nvapi-|cfut_)[A-Za-z0-9_-]{8,}\b",
+    r"\b(?:pin\s+de\s+acceso|cvv\s*[:=]?\s*\d{3,4}|tarjeta\s+de\s+(?:cr[eé]dito|d[eé]bito))\b",
+    r"\b(?:\d[ -]*?){13,19}\b",
 )
+PALABRAS_PRIVADAS = PATRONES_SENSIBLES
 
 PERFIL_POR_DEFECTO = {
-    "estilo": {
-        "palabras_y_apodos": [],
-        "muletillas": [],
-        "formalidad": "informal y cercana",
-        "largo_tipico": "frases cortas y directas",
-    },
-    "costumbres_y_horarios": [],
-    "hilos_abiertos": [],
-    "bromas_y_referencias": [],
-    "ultima_reflexion": None,
+    "estilo": {"palabras_y_apodos": [], "muletillas": [], "formalidad": "informal y cercana", "largo_tipico": "frases cortas y directas"},
+    "costumbres_y_horarios": [], "hilos_abiertos": [], "bromas_y_referencias": [], "ultima_reflexion": None,
 }
 
 
@@ -37,11 +33,11 @@ def log(mensaje):
 
 
 def contiene_datos_sensibles(texto):
-    """True si el texto contiene términos asociados a claves o credenciales."""
+    """True si contiene credenciales reales sin descartar lenguaje técnico."""
     if not texto:
         return False
-    t = str(texto).lower()
-    return any(p in t for p in PALABRAS_PRIVADAS)
+    t = str(texto)
+    return any(re.search(p, t, re.I) for p in PATRONES_SENSIBLES)
 
 
 def es_buen_momento():

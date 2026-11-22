@@ -239,6 +239,12 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     print(f"[enrutador] carril={carril} motivo={motivo}", flush=True)
 
     def _on_emocion(emo):
+        try:
+            import cerebro_mentor
+            if cerebro_mentor.es_modo_mentor_activo():
+                emo = "concentrada"
+        except Exception:
+            pass
         if app and hasattr(app, "cola") and app.cola:
             app.cola.put(("emocion", emo))
 
@@ -266,6 +272,13 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
             crudo = pc.respuesta_emergencia_local()
 
     respuesta, accion, recuerdo, emocion = separar(crudo)
+    try:
+        import cerebro_mentor
+        if cerebro_mentor.es_modo_mentor_activo():
+            emocion = "concentrada"
+            _on_emocion("concentrada")
+    except Exception:
+        pass
     if recuerdo and not getattr(cerebro, "turno_invitado", False):
         from memoria_adaptadores import procesar_candidato
         app = getattr(cerebro, "app", None)

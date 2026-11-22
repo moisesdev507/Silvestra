@@ -1,7 +1,7 @@
 """Pruebas unitarias para Modo Mentora, Presentación Dinámica y Expresiones Faciales/Vocales."""
 import os
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 
 class TestCaraEmociones(unittest.TestCase):
@@ -75,10 +75,12 @@ class TestCerebroMentor(unittest.TestCase):
         self.assertEqual(r_act[0], "activar")
         self.assertEqual(r_act[2], "concentrada")
 
-        # Modo programación
-        r_prog = cerebro_mentor.detectar_orden_mentora("entra en modo programacion")
-        self.assertIsNotNone(r_prog)
-        self.assertEqual(r_prog[0], "activar")
+        # Variantes naturales y tolerantes a Whisper
+        for frase in ("modo mentora", "modo mentor", "enséñame a programar", "ayúdame como mentora", "modo programación"):
+            res = cerebro_mentor.detectar_orden_mentor(frase)
+            self.assertIsNotNone(res, f"No detectó variante: {frase}")
+            self.assertEqual(res[0], "activar")
+            self.assertEqual(res[2], "concentrada")
 
         # Desactivación
         r_des = cerebro_mentor.detectar_orden_mentora("desactiva el modo mentora")
@@ -157,6 +159,56 @@ class TestIntegracionPromptYFlujo(unittest.TestCase):
         self.assertIn("asistente", resp.lower())
         self.assertIsNone(accion)
         self.assertEqual(emo, "orgullosa")
+
+    def test_emocion_concentrada_en_consulta_con_modo_mentor_activo(self):
+        import cerebro_mentor
+        import respuesta_flujo
+        cerebro_mentor.activar_mentor()
+        try:
+            mock_cerebro = MagicMock()
+            mock_cerebro.historial = []
+            mock_cerebro._pedir = MagicMock(return_value="Analicemos el índice de la tabla Supabase.")
+            with patch("proveedores.completar_flujo", return_value="¿Qué tipo de índice consideras que reduce el costo de escaneo secuencial? [emocion: neutral]"):
+                resp, accion, emo = respuesta_flujo.responder_flujo(mock_cerebro, "¿Cómo optimizo esta consulta SQL en Supabase?", al_frase=None)
+                self.assertEqual(emo, "concentrada")
+        finally:
+            cerebro_mentor.desactivar_mentor()
+
+
+class TestFiltroSensibleAprendizaje(unittest.TestCase):
+    """Verifica que términos técnicos no se descarten y credenciales reales sí se bloqueen."""
+
+    def test_terminos_tecnicos_permitidos(self):
+        import aprendizaje_datos
+        frases_tecnicas = [
+            "necesito indexar las columnas clave en Supabase",
+            "definimos la llave primaria y dos claves foráneas",
+            "estas son las palabras clave para el algoritmo",
+            "la clave del éxito en la arquitectura de microservicios",
+        ]
+        for f in frases_tecnicas:
+            self.assertFalse(
+                aprendizaje_datos.contiene_datos_sensibles(f),
+                f"Falso positivo en término técnico: {f}"
+            )
+
+    def test_credenciales_reales_bloqueadas(self):
+        import aprendizaje_datos
+        secretos = [
+            "mi contraseña es 12345",
+            "mi contrasena es supersecreta",
+            "password: MiPasswordSeguro",
+            "mi clave de acceso es secreto123",
+            "gsk_0123456789abcdef",
+            "sk-0123456789abcdef",
+            "mi pin de acceso es 9999",
+            "cvv: 789",
+        ]
+        for s in secretos:
+            self.assertTrue(
+                aprendizaje_datos.contiene_datos_sensibles(s),
+                f"No detectó dato sensible real: {s}"
+            )
 
 
 if __name__ == "__main__":

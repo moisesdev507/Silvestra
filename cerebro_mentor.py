@@ -136,27 +136,27 @@ def detectar_orden_mentora(texto):
         return None
     norm = _normalizar(texto)
 
-    # 1. Activación
-    patrones_activar = [
-        r"\b(?:activa(?:r)?|inicia(?:r)?|pon(?:er)?|entra(?:r)?\s+en)\s+(?:el\s+)?modo\s+(?:mentora|programacion|socratico|estudio)\b",
-        r"\b(?:ensename|enseneme|guia(?:me)?)\s+como\s+mentora\b",
-        r"^(?:modo\s+mentora|modo\s+programacion)$",
-    ]
-    for p in patrones_activar:
-        if re.search(p, norm):
-            msg = _gestor_mentor.activar()
-            return ("activar", msg, "concentrada")
-
-    # 2. Desactivación
+    # 1. Desactivación (evaluada antes para que 'desactiva el modo mentora' no coincida con 'modo mentora')
     patrones_desactivar = [
-        r"\b(?:desactiva(?:r)?|apaga(?:r)?|quita(?:r)?|sal(?:ir)?\s+de(?:l)?)\s+(?:el\s+)?modo\s+(?:mentora|programacion|socratico)\b",
+        r"\b(?:desactiva(?:r)?|apaga(?:r)?|quita(?:r)?|sal(?:ir)?\s+de(?:l)?)\s+(?:el\s+)?modo\s+(?:mentora?|programacion|socratico|mentor)\b",
         r"\b(?:vuelve\s+a(?:l)?|pon(?:er)?)\s+modo\s+normal\b",
-        r"^(?:modo\s+normal|desactiva\s+mentora)$",
+        r"\b(?:modo\s+normal|desactiva\s+mentora?)\b",
     ]
     for p in patrones_desactivar:
         if re.search(p, norm):
             msg = _gestor_mentor.desactivar()
             return ("desactivar", msg, "calida")
+
+    # 2. Activación (tolerante a Whisper y lenguaje natural)
+    patrones_activar = [
+        r"\b(?:activa(?:r)?|inicia(?:r)?|pon(?:er)?|entra(?:r)?\s+en)\s+(?:el\s+)?modo\s+(?:mentora?|programacion|socratico|estudio|mentor)\b",
+        r"\b(?:ensename|enseneme|guia(?:me)?|ayuda(?:me)?)\s+(?:a\s+programar|como\s+mentora?)\b",
+        r"\b(?:modo\s+mentora?|modo\s+programacion)\b",
+    ]
+    for p in patrones_activar:
+        if re.search(p, norm):
+            msg = _gestor_mentor.activar()
+            return ("activar", msg, "concentrada")
 
     # 3. Consolidación
     patrones_consolidar = [
@@ -169,3 +169,26 @@ def detectar_orden_mentora(texto):
             return ("consolidar", msg, "orgullosa")
 
     return None
+
+
+# Alias de conveniencia
+detectar_orden_mentor = detectar_orden_mentora
+
+
+def es_consulta_programacion(texto):
+    """Detecta si la consulta del usuario involucra conceptos técnicos o de desarrollo."""
+    if not texto:
+        return False
+    norm = _normalizar(texto)
+    patrones_tech = [
+        r"\b(?:python|java|javascript|typescript|c\+\+|c#|golang|rust|php|ruby|swift|kotlin)\b",
+        r"\b(?:supabase|sql|postgres|sqlite|mongodb|redis|orm|prisma|sqlalchemy)\b",
+        r"\b(?:codigo|c[oó]digo|programa|funcion|clase|metodo|variable|bucle|array|objeto)\b",
+        r"\b(?:arquitectura|refactorizar|patron|diseno|refactor|modulo|interfaz)\b",
+        r"\b(?:bug|error|exception|excepcion|traza|traceback|debug|fallo|crash)\b",
+        r"\b(?:api|endpoint|rest|http|backend|frontend|react|vue|angular|fastapi|flask|django)\b",
+        r"\b(?:git|commit|branch|merge|pull\s+request|repositorio)\b",
+        r"\b(?:indice|indices|columna|columnas|tabla|tablas|llave\s+primaria|clave\s+foranea)\b",
+        r"\b(?:async|await|hilo|thread|concurrencia|pyside|qt)\b",
+    ]
+    return any(re.search(p, norm) for p in patrones_tech)

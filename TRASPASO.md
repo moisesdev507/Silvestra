@@ -22,8 +22,8 @@ Asistente personal modular Python/Windows con avatar PySide6, voz/escucha, perce
 - Fase 6 (Etapas 1 y 2): contratos sanitizados, puente de seguridad, SSE resiliente y fail-closed.
 
 ## Mejoras de Identidad y Experiencia (Fase 6 Base)
-1. **Aros y enlace LAN (`cara_dibujo.py`, `pantalla_remota*.py`):** Cian/esmeralda calmado en reposo; HTTPS en `0.0.0.0:8765` con emparejamiento LAN sin PIN.
-2. **Identidad "Lyris" y HUD Tablet (`pantalla_remota_tema.py`, `pantalla_remota_ui.py`):** Orbe central, botones >= 48px, CSS fluido, identidad Lyris en prompt y Vosk.
+1. **Aros y LAN (`cara_dibujo.py`, `pantalla_remota*.py`):** Cian/esmeralda calmado; HTTPS `0.0.0.0:8765` sin PIN.
+2. **Lyris y HUD (`pantalla_remota_*.py`):** Orbe central, botones >= 48px, CSS fluido, identidad Lyris en prompt/Vosk.
 3. **Acción `activar_hud` y SSE (`pantalla_remota_accion.py`, `ecosistema_*.py`):** Detección inmediata en `respuesta_flujo.py`, failover SSE a polling 2s, altura `100dvh`.
 4. **Consola y Visión Fresca (`ecosistema_gestor.py`, `multimodal_puente_app.py`):** UUID puro, telemetría anti-alucinación e invalidación en vivo (`fuente=zorder`).
 5. **Archivos seguros y calidad (`recordatorios.py`, `habilidades_archivos.py`, `calidad_respuesta.py`):** Pipe/JSON/multilínea sin archivos vacíos; hashes/tokens válidos sin falso `token_corrupto`.
@@ -55,3 +55,7 @@ Asistente personal modular Python/Windows con avatar PySide6, voz/escucha, perce
    - `cerebro_mentor.py`: Gestor socrático con activación por voz, directiva compacta (218 chars <= 220) y consolidación en grafo.
    - `presentacion.py`: Detección de órdenes ("preséntate", "quién eres") y presentación viva (habilidades, proyectos, `orgullosa`).
    - `cara_emociones.py` y `cara_dibujo.py`: Rasgos visuales y prosodia Edge-TTS (`concentrada`, `firme`, `orgullosa`) delegados limpiamente.
+14. **Visión multimodal real, filtro sensible técnico y refuerzo de mentora (`vision_pantalla.py`, `aprendizaje_datos.py`, `cerebro_mentor.py`, `respuesta_flujo.py`):**
+   - `vision_pantalla.py`: Gemini REST nativo (`inline_data` base64) y resolución de ventana activa vía `app.sistema_multimodal`/`cerebro_trabajo`.
+   - `aprendizaje_datos.py`: Filtro sensible regex estructurado que no descarta términos técnicos (*"columnas clave en Supabase"*).
+   - `cerebro_mentor.py` y `respuesta_flujo.py`: Activación tolerante Whisper (*"modo mentor"*, *"enséñame a programar"*) y emoción `"concentrada"`.

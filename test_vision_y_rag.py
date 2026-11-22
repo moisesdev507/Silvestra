@@ -63,6 +63,39 @@ class TestVisionPantalla(unittest.TestCase):
         self.assertTrue(vp.detectar_peticion_vision("¿Qué opinas de este diseño?"))
         self.assertFalse(vp.detectar_peticion_vision("Crea un archivo llamado notas.txt"))
 
+    def test_obtener_ventana_activa_multimodal_y_trabajo(self):
+        # 1. Con app y sistema multimodal
+        app_mock = MagicMock()
+        app_mock.sistema_multimodal.estado_salud.return_value = {
+            "ultima_ventana_externa": {"titulo": "Visual Studio Code - Proyecto_Silvestra"}
+        }
+        tit = vp.obtener_ventana_activa(app=app_mock)
+        self.assertEqual(tit, "Visual Studio Code - Proyecto_Silvestra")
+
+        # 2. Con cerebro_trabajo
+        import cerebro_trabajo
+        cerebro_trabajo.actualizar_ventana({"titulo": "Supabase Studio - Google Chrome", "ejecutable": "chrome.exe"})
+        tit_trabajo = vp.obtener_ventana_activa(app=None)
+        self.assertEqual(tit_trabajo, "Supabase Studio - Google Chrome")
+
+    @patch("sesion_http.obtener_sesion")
+    def test_analizar_imagen_multimodal_gemini_rest(self, mock_get_sesion):
+        mock_sess = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "candidates": [{
+                "content": {
+                    "parts": [{"text": "En la pantalla veo la consola de Supabase con las tablas abiertas."}]
+                }
+            }]
+        }
+        mock_sess.post.return_value = mock_resp
+        mock_get_sesion.return_value = mock_sess
+
+        resultado = vp.analizar_imagen_multimodal("b64_dummy", "describe la pantalla", titulo_ventana="Supabase")
+        self.assertIn("consola de Supabase", resultado)
+
 
 class TestCerebroRAG(unittest.TestCase):
     def setUp(self):

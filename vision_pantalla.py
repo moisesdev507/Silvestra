@@ -6,6 +6,7 @@ respeta el modo Privado y consulta a proveedores multimodales configurados.
 import base64
 import io
 import json
+import os
 import re
 import threading
 import time
@@ -68,8 +69,48 @@ def capturar_pantalla_b64(ancho_max=1280, calidad=75):
         return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
-def obtener_ventana_activa():
-    """Obtiene el título de la ventana activa en primer plano de Windows."""
+def obtener_ventana_activa(app=None):
+    """Obtiene el título real de la ventana activa en primer plano de Windows."""
+    # 1. Telemetría de puente multimodal en app
+    if app:
+        try:
+            mm = getattr(app, "sistema_multimodal", None) or getattr(app, "multimodal", None)
+            if mm and hasattr(mm, "estado_salud"):
+                v = mm.estado_salud().get("ultima_ventana_externa")
+                if v and isinstance(v, dict) and v.get("titulo"):
+                    return str(v["titulo"]).strip()
+        except Exception:
+            pass
+
+    # 2. Memoria de trabajo corta (cerebro_trabajo)
+    try:
+        import cerebro_trabajo
+        mem = cerebro_trabajo.obtener_memoria_trabajo()
+        ult_v = mem.get("ultima_ventana")
+        if ult_v and isinstance(ult_v, dict) and ult_v.get("titulo"):
+            return str(ult_v["titulo"]).strip()
+    except Exception:
+        pass
+
+    # 3. Enumeración de ventana externa win32 (excluye el proceso de la app)
+    try:
+        from multimodal_ventana_win32 import enumerar_ventana_externa
+        v_ext = enumerar_ventana_externa()
+        if v_ext and isinstance(v_ext, dict) and v_ext.get("titulo"):
+            return str(v_ext["titulo"]).strip()
+    except Exception:
+        pass
+
+    # 4. Sensor nativo de contexto de Windows
+    try:
+        import contexto_windows
+        ctx = contexto_windows.obtener_contexto_windows()
+        if ctx and isinstance(ctx, dict) and ctx.get("titulo"):
+            return str(ctx["titulo"]).strip()
+    except Exception:
+        pass
+
+    # 5. Fallback win32gui
     try:
         import win32gui
         hwnd = win32gui.GetForegroundWindow()
@@ -79,14 +120,8 @@ def obtener_ventana_activa():
                 return str(tit).strip()
     except Exception:
         pass
-    try:
-        import contexto_windows
-        v = contexto_windows.obtener_ventana_activa()
-        if v and isinstance(v, dict):
-            return str(v.get("titulo") or "").strip()
-    except Exception:
-        pass
-    return "Ventana principal"
+
+    return "Escritorio de Windows"
 
 
 def analizar_imagen_multimodal(b64_img, pregunta, titulo_ventana="", timeout_seg=15.0):
@@ -106,10 +141,65 @@ def analizar_imagen_multimodal(b64_img, pregunta, titulo_ventana="", timeout_seg
         "concisa, natural y útil sobre lo que ves en la pantalla."
     )
 
-    # 1. Candidato Groq Vision
-    clave_groq = getattr(config, "CLAVE", "")
+    # 1. Candidato Principal: Google Gemini con API nativa generateContent (inline_data)
+    clave_google = getattr(config, "CLAVE_GOOGLE", "") or os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
+    if clave_google:
+        modelos_gemini = ("gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-flash-latest")
+        for mod in modelos_gemini:
+            try:
+                url_gem = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={clave_google}"
+                payload_gem = {
+                    "contents": [{
+                        "parts": [
+                            {"text": prompt_texto},
+                            {
+                                "inline_data": {
+                                    "mime_type": "image/jpeg",
+                                    "data": b64_img,
+                                }
+                            },
+                        ]
+                    }],
+                    "generationConfig": {"maxOutputTokens": 600},
+                }
+                r = session.post(url_gem, headers={"Content-Type": "application/json"}, json=payload_gem, timeout=timeout_seg)
+                if r.status_code == 200:
+                    datos = r.json()
+                    cands = datos.get("candidates", [])
+                    if cands:
+                        partes = cands[0].get("content", {}).get("parts", [])
+                        if partes and "text" in partes[0] and partes[0]["text"].strip():
+                            return str(partes[0]["text"]).strip()
+            except Exception as e:
+                print(f"[vision_pantalla] Fallo Gemini REST ({mod}): {e}", flush=True)
+
+            try:
+                url_oa = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+                headers_oa = {"Authorization": f"Bearer {clave_google}", "Content-Type": "application/json"}
+                payload_oa = {
+                    "model": mod,
+                    "messages": [{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt_texto},
+                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}},
+                        ],
+                    }],
+                    "max_tokens": 500,
+                }
+                r = session.post(url_oa, headers=headers_oa, json=payload_oa, timeout=timeout_seg)
+                if r.status_code == 200:
+                    datos = r.json()
+                    contenido = datos.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    if contenido and str(contenido).strip():
+                        return str(contenido).strip()
+            except Exception:
+                pass
+
+    # 2. Candidato Groq Vision
+    clave_groq = getattr(config, "CLAVE", "") or os.environ.get("GROQ_API_KEY", "")
     if clave_groq:
-        modelos_groq = ["llama-3.2-11b-vision-preview", "llama-3.2-90b-vision-preview"]
+        modelos_groq = getattr(config, "MODELOS_VISION", ["qwen/qwen3.8-27b"])
         for mod in modelos_groq:
             try:
                 headers = {"Authorization": f"Bearer {clave_groq}", "Content-Type": "application/json"}
@@ -137,33 +227,6 @@ def analizar_imagen_multimodal(b64_img, pregunta, titulo_ventana="", timeout_seg
                         return str(contenido).strip()
             except Exception as e:
                 print(f"[vision_pantalla] Fallo Groq ({mod}): {e}", flush=True)
-
-    # 2. Candidato Google Gemini Vision
-    clave_google = getattr(config, "CLAVE_GOOGLE", "")
-    if clave_google:
-        for mod in ("gemini-flash-lite-latest", "gemini-flash-latest", "gemini-1.5-flash"):
-            try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-                headers = {"Authorization": f"Bearer {clave_google}", "Content-Type": "application/json"}
-                payload = {
-                    "model": mod,
-                    "messages": [{
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt_texto},
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}},
-                        ],
-                    }],
-                    "max_tokens": 500,
-                }
-                r = session.post(url, headers=headers, json=payload, timeout=timeout_seg)
-                if r.status_code == 200:
-                    datos = r.json()
-                    contenido = datos.get("choices", [{}])[0].get("message", {}).get("content", "")
-                    if contenido and str(contenido).strip():
-                        return str(contenido).strip()
-            except Exception as e:
-                print(f"[vision_pantalla] Fallo Google ({mod}): {e}", flush=True)
 
     # 3. Candidato OpenRouter Vision
     clave_or = getattr(config, "CLAVE_OPENROUTER", "")
@@ -202,7 +265,7 @@ def capturar_y_analizar_pantalla(pregunta, app=None):
     if not b64:
         return False, "No pude capturar la pantalla del equipo."
 
-    titulo = obtener_ventana_activa()
+    titulo = obtener_ventana_activa(app=app)
     resultado = analizar_imagen_multimodal(b64, pregunta, titulo_ventana=titulo)
     return True, resultado
 
