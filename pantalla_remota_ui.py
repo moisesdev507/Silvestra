@@ -7,6 +7,7 @@ from pantalla_remota_contexto_ui import (
 from pantalla_remota_estilos import CSS_JARVIS
 from pantalla_remota_js import JS_JARVIS
 from pantalla_remota_js_bio import JS_BIOMETRIA
+from pantalla_remota_tema import CSS_TEMA_LYRIS, JS_TEMA_LYRIS
 
 PAGINA_JARVIS_HTML = f"""<!DOCTYPE html>
 <html lang="es">
@@ -17,16 +18,17 @@ PAGINA_JARVIS_HTML = f"""<!DOCTYPE html>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#050811">
-  <title>SILVESTRA // JARVIS HUD</title>
+  <title>LYRIS // HUD</title>
   <style>
 {CSS_JARVIS}
 {CSS_CONTEXTO_PANEL}
+{CSS_TEMA_LYRIS}
   </style>
 </head>
 <body>
   <header class="hud-header">
     <div class="brand">
-      <div class="brand-title">SILVESTRA // JARVIS HUD</div>
+      <div class="brand-title">LYRIS // HUD</div>
       <div class="brand-badge">SYSTEM V2.0</div>
     </div>
     <div class="header-status">
@@ -153,7 +155,7 @@ PAGINA_JARVIS_HTML = f"""<!DOCTYPE html>
       </div>
 
       <div class="console-box">
-        <div class="console-label">// CONSOLA // ENVIAR COMANDO A SILVESTRA</div>
+        <div class="console-label">// CONSOLA // ENVIAR COMANDO A LYRIS</div>
         <div class="console-row">
           <input id="consoleInput" class="console-input" type="text" placeholder="Escribe un mensaje..." maxlength="500" autocomplete="off" autocorrect="off" spellcheck="false">
           <button class="console-send" id="btnEnviar">▶ ENVIAR</button>
@@ -207,6 +209,7 @@ PAGINA_JARVIS_HTML = f"""<!DOCTYPE html>
 {JS_BIOMETRIA}
 {JS_CONTEXTO_PANEL}
   </script>
+{JS_TEMA_LYRIS}
 </body>
 </html>
 """

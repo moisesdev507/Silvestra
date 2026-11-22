@@ -204,7 +204,7 @@ class Cerebro:
 
             charla = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in ultimos)
             sistema = (
-                f"Eres {self.memoria.nombre or 'Silvestra'}. Analiza la charla reciente y extrae aprendizajes duraderos.\n"
+                f"Eres {self.memoria.nombre or 'Lyris'}. Analiza la charla reciente y extrae aprendizajes duraderos.\n"
                 "1. Hasta 3 líneas 'HECHO: <dato duradero y concreto sobre el usuario (gustos, familia, metas, proyectos reales)>'.\n"
                 "PROHIBIDO: comandos, pruebas, pedidos a Silvestra, HUD, casa inteligente ni conjeturas.\n"
                 "2. Hasta 2 líneas 'PREGUNTA: <tema de seguimiento para la próxima>'.\n"

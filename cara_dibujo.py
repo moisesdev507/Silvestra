@@ -149,12 +149,27 @@ def pintar(self):
             modo_act = silvestra.modo_activo
             self.modo_activo = modo_act
 
+        esta_activa = bool(self.escuchando or self.hablando or pensando or bailando)
         c_a1, c_a2, vel_a, pulso_a = cara_baile.obtener_estilo_anillos(modo_act, bailando, t)
-        if pensando:
+
+        if not self.viva:
+            c_a1, c_a2, vel_a, pulso_a = GRIS, GRIS, 6.0, 0.1
+        elif not esta_activa:
+            # En reposo o con micrófono inactivo: aros cian/verde calmados
+            c_a1, c_a2 = CIAN, QColor(16, 185, 129)
+            vel_a = 24.0
+            pulso_a = 0.3 + 0.2 * math.sin(t * 1.4)
+        elif pensando:
+            c_a1, c_a2 = AMARILLO, CIAN
             vel_a = 160.0
-        elif not self.viva:
-            c_a1 = GRIS
-            c_a2 = GRIS
+            pulso_a = 0.8 + 0.2 * math.sin(t * 8.0)
+        elif self.escuchando:
+            c_a1, c_a2 = AMARILLO, QColor(245, 158, 11)
+            vel_a = 75.0
+            pulso_a = 0.7 + 0.3 * math.sin(t * 5.0)
+        elif self.hablando:
+            vel_a = 90.0
+            pulso_a = 0.6 + 0.4 * math.sin(t * 6.5)
 
         for radio, grosor, sentido, largo, use_c2 in [
             (118, 3.0, 1.0, 110, False),

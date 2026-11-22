@@ -95,6 +95,7 @@ class Cara(CaraMovimientoMixin, QWidget):
 
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setWindowTitle("Lyris")
         self.resize(TAM, TAM)
         ancho, alto = self._pantalla()
         self.move(ancho - TAM - 40, alto - TAM - 100)

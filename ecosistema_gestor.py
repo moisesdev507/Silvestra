@@ -118,16 +118,28 @@ class GestorEcosistema(GestorSesiones):
             self.almacen.actualizar(redeem)
         return result or None
 
-
-
-
-
-
-
-
-
-
-
+    def emparejar_lan(self, tipo=TipoDispositivo.TABLET_HUD, scopes=(), capacidades=(), version_cliente="1.0"):
+        tipo = TipoDispositivo(tipo); scopes = self._scopes(tipo, scopes)
+        capacidades = self._capacidades(tipo, capacidades); now = self._now()
+        token = _b64(secrets.token_bytes(32)); cookie = _b64(secrets.token_bytes(32))
+        did, sid = f"lan_{uuid4()}", str(uuid4())
+        ts, cs = _salt(), _salt(); result = {}
+        with self._lock:
+            def register(data):
+                row = {"device_id": did, "tipo_dispositivo": tipo.value,
+                       "capacidades": list(capacidades), "version_cliente": version_cliente,
+                       "scopes": sorted(s.value for s in scopes), "revocado": False,
+                       "conectado": True, "creado_en": now, "latido": now,
+                       "session_id": sid, "credential_version": 1,
+                       "token_salt": _b64(ts), "token_hash": _hash(token, ts),
+                       "sesiones": [{"session_id": sid, "salt": _b64(cs),
+                           "hash": _hash(cookie, cs), "expira_en": now + _TTL_SESION * 24,
+                           "latido": now, "revocada": False}]}
+                data["dispositivos"][did] = row
+                result.update(device_id=did, session_id=sid, token=token, cookie=cookie,
+                              tipo_dispositivo=tipo.value, scopes=sorted(s.value for s in scopes))
+            self.almacen.actualizar(register)
+        return result or None
 
     def set_privado(self, activo):
         if not isinstance(activo, bool): raise TypeError("activo debe ser bool")

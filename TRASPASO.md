@@ -1,34 +1,25 @@
-# TRASPASO — SILVESTRA
+# TRASPASO — LYRIS // SILVESTRA
 
 ## Arquitectura y reglas
-Asistente personal Python/Windows con avatar PySide6, voz/escucha, percepción y Context Engine, memoria cognitiva, planificación, permisos y ejecución supervisada. La UI solo se toca desde Qt; los hilos secundarios comunican mediante `app.cola`/señales. Máximo 15,360 B por `.py`; máximo 6,656 B aquí. No exponer claves ni tokens. Las inferencias no son hechos ni autorizan acciones. Toda operación sensible requiere aprobación y permisos centrales.
+Asistente personal modular Python/Windows con avatar PySide6, voz/escucha, percepción y Context Engine, memoria cognitiva, planificación, permisos y ejecución supervisada. La UI solo se toca desde Qt; los hilos secundarios comunican mediante `app.cola`/señales. Máximo 15,360 B por `.py`; máximo 6,656 B aquí. No exponer claves ni tokens. Las inferencias no son hechos ni autorizan acciones. Toda operación sensible requiere confirmación y permisos centrales.
 
 ## Componentes
-- `main.py`, `eventos.py`, `cara_*.py`: aplicación Qt, avatar y cola de eventos.
+- `main.py`, `eventos.py`, `cara_*.py`: aplicación Qt, avatar holográfico y cola de eventos.
 - `voz*.py`, `oido*.py`, `audio_*.py`: TTS, reproducción/RMS, captura y VAD.
-- `cerebro*.py`, `respuesta_flujo.py`, `proveedores*.py`: conversación, prompt y proveedores.
-- `memoria*.py`, `persistencia_segura.py`: memoria cognitiva SQLite/FTS5, formación, recuperación, grafo, linaje, consolidación y olvido por usuario.
-- `contexto_*.py`, `multimodal_*.py`, `percepcion_*.py`, `vision_*.py`: contexto Windows y percepción pasiva; incertidumbre explícita, sin guardar capturas.
-- `razonamiento_*.py`, `planificacion_*.py`, `experiencia_*.py`: razonamiento, planes y aprendizaje trazable; no altera código, seguridad o permisos.
-- `ejecucion_*.py`, `permisos_*.py`, `acciones.py`: ejecución validada, permisos y registro de capacidades.
-- `iniciativa*.py`, `recordatorios.py`, `telegram_*.py`, `pantalla_remota*.py`: iniciativa cancelable, recordatorios, Telegram y HUD tablet.
+- `cerebro*.py`, `respuesta_flujo.py`, `proveedores*.py`: conversación, prompt e identidad Lyris.
+- `memoria*.py`, `persistencia_segura.py`: memoria cognitiva SQLite/FTS5, linaje y consolidación.
+- `contexto_*.py`, `multimodal_*.py`, `percepcion_*.py`, `vision_*.py`: contexto Windows y percepción pasiva.
+- `razonamiento_*.py`, `planificacion_*.py`, `experiencia_*.py`: planes y aprendizaje trazable.
+- `ejecucion_*.py`, `permisos_*.py`, `acciones.py`: ejecución validada y permisos por niveles.
+- `iniciativa*.py`, `recordatorios.py`, `telegram_*.py`: iniciativa cancelable y puente Telegram.
+- `pantalla_remota*.py`, `ecosistema_*.py`: HUD web Galaxy Tab A7, SSE y auto-enlace LAN seguro.
 
 ## Fases cerradas
-- Fase 1: base de Silvestra, UI/voz, persistencia segura, Context Engine, iniciativa y planificador.
-- Fase 2: ejecución supervisada, permisos, sandbox y operaciones seguras.
-- Fase 3: percepción multimodal pasiva, visión/OCR, cámara y audio; fuentes privadas y desactivadas por defecto. Validación global; pruebas físicas pendientes.
-- Fase 4: memoria cognitiva SQLite/FTS5, formación, recuperación, grafo, mantenimiento, olvido y razonamiento de solo lectura. Ventanas actuales separadas de recuerdos históricos.
-- Fase 5: razonamiento, planificación y aprendizaje experiencial coordinados con ejecución/verificación. Requiere aprobación de plan, permisos y confirmación; aprendizaje no cambia políticas.
-- Voz–cara: sincronía con reproducción real/RMS por generación en `cara_sincronia.py`; Qt solo renderiza.
+- Fase 1 a Fase 5: núcleo cognitivo, percepción, permisos supervisados, memoria y aprendizaje validados.
+- Fase 6 (Etapas 1 y 2): contratos sanitizados, puente de seguridad, SSE resiliente y gestión fail-closed de dispositivos.
 
-## Fase 6 — Etapa 1
-Contratos versionados y sanitizados (`ecosistema_contratos*.py`), seis tipos de dispositivo, sesiones/scopes fail-closed y observaciones no ejecutables. Pruebas con datos sintéticos.
-
-## Fase 6 — Etapa 2 (cierre)
-Integración segura del HUD y contratos del ecosistema. `ecosistema_almacen.py` mantiene un archivo independiente con reemplazo atómico; `ecosistema_gestor.py`/`ecosistema_sesiones.py` usan códigos de emparejamiento de un uso, hashes PBKDF2, sesiones expiran, latidos, revocación y scopes. El núcleo es único; clientes no reciben capacidades centrales. Cookies HttpOnly/SameSite; token y código no van en URL.
-
-`ecosistema_puente.py` aplica allowlist de Origin, privacidad y separación Observation/CommandRequest/ApprovalRequest. Observaciones no ejecutan; operaciones van por `IntegracionCognitivaFase5`, `SistemaEjecucion` y `MotorPermisos`; aprobación en dispositivo autorizado y distinto al solicitante. Sin llamada remota directa a `acciones.ejecutar`.
-
-`ecosistema_sse.py` ofrece replay con ID, buffer/conexiones/rate limit acotados y heartbeat. El servidor escucha solo loopback por defecto; acceso externo requiere TLS explícito y certificado válido. Modo privado filtra biometría, contexto, notas, recordatorios y telemetría personal antes de REST/SSE. Metadatos de dispositivo se conservan al entrar por `app.cola`. No se modifican los JSON de estado ni datos existentes; el almacén nuevo es `ecosistema_dispositivos.json`.
-
-Suite: `test_ecosistema_integracion_fase6_etapa2.py`. Etapa cerrada; no iniciar Fase 7 sin instrucción del usuario.
+## Mejoras de Identidad y Experiencia (Fase 6 Base)
+1. **Aros HUD en reposo (`cara_dibujo.py`):** Los aros orbitales alrededor del rostro muestran su tono cian y verde esmeralda calmado (`vel=24.0`, pulso suave) cuando el micrófono está apagado o en reposo. El ámbar/amarillo se activa exclusivamente ante escucha activa o procesamiento/pensamiento.
+2. **Auto-enlace LAN sin fricción (`pantalla_remota*.py`, `ecosistema_*.py`):** Si existen `hud_cert.pem` y `hud_key.pem`, el servidor arranca automáticamente en HTTPS escuchando en `0.0.0.0:8765`. Clientes en la red local privada (RFC 1918) son emparejados automáticamente en `/api/sesion` mediante `emparejar_lan()` recibiendo cookies de sesión sin ventanas emergentes de PIN ni contraseñas. Orígenes externos no autorizados continúan bloqueados fail-closed.
+3. **Identidad vocal y visual "Lyris":** Ventana de PC, prompt del sistema (`SOBRE_MI`), `alma.txt`, `memoria.json` y HUD identifican a Lyris. Vosk offline reconoce "lyris", variantes fonéticas ("liris", "iris", "lira", "liria") y compatibilidad con "silvestra".
+4. **HUD Galaxy Tab A7 & Esfera de Energía (`pantalla_remota_tema.py`, `pantalla_remota_ui.py`):** Rediseño holográfico con estética de esfera de energía cibernética en el orbe central, controles táctiles ergonómicos $\ge 48$ px, barras fluidas con transición CSS para CPU/RAM/Batería y reloj local instantáneo al conectar.

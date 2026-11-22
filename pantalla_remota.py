@@ -1,6 +1,7 @@
 """Servidor local HTTP y SSE para mostrar la interfaz Jarvis de Silvestra en una tablet."""
 import http.server
 import json
+import os
 import socket
 import ssl
 import sys
@@ -24,49 +25,9 @@ PUERTO_DEFECTO = 8765
 _lock = threading.Lock()
 
 
-def log(mensaje):
-    """Imprime mensajes con el prefijo estandarizado [pantalla_remota]."""
-    print(f"[pantalla_remota] {mensaje}", flush=True)
-
-
-def obtener_ip_local():
-    """Obtiene la dirección IP de la laptop en la red local WiFi o Ethernet."""
-    s = None
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        return s.getsockname()[0]
-    except Exception:
-        try:
-            return socket.gethostbyname(socket.gethostname())
-        except Exception:
-            return "127.0.0.1"
-    finally:
-        if s:
-            try:
-                s.close()
-            except Exception:
-                pass
-
-
-class ServidorPantallaRemota(http.server.ThreadingHTTPServer):
-    """Servidor HTTP multihilo con supresión de trazas por desconexión normal de sockets."""
-    daemon_threads = True
-
-    def handle_error(self, request, client_address):
-        """Silencia desconexiones habituales de clientes al cerrar pestañas o suspender la tablet."""
-        exc_type, exc_val, _ = sys.exc_info()
-        if exc_type in (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
-            return
-        if isinstance(exc_val, (OSError, socket.error)):
-            winerror = getattr(exc_val, "winerror", None) or getattr(exc_val, "errno", None)
-            if winerror in (10053, 10054, 10058, 32):
-                return
-        # Para otros errores reales no controlados, llamar al manejador por defecto
-        try:
-            super().handle_error(request, client_address)
-        except Exception:
-            pass
+log = _api.log
+obtener_ip_local = _api.obtener_ip_local
+ServidorPantallaRemota = _api.ServidorPantallaRemota
 
 
 class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
@@ -78,14 +39,22 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
 
     def _identidad(self, scope, mutacion=False):
         try:
-            identity = self.server.puente.autenticar(
-                self.headers, self.server.gestor.ecosistema_gestor.cookie_value(self.headers.get("Cookie")))
+            manager = self.server.gestor.ecosistema_gestor
+            cookie_val = manager.cookie_value(self.headers.get("Cookie"))
+            identity = self.server.puente.autenticar(self.headers, cookie_val)
             origin = self.headers.get("Origin", "")
             if not self.server.puente.validar_origen(
                     origin, self.headers.get("Host", ""), self.server.tls,
                     mutacion, bool(self.headers.get("Cookie"))):
                 return None
-            if not self.server.gestor.ecosistema_gestor.autorizar(identity, scope): return None
+            if not identity and _api._es_lan_cliente(self.client_address[0]):
+                pair = manager.emparejar_lan(TipoDispositivo.TABLET_HUD,
+                                             (Scope.STATE_READ, Scope.UI_CONTROL, Scope.OPERATION_REQUEST))
+                if pair:
+                    identity = pair
+                    self._lan_cookie = manager.cookie_header(pair["cookie"], secure=self.server.tls)
+            if not identity: return None
+            if not manager.autorizar(identity, scope): return None
             if not self.server.bus_sse.permitir_peticion(identity["device_id"]): return None
             self._notificar_conexion_tablet()
             return identity
@@ -123,10 +92,11 @@ class PantallaRemotaHandler(http.server.BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
                 pass
             return
+        if path == "/api/sesion":
+            identity = self._identidad(Scope.STATE_READ)
+            return _api.responder_sesion(self, identity)
         identity = self._identidad(Scope.STATE_READ)
         if not identity: return self._denegar()
-        if path == "/api/sesion":
-            return _api.responder_sesion(self, identity)
         if path == "/api/panel/estado":
             return _api.responder_estado(self, self.server.app, self.server.gestor)
         if path == "/eventos":
@@ -159,10 +129,10 @@ class GestorPantallaRemota:
         self.puente = EcosistemaPuente(self.ecosistema_gestor, self.bus_sse)
         self._ultimo_estado = {}
         self.ventana_qr = None
-        self.tarjeta_principal = "SILVESTRA VIRTUAL INTERFACE // SISTEMA OPERATIVO"
+        self.tarjeta_principal = "LYRIS VIRTUAL INTERFACE // SISTEMA OPERATIVO"
         self.tablet_conectada = False
         self.ultimos_eventos = [
-            {"hora": time.strftime("%H:%M"), "texto": "Servidor HUD inicializado"},
+            {"hora": time.strftime("%H:%M"), "texto": "Servidor HUD Lyris inicializado"},
             {"hora": time.strftime("%H:%M"), "texto": "Esperando conexión de tablet"},
         ]
 
@@ -171,7 +141,10 @@ class GestorPantallaRemota:
         self.activa = d.get("remota_activa", False)
 
         if self.activa:
-            self.iniciar_servidor()
+            if os.path.exists("hud_cert.pem") and os.path.exists("hud_key.pem"):
+                self.activar_red_tls("hud_cert.pem", "hud_key.pem", "0.0.0.0")
+            else:
+                self.iniciar_servidor()
 
     def registrar_evento(self, texto):
         """Registra un evento visible en el terminal del panel Jarvis."""
@@ -182,7 +155,9 @@ class GestorPantallaRemota:
 
     def obtener_url_completa(self):
         """Devuelve el origen del HUD; no incluye credenciales en la URL."""
-        host = self._host if self._host != "127.0.0.1" else "127.0.0.1"
+        host = self._host
+        if host in ("0.0.0.0", "", "127.0.0.1"):
+            host = obtener_ip_local() if self._tls else "127.0.0.1"
         scheme = "https" if self._tls else "http"
         return f"{scheme}://{host}:{self.puerto}/"
 
@@ -203,8 +178,13 @@ class GestorPantallaRemota:
             servidor.app = self.app
             servidor.bus_sse = self.bus_sse
             scheme = "https" if contexto_tls else "http"
-            origins = [f"{scheme}://{host}:{self.puerto}"]
-            if not externo: origins.append(f"{scheme}://localhost:{self.puerto}")
+            ip_loc = obtener_ip_local()
+            origins = [
+                f"{scheme}://{host}:{self.puerto}",
+                f"{scheme}://{ip_loc}:{self.puerto}",
+                f"{scheme}://127.0.0.1:{self.puerto}",
+                f"{scheme}://localhost:{self.puerto}",
+            ]
             self.puente.origenes = frozenset(origins)
             self._servidor = servidor
             self._host, self._tls = host, bool(contexto_tls)
@@ -227,7 +207,7 @@ class GestorPantallaRemota:
             return False
 
     def activar_red_tls(self, certificado, clave, host=None):
-        """Expone solo la interfaz indicada y solo si el certificado TLS es válido."""
+        """Expone la interfaz indicada y solo si el certificado TLS es válido."""
         host = host or obtener_ip_local()
         if host in ("127.0.0.1", "::1", "localhost"): return False
         try:
@@ -330,7 +310,7 @@ class GestorPantallaRemota:
         self.app.cola.put(("hablar", "Modo privado de la tablet activado. Datos confidenciales ocultos."))
 
     def ocultar_tarjeta(self):
-        with _lock: self.tarjeta_principal = "SILVESTRA VIRTUAL INTERFACE // SISTEMA OPERATIVO"
+        with _lock: self.tarjeta_principal = "LYRIS VIRTUAL INTERFACE // SISTEMA OPERATIVO"
 
     def accion_modo_normal(self):
         """Desactiva el filtro privado del ecosistema."""

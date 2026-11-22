@@ -6,6 +6,17 @@ from urllib.parse import urlsplit
 from ecosistema_contratos import ApprovalRequest, CommandRequest, Observation, Scope, serializar_seguro
 
 
+def _es_lan_ip(host_str):
+    if not host_str: return False
+    h = str(host_str).split(":")[0].strip("[]")
+    if h in ("localhost", "127.0.0.1", "::1"): return True
+    try:
+        import ipaddress
+        return ipaddress.ip_address(h).is_private
+    except Exception:
+        return False
+
+
 class EcosistemaPuente:
     def __init__(self, gestor, bus, origenes=()):
         self.gestor, self.bus = gestor, bus
@@ -35,13 +46,20 @@ class EcosistemaPuente:
     def validar_origen(self, origin, host, secure=False, mutacion=False, cookie=False):
         if not origin:
             hosts = {urlsplit(x).netloc.lower() for x in self.origenes}
-            return not mutacion and str(host).lower() in hosts
+            return not mutacion and (str(host).lower() in hosts or _es_lan_ip(str(host).lower()))
         try:
             p = urlsplit(origin)
             if p.path or p.query or p.fragment or p.username or p.password: return False
             if p.scheme != ("https" if secure else "http"): return False
             normalized = f"{p.scheme}://{p.netloc}".lower().rstrip("/")
-            return normalized in self.origenes and p.netloc.lower() == str(host).lower()
+            if normalized in self.origenes and p.netloc.lower() == str(host).lower():
+                return True
+            if _es_lan_ip(p.hostname) and _es_lan_ip(str(host).split(":")[0]):
+                p_port = p.port or (443 if secure else 80)
+                h_parts = str(host).split(":")
+                h_port = int(h_parts[1]) if len(h_parts) > 1 else (443 if secure else 80)
+                return p_port == h_port
+            return False
         except Exception:
             return False
 

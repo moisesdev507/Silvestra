@@ -1,10 +1,52 @@
 """REST/SSE del HUD; la identidad y ejecución se delegan al puente seguro."""
 from concurrent.futures import ThreadPoolExecutor
 from threading import BoundedSemaphore
+import http.server
+import ipaddress
 import json
+import socket
+import sys
 
-from ecosistema_contratos import Scope, serializar_seguro
+from ecosistema_contratos import Scope, TipoDispositivo, serializar_seguro
 from pantalla_remota_datos import recolectar_estado_completo
+
+
+def log(mensaje):
+    print(f"[pantalla_remota] {mensaje}", flush=True)
+
+
+def obtener_ip_local():
+    s = None
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except Exception:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except Exception:
+            return "127.0.0.1"
+    finally:
+        if s:
+            try: s.close()
+            except Exception: pass
+
+
+class ServidorPantallaRemota(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        exc_type, exc_val, _ = sys.exc_info()
+        if exc_type in (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            return
+        if isinstance(exc_val, (OSError, socket.error)):
+            winerror = getattr(exc_val, "winerror", None) or getattr(exc_val, "errno", None)
+            if winerror in (10053, 10054, 10058, 32):
+                return
+        try:
+            super().handle_error(request, client_address)
+        except Exception:
+            pass
 
 ACCIONES_PERMITIDAS = {
     "tablet_modo_privado", "tablet_modo_normal", "crear_respaldo",
@@ -17,7 +59,18 @@ _POOL = ThreadPoolExecutor(2)
 _POOL_SLOTS = BoundedSemaphore(16)
 
 
+def _es_lan_cliente(client_ip):
+    if not client_ip: return False
+    cip = str(client_ip).split(":")[0].strip("[]")
+    if cip in ("127.0.0.1", "localhost", "::1"): return True
+    try:
+        return ipaddress.ip_address(cip).is_private
+    except Exception:
+        return False
+
+
 def _respuesta(h, code, body, cookie=None):
+    cookie = cookie or getattr(h, "_lan_cookie", None)
     raw = serializar_seguro(body).encode("utf-8")
     h.send_response(code)
     for k, v in h.server.gestor.puente.cors(h.headers.get("Origin", ""),
@@ -42,6 +95,12 @@ def _identidad(h, scope=None):
     if not _origen(h, True, bool(h.headers.get("Cookie"))): return None
     cookie = manager.cookie_value(h.headers.get("Cookie"))
     identity = p.autenticar(h.headers, cookie)
+    if not identity and _es_lan_cliente(getattr(h, "client_address", ("",))[0]):
+        pair = manager.emparejar_lan(TipoDispositivo.TABLET_HUD,
+                                     (Scope.STATE_READ, Scope.UI_CONTROL, Scope.OPERATION_REQUEST))
+        if pair:
+            identity = pair
+            h._lan_cookie = manager.cookie_header(pair["cookie"], secure=h.server.tls)
     if identity and scope and not manager.autorizar(identity, scope): return None
     if identity and not h.server.bus_sse.permitir_peticion(identity["device_id"]): return None
     return identity
@@ -57,8 +116,18 @@ def _body(h):
 
 
 def responder_sesion(h, identity):
+    lan_c = getattr(h, "_lan_cookie", None)
+    if not identity and _es_lan_cliente(getattr(h, "client_address", ("",))[0]):
+        manager = h.server.gestor.ecosistema_gestor
+        pair = manager.emparejar_lan(TipoDispositivo.TABLET_HUD,
+                                     (Scope.STATE_READ, Scope.UI_CONTROL, Scope.OPERATION_REQUEST))
+        if pair:
+            identity = pair
+            lan_c = manager.cookie_header(pair["cookie"], secure=h.server.tls)
+    if not identity:
+        return _respuesta(h, 401, {"ok": False, "error": "No autenticado"})
     _respuesta(h, 200, {"ok": True, "device_id": identity["device_id"],
-                        "tipo_dispositivo": identity["tipo_dispositivo"]})
+                        "tipo_dispositivo": identity["tipo_dispositivo"]}, cookie=lan_c)
 
 
 def responder_estado(h, app, gestor):

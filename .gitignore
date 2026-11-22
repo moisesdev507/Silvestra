@@ -63,3 +63,4 @@ silvestra.db
 
 *.db-wal
 *.db-shm
+*.pem

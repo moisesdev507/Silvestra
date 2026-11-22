@@ -18,16 +18,27 @@ import estado
 
 # Umbral de similitud difflib y palabra objetivo (fácilmente modificables)
 UMBRAL_RATIO = 0.6
-OBJETIVO = "silvestra"
+OBJETIVO = "lyris"
+OBJETIVO_SECUNDARIO = "silvestra"
 
 # Palabras que nunca deben coincidir con la palabra clave para evitar bucles o falsos disparos
 PALABRAS_EXCLUIDAS = {
     "silencio", "silenciosa", "silencioso", "silaba", "silabas",
     "silla", "sillon", "silbido", "silbato", "silicona", "simple",
+    "libro", "libros", "libre", "libres",
 }
 
 # Lista de palabras candidatas para verificar contra el modelo Vosk
 CANDIDATAS = [
+    "lyris",
+    "liris",
+    "iris",
+    "lira",
+    "liras",
+    "lirio",
+    "lirios",
+    "liria",
+    "lyra",
     "silvestra",
     "silvestre",
     "silvestri",
@@ -68,21 +79,25 @@ def coincide_palabra(texto, objetivo=OBJETIVO, umbral=UMBRAL_RATIO):
     if not palabras:
         return False
 
+    prefijos = ("lyri", "liri", "lyr", "iris", "lira", "silvest", "sylvest", "silvi")
     for i, p in enumerate(palabras):
         if p in PALABRAS_EXCLUIDAS:
             continue
-        # Prefijo específico del nombre (silvest..., sylvest..., silvi...)
-        if p.startswith(("silvest", "sylvest", "silvi")):
+        if p.startswith(prefijos):
             return True
         if difflib.SequenceMatcher(None, p, objetivo).ratio() >= umbral:
+            return True
+        if difflib.SequenceMatcher(None, p, OBJETIVO_SECUNDARIO).ratio() >= umbral:
             return True
         if i + 1 < len(palabras):
             par = p + palabras[i + 1]
             if par in PALABRAS_EXCLUIDAS:
                 continue
-            if par.startswith(("silvest", "sylvest", "silvi")):
+            if par.startswith(prefijos):
                 return True
             if difflib.SequenceMatcher(None, par, objetivo).ratio() >= umbral:
+                return True
+            if difflib.SequenceMatcher(None, par, OBJETIVO_SECUNDARIO).ratio() >= umbral:
                 return True
     return False
 
