@@ -37,8 +37,15 @@ def guardar_json_atomico(ruta: str, datos: Any, indent: int = 2) -> bool:
                 json.dump(datos, f, ensure_ascii=False, indent=indent)
                 f.flush()
                 os.fsync(f.fileno())
-            os.replace(tmp_path, ruta)
-            return True
+            for intento in range(3):
+                try:
+                    os.replace(tmp_path, ruta)
+                    return True
+                except PermissionError:
+                    if intento == 2:
+                        raise
+                    import time
+                    time.sleep(0.02)
         except Exception as e:
             print(f"[persistencia] Error en escritura atómica hacia '{ruta}': {e}", flush=True)
             if tmp_path and os.path.exists(tmp_path):

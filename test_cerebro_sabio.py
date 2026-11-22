@@ -117,6 +117,17 @@ class TestCerebroPlanificador(unittest.TestCase):
 
 
 class TestCerebroEntrenamiento(unittest.TestCase):
+    def setUp(self):
+        self._reg_bak = aprendiz_habilidades._cargar_registro()
+        self._vivas_bak = dict(acciones.VIVAS)
+        aprendiz_habilidades._guardar_registro({"habilidades": {}, "pendientes": {}})
+        acciones.VIVAS.clear()
+
+    def tearDown(self):
+        aprendiz_habilidades._guardar_registro(self._reg_bak)
+        acciones.VIVAS.clear()
+        acciones.VIVAS.update(self._vivas_bak)
+
     def test_coincidencia_difusa_whisper(self):
         # Normalización fonética
         self.assertEqual(ce.normalizar_fonetico("Dame una Cotrasena"), "dame una contrasena")

@@ -298,6 +298,14 @@ JS_JARVIS = """
       if (exitoso) {
         if (inp) inp.value = '';
         marcarConectado();
+        [300, 800, 1500].forEach(function(ms) {
+          setTimeout(function() {
+            fetch('/api/panel/estado', { headers: _hdr() })
+              .then(function(r) { return r.json(); })
+              .then(function(dt) { aplicarDatos(dt); })
+              .catch(function() {});
+          }, ms);
+        });
       }
     })
     .catch(function(err) {

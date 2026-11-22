@@ -218,6 +218,7 @@ def refrescar_clave_proveedor(prov_dict):
 
 
 MODELOS_RAPIDOS_GROQ = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"]
+MODELOS_RAPIDOS_GOOGLE = ["gemini-flash-lite-latest", "gemini-flash-latest"]
 
 
 def obtener_modelos_tarea(prov_dict, tarea):
@@ -236,6 +237,9 @@ def obtener_modelos_tarea(prov_dict, tarea):
             and "gpt-oss" not in m.lower()
         ]
         modelos = list(MODELOS_RAPIDOS_GROQ) + restantes
+    elif nombre == "Google":
+        restantes = [m for m in modelos if m not in MODELOS_RAPIDOS_GOOGLE]
+        modelos = [m for m in MODELOS_RAPIDOS_GOOGLE if m in modelos] + restantes
     return modelos
 
 

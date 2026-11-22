@@ -7,11 +7,60 @@ import proveedores_cadenas as pc
 
 def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     """Genera la respuesta con streaming y conmutación automática de proveedores si hay fallos."""
+    texto_orig = str(texto)
     try:
         import cerebro_trabajo
         texto = cerebro_trabajo.resolver_referencias(texto)
     except Exception:
         pass
+
+    # 0. Intercepción local instantánea (< 50 ms) para escritura y lectura real de archivos
+    import os
+    import re
+    if str(texto).startswith("escribir_archivo "):
+        try:
+            import habilidades_archivos as ha
+            arg = str(texto)[len("escribir_archivo "):].strip()
+            ok, msg = ha.escribir_archivo(arg)
+            nom = os.path.basename(arg.split("|")[0].strip())
+            resp = f"Listo, guardé los cambios en {nom}." if ok else msg
+            if callable(al_frase):
+                al_frase(resp)
+            cerebro.historial.append({"role": "user", "content": texto_orig})
+            cerebro.historial.append({"role": "assistant", "content": resp})
+            if hasattr(cerebro, "_podar_historial"):
+                cerebro._podar_historial()
+            return resp, None, "alegre"
+        except Exception as e:
+            print(f"[archivo_local] Error escritura: {e}", flush=True)
+
+    m_leer = re.search(r"^(?:por\s+favor\s+)?(?:lee(?:lo|la)?|léelo|léela|lee\s+(?:el\s+)?(?:archivo|documento)?\s*([a-zA-Z0-9_\-\.]+)?)(?:\s+por\s+favor)?[\.\?!]?$", str(texto).strip(), re.I)
+    if m_leer:
+        try:
+            import habilidades_archivos as ha
+            nom_obj = m_leer.group(1)
+            if not nom_obj or nom_obj.lower() in ("el", "archivo", "documento", "lo", "la"):
+                import cerebro_trabajo
+                nom_obj = cerebro_trabajo.obtener_memoria_trabajo().get("ultimo_archivo")
+            if nom_obj:
+                nom_limpio = os.path.basename(str(nom_obj).strip())
+                ok, res_leer = ha.leer_archivo(nom_limpio)
+                if ok:
+                    c_texto = res_leer.split("\n", 1)[1].strip() if "\n" in res_leer else res_leer
+                    palabras = c_texto.split()
+                    resumen = c_texto if len(palabras) <= 45 else (" ".join(palabras[:40]) + "... Contenido truncado en voz.")
+                    resp = f"El archivo {nom_limpio} dice: {resumen}"
+                else:
+                    resp = res_leer
+                if callable(al_frase):
+                    al_frase(resp)
+                cerebro.historial.append({"role": "user", "content": texto_orig})
+                cerebro.historial.append({"role": "assistant", "content": resp})
+                if hasattr(cerebro, "_podar_historial"):
+                    cerebro._podar_historial()
+                return resp, None, "alegre"
+        except Exception as e:
+            print(f"[archivo_local] Error lectura: {e}", flush=True)
 
     app = getattr(cerebro, "app", None)
     import pantalla_remota_accion as pra
@@ -79,6 +128,29 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     except Exception:
         pass
 
+    import aprendiz_habilidades
+    es_conf, nom_hab = aprendiz_habilidades.detectar_orden_confirmacion(texto)
+    if es_conf:
+        ok, msg = aprendiz_habilidades.confirmar_habilidad(nom_hab, app=app)
+        if callable(al_frase):
+            al_frase(msg)
+        cerebro.historial.append({"role": "user", "content": texto})
+        cerebro.historial.append({"role": "assistant", "content": msg})
+        if hasattr(cerebro, "_podar_historial"):
+            cerebro._podar_historial()
+        return msg, "confirmar_habilidad", "alegre" if ok else "seria"
+
+    orden_aprender = aprendiz_habilidades.detectar_orden_aprendizaje(texto)
+    if orden_aprender:
+        ok, msg = aprendiz_habilidades.aprender_habilidad(orden_aprender, app=app)
+        if callable(al_frase):
+            al_frase(msg)
+        cerebro.historial.append({"role": "user", "content": texto})
+        cerebro.historial.append({"role": "assistant", "content": msg})
+        if hasattr(cerebro, "_podar_historial"):
+            cerebro._podar_historial()
+        return msg, "aprender_habilidad", "alegre" if ok else "preocupada"
+
     try:
         import cerebro_entrenamiento
         es_lec, msg_lec = cerebro_entrenamiento.detectar_y_guardar_leccion(texto, creador=creador)
@@ -93,7 +165,6 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
 
         nom_difuso, info_difuso = cerebro_entrenamiento.buscar_habilidad_difusa(texto)
         if not nom_difuso:
-            import aprendiz_habilidades
             nom_difuso, info_difuso = aprendiz_habilidades.buscar_habilidad_por_intencion(texto)
 
         if nom_difuso:
@@ -120,29 +191,6 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
             return msg_proactivo, None, "animada"
     except Exception as e:
         print(f"[entrenamiento] Error: {e}", flush=True)
-
-    import aprendiz_habilidades
-    es_conf, nom_hab = aprendiz_habilidades.detectar_orden_confirmacion(texto)
-    if es_conf:
-        ok, msg = aprendiz_habilidades.confirmar_habilidad(nom_hab, app=app)
-        if callable(al_frase):
-            al_frase(msg)
-        cerebro.historial.append({"role": "user", "content": texto})
-        cerebro.historial.append({"role": "assistant", "content": msg})
-        if hasattr(cerebro, "_podar_historial"):
-            cerebro._podar_historial()
-        return msg, "confirmar_habilidad", "alegre" if ok else "seria"
-
-    orden_aprender = aprendiz_habilidades.detectar_orden_aprendizaje(texto)
-    if orden_aprender:
-        ok, msg = aprendiz_habilidades.aprender_habilidad(orden_aprender, app=app)
-        if callable(al_frase):
-            al_frase(msg)
-        cerebro.historial.append({"role": "user", "content": texto})
-        cerebro.historial.append({"role": "assistant", "content": msg})
-        if hasattr(cerebro, "_podar_historial"):
-            cerebro._podar_historial()
-        return msg, "aprender_habilidad", "alegre" if ok else "preocupada"
 
     from memoria_adaptadores import atender_turno
     directo = atender_turno(cerebro, texto)

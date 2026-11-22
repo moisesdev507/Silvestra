@@ -112,6 +112,18 @@ class TestCerebroProactivo(unittest.TestCase):
         puede, _ = self.motor.puede_intervenir(self.app, forzar_cooldown=True)
         self.assertFalse(puede)
 
+    def test_guardarail_gracia_inicial_arranque(self):
+        self.motor.arranque_ts = time.time()
+        puede, razon = self.motor.puede_intervenir(self.app, motivo="ventana")
+        self.assertFalse(puede)
+        self.assertEqual(razon, "gracia_inicial")
+
+    def test_bloqueo_si_cola_tiene_audio_pendiente(self):
+        self.app.cola.put(("hablar", ("Audio previo pendiente", "neutral")))
+        puede, razon = self.motor.puede_intervenir(self.app, forzar_cooldown=True)
+        self.assertFalse(puede)
+        self.assertEqual(razon, "audio_encolado")
+
     def test_guardarail_cooldown(self):
         self.motor.ultimo_aviso = time.time()
         puede, razon = self.motor.puede_intervenir(self.app, forzar_cooldown=False)
@@ -159,6 +171,60 @@ class TestCerebroProactivo(unittest.TestCase):
         self.assertEqual(tipo, "hablar")
         self.assertIsInstance(payload, tuple)
         self.assertEqual(payload[0], msg)
+
+
+class TestEjecucionLocalArchivos(unittest.TestCase):
+    def setUp(self):
+        ct.limpiar_memoria_trabajo()
+        self.archivo_test = "doc_prueba_rapida.txt"
+        self.ruta_test = os.path.join("workspace_lyris", self.archivo_test)
+        os.makedirs("workspace_lyris", exist_ok=True)
+        with open(self.ruta_test, "w", encoding="utf-8") as f:
+            f.write("Punto inicial sobre arquitectura.")
+        ct.actualizar_archivo(self.ruta_test)
+
+        self.cerebro = type("DummyCerebro", (), {
+            "app": DummyApp(),
+            "historial": [],
+            "_podar_historial": lambda self: None,
+        })()
+
+    def tearDown(self):
+        ct.limpiar_memoria_trabajo()
+        if os.path.exists(self.ruta_test):
+            os.remove(self.ruta_test)
+
+    def test_agregale_y_leelo_local_instantaneo(self):
+        from respuesta_flujo import responder_flujo
+
+        frases = []
+        def al_frase(txt):
+            frases.append(txt)
+
+        # 1. Ejecución local de 'agrégale...' sin invocar LLM
+        t_inicio = time.time()
+        resp_add, acc_add, emo_add = responder_flujo(self.cerebro, "agrégale punto dos sobre base de datos", al_frase=al_frase)
+        duracion_add = time.time() - t_inicio
+
+        self.assertLess(duracion_add, 0.200)
+        self.assertIn("guardé los cambios", resp_add.lower())
+        self.assertIsNone(acc_add)
+
+        # Verificar que el archivo realmente contiene el texto agregado
+        with open(self.ruta_test, "r", encoding="utf-8") as f:
+            contenido = f.read()
+        self.assertIn("Punto inicial sobre arquitectura.", contenido)
+        self.assertIn("punto dos sobre base de datos", contenido)
+
+        # 2. Ejecución local de 'léelo' devolviendo el contenido real
+        t_inicio2 = time.time()
+        resp_leer, acc_leer, emo_leer = responder_flujo(self.cerebro, "léelo", al_frase=al_frase)
+        duracion_leer = time.time() - t_inicio2
+
+        self.assertLess(duracion_leer, 0.200)
+        self.assertIn("Punto inicial sobre arquitectura.", resp_leer)
+        self.assertIn("punto dos sobre base de datos", resp_leer)
+        self.assertIn(self.archivo_test, resp_leer)
 
 
 if __name__ == "__main__":

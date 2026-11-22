@@ -37,6 +37,7 @@ musica_baile/
 *.wav
 
 # Datos personales y archivos de persistencia local
+workspace_lyris/
 memoria.json
 estado.json
 diario.md

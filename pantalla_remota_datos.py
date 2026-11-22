@@ -205,7 +205,7 @@ def recolectar_estado_completo(app, gestor):
 
     emocion = getattr(app, "emocion_objetivo", "neutral") or "neutral"
     vol = float(getattr(voz, "nivel_volumen", 0.0) if voz else 0.0)
-    subtitulo = getattr(app, "ultimo_dicho", "") if hablando else ""
+    subtitulo = getattr(app, "ultimo_dicho", "")
 
     # Tarjeta dinámica principal (lo proyectado con mostrar_en_tablet o mensaje actual)
     tarjeta = getattr(gestor, "tarjeta_principal", "")

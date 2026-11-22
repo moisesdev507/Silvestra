@@ -41,19 +41,22 @@ class Iniciativa:
 
     def revisar(self) -> None:
         """Verifica periódicamente mediante el motor contextual si Silvestra debe hablar."""
+        hubo_iniciativa = False
         try:
             if self.activa:
                 sug = self.motor.evaluar_oportunidad(self.app)
                 if sug is not None:
+                    hubo_iniciativa = True
                     threading.Thread(target=self._hablar, args=(sug,), daemon=True).start()
         except Exception as e:
             print(f"[iniciativa] Error en revisión contextual: {e}", flush=True)
 
-        try:
-            import cerebro_proactivo
-            cerebro_proactivo.evaluar_proactividad(self.app, motivo="periodico")
-        except Exception as e:
-            pass
+        if not hubo_iniciativa:
+            try:
+                import cerebro_proactivo
+                cerebro_proactivo.evaluar_proactividad(self.app, motivo="periodico")
+            except Exception:
+                pass
 
         if hasattr(self.app, "cara") and hasattr(self.app.cara, "root"):
             self.app.cara.root.after(30000, self.revisar)
@@ -61,6 +64,25 @@ class Iniciativa:
     def _hablar(self, sug: Any) -> None:
         """Sintetiza y emite la iniciativa guiada por el contexto."""
         try:
+            if getattr(self.app, "hablando", False):
+                return
+            cola = getattr(self.app, "cola", None)
+            if cola:
+                try:
+                    q = getattr(cola, "queue", [])
+                    if any(isinstance(it, tuple) and it and it[0] == "hablar" for it in q):
+                        return
+                except Exception:
+                    pass
+
+            try:
+                import cerebro_proactivo
+                m_pro = cerebro_proactivo.obtener_motor_proactivo()
+                if (time.time() - m_pro.ultimo_aviso) < 300.0:
+                    return
+            except Exception:
+                pass
+
             valido, motivo = self.motor.revalidar_sugerencia(sug, self.app)
             if not valido:
                 return
@@ -100,6 +122,11 @@ class Iniciativa:
 
                 self.motor.marcar_emitida(sug)
                 self.ultima_iniciativa = time.time()
+                try:
+                    import cerebro_proactivo
+                    cerebro_proactivo.obtener_motor_proactivo().ultimo_aviso = time.time()
+                except Exception:
+                    pass
                 emocion = getattr(sug, "emocion_sugerida", "calida")
                 if hasattr(self.app, "cola") and self.app.cola:
                     self.app.cola.put(("hablar", (limpio, emocion)))

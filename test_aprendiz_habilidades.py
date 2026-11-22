@@ -144,6 +144,11 @@ class TestAprendizHabilidades(unittest.TestCase):
         self.assertIn("restringido", m.lower())
 
     def test_flujo_voz_aprender_aprobar_y_ejecutar_con_errata_whisper(self):
+        reg_bak = aprendiz_habilidades._cargar_registro()
+        vivas_bak = dict(acciones.VIVAS)
+        aprendiz_habilidades._guardar_registro({"habilidades": {}, "pendientes": {}})
+        acciones.VIVAS.clear()
+
         def _limpiar():
             ruta_hab = os.path.join(aprendiz_habilidades.DIR_HABILIDADES, "habilidad_generar_contrasenas_seguras.py")
             if os.path.exists(ruta_hab):
@@ -181,6 +186,9 @@ class TestAprendizHabilidades(unittest.TestCase):
             self.assertIn("ejecutada", msg_e)
         finally:
             _limpiar()
+            aprendiz_habilidades._guardar_registro(reg_bak)
+            acciones.VIVAS.clear()
+            acciones.VIVAS.update(vivas_bak)
 
 
 if __name__ == "__main__":

@@ -69,6 +69,7 @@ class MotorProactivo:
     """Motor de proactividad situacional con reglas cognitivas y telemetría."""
 
     def __init__(self):
+        self.arranque_ts = time.time()
         self.ultimo_aviso = 0.0
         self.ultimo_briefing_fecha = None
         self.ultimo_aviso_nocturno_fecha = None
@@ -77,20 +78,36 @@ class MotorProactivo:
     def reiniciar(self):
         """Restablece los marcadores temporales (útil para pruebas unitarias)."""
         with _bloqueo:
+            self.arranque_ts = time.time()
             self.ultimo_aviso = 0.0
             self.ultimo_briefing_fecha = None
             self.ultimo_aviso_nocturno_fecha = None
             self.proyectos_comentados_sesion.clear()
 
-    def puede_intervenir(self, app=None, forzar_cooldown=False):
+    def puede_intervenir(self, app=None, forzar_cooldown=False, motivo=None):
         """Evalúa si se cumplen los guardarraíles para hablar de forma espontánea."""
         if es_modo_privado(app):
             return False, "modo_privado"
 
+        ahora = time.time()
+        if not forzar_cooldown and motivo == "ventana" and (ahora - self.arranque_ts) < 15.0:
+            return False, "gracia_inicial"
+
         if turno_activo(app):
             return False, "turno_activo"
 
-        ahora = time.time()
+        if app:
+            if getattr(app, "hablando", False):
+                return False, "app_hablando"
+            cola = getattr(app, "cola", None)
+            if cola:
+                try:
+                    q = getattr(cola, "queue", [])
+                    if any(isinstance(it, tuple) and it and it[0] == "hablar" for it in q):
+                        return False, "audio_encolado"
+                except Exception:
+                    pass
+
         if not forzar_cooldown and (ahora - self.ultimo_aviso) < COOLDOWN_MINIMO_SEGUNDOS:
             return False, "cooldown_activo"
 
@@ -191,7 +208,7 @@ class MotorProactivo:
     def evaluar_oportunidad(self, app=None, motivo=None, ventana=None, forzar_cooldown=False):
         """Evalúa todas las reglas de proactividad y devuelve (mensaje, emocion) si aplica."""
         with _bloqueo:
-            puede, razon = self.puede_intervenir(app, forzar_cooldown=forzar_cooldown)
+            puede, razon = self.puede_intervenir(app, forzar_cooldown=forzar_cooldown, motivo=motivo)
             if not puede:
                 return None
 
@@ -239,12 +256,14 @@ def evaluar_proactividad(app=None, motivo=None, ventana=None, forzar_cooldown=Fa
     """Punto de entrada seguro y no bloqueante para evaluar y emitir proactividad."""
     try:
         motor = obtener_motor_proactivo()
-        res = motor.evaluar_oportunidad(app=app, motivo=motivo, ventana=ventana, forzar_cooldown=forzar_cooldown)
-        if res:
-            mensaje, emocion = res
-            if hasattr(app, "cola") and app.cola:
-                app.cola.put(("hablar", (mensaje, emocion)))
-            return True, mensaje
+        with _bloqueo:
+            res = motor.evaluar_oportunidad(app=app, motivo=motivo, ventana=ventana, forzar_cooldown=forzar_cooldown)
+            if res:
+                mensaje, emocion = res
+                motor.ultimo_aviso = time.time()
+                if hasattr(app, "cola") and app.cola:
+                    app.cola.put(("hablar", (mensaje, emocion)))
+                return True, mensaje
     except Exception as e:
         print(f"[proactividad] Error evaluando oportunidad: {e}", flush=True)
     return False, ""
