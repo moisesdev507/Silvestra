@@ -146,5 +146,40 @@ class TestMemoriaAsociativa(unittest.TestCase):
             self.assertIn("Síntesis:", ctx)
 
 
+class TestProactividadYBlindajePostRespuesta(unittest.TestCase):
+    """Verifica ausencia de AttributeError en proactividad y blindaje post-respuesta."""
+
+    def test_motor_proactivo_evalua_sin_attribute_error_ultimo_sueno_ts(self):
+        import cerebro_proactivo
+        motor = cerebro_proactivo.MotorProactivo()
+        self.assertTrue(hasattr(motor, "ultimo_sueno_ts"))
+        self.assertEqual(motor.ultimo_sueno_ts, 0.0)
+        # La evaluación no debe lanzar excepción
+        try:
+            res = motor.evaluar_oportunidad(app=None, forzar_cooldown=False)
+        except AttributeError as e:
+            self.fail(f"MotorProactivo lanzó AttributeError inesperado: {e}")
+
+    def test_fallo_auxiliar_post_respuesta_no_rompe_flujo(self):
+        import respuesta_flujo
+        from unittest.mock import MagicMock, patch
+
+        cerebro_mock = MagicMock()
+        cerebro_mock.historial = []
+        cerebro_mock.memoria = MagicMock()
+        mock_al_frase = MagicMock()
+
+        with patch("proveedores.completar_flujo", return_value="Todo en orden. [RECUERDO: prueba error]"):
+            with patch("memoria_adaptadores.procesar_candidato", side_effect=RuntimeError("Fallo simulado en SQLite")):
+                with patch("aprendizaje.registrar_interaccion", side_effect=ValueError("Fallo simulado en aprendizaje")):
+                    resp, accion, emo = respuesta_flujo.responder_flujo(
+                        cerebro_mock, "hola lyris", al_frase=mock_al_frase
+                    )
+
+        self.assertIn("Todo en orden", resp)
+        self.assertEqual(emo, "neutral")
+        self.assertGreaterEqual(len(cerebro_mock.historial), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

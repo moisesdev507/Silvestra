@@ -33,3 +33,7 @@ Asistente modular Python/Windows con avatar PySide6, voz/escucha, Context Engine
     - `app_movil_audio.py`: Endpoint `POST /api/movil/tts` para síntesis desacoplada MP3 en memoria (`mime: audio/mpeg`).
     - `app_movil_html.py`: Desbloqueo de audio en primer toque Android, indicador `"Lyris está pensando..."`, botón `🔊 Voz` y replay `🔊` en cada burbuja.
     - `app_movil_ui.py`: Descarga de certificado CA `hud_cert.pem` en `/movil/cert.pem` para instalación segura en Android.
+12. **Blindaje proactivo/flujo y asistente de instalación móvil (`cerebro_proactivo.py`, `respuesta_flujo.py`, `app_movil_ui.py`):**
+    - `cerebro_proactivo.py`: Atributo `ultimo_sueno_ts = 0.0` blindado en `MotorProactivo.__init__` y `evaluar_sueno_cognitivo`.
+    - `respuesta_flujo.py`: Cierre post-respuesta protegido con `try/except` aislados para garantizar entrega y voz en laptop.
+    - `app_movil_ui.py`: Servidor HTTP auxiliar en puerto 8766 y asistente `/movil/instalar` con botón `📲 App` inyectado dinámicamente.

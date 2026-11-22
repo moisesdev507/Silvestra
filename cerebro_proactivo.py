@@ -71,6 +71,7 @@ class MotorProactivo:
     def __init__(self):
         self.arranque_ts = time.time()
         self.ultimo_aviso = 0.0
+        self.ultimo_sueno_ts = 0.0
         self.ultimo_briefing_fecha = None
         self.ultimo_aviso_nocturno_fecha = None
         self.proyectos_comentados_sesion = set()
@@ -210,8 +211,9 @@ class MotorProactivo:
         """Ejecuta sueño cognitivo en reposo (>= 20 min inactividad, máx. 1 vez cada 12h)."""
         with _bloqueo:
             ahora = time.time()
+            u_sueno = getattr(self, "ultimo_sueno_ts", 0.0)
             if not forzar:
-                if (ahora - self.ultimo_aviso) < 1200.0 or (ahora - self.ultimo_sueno_ts) < 43200.0:
+                if (ahora - self.ultimo_aviso) < 1200.0 or (ahora - u_sueno) < 43200.0:
                     return None
             try:
                 import memoria_sueno
@@ -224,7 +226,10 @@ class MotorProactivo:
 
     def evaluar_oportunidad(self, app=None, motivo=None, ventana=None, forzar_cooldown=False):
         """Evalúa todas las reglas de proactividad y devuelve (mensaje, emocion) si aplica."""
-        self.evaluar_sueno_cognitivo()
+        try:
+            self.evaluar_sueno_cognitivo()
+        except Exception:
+            pass
         with _bloqueo:
             puede, razon = self.puede_intervenir(app, forzar_cooldown=forzar_cooldown, motivo=motivo)
             if not puede:

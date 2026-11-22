@@ -54,6 +54,21 @@ class TestAppMovilPWA(unittest.TestCase):
         handler_mock.send_header.assert_any_call("Content-Type", "application/x-pem-file")
         handler_mock.send_header.assert_any_call("Content-Disposition", 'attachment; filename="lyris_cert.pem"')
 
+    def test_despachar_asistente_instalar_app(self):
+        handler_mock = MagicMock()
+        handler_mock.headers = {"Host": "192.168.1.100:8765"}
+        ok = amui.despachar_get_movil(handler_mock, "/movil/instalar")
+        self.assertTrue(ok)
+        handler_mock.send_response.assert_called_with(200)
+        handler_mock.send_header.assert_any_call("Content-Type", "text/html; charset=utf-8")
+
+    def test_despachar_apk_o_redireccion(self):
+        handler_mock = MagicMock()
+        ok = amui.despachar_get_movil(handler_mock, "/movil/lyris.apk")
+        self.assertTrue(ok)
+        # Si no hay apk compilado, redirige a /movil/instalar
+        self.assertIn(handler_mock.send_response.call_args[0][0], (200, 302))
+
 
 class TestSeguridadRedTailscaleYLAN(unittest.TestCase):
     """Verifica el soporte para Tailscale CGNAT (100.64.0.0/10) y subredes privadas."""

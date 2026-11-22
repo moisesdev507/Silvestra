@@ -6,12 +6,19 @@ import proveedores_cadenas as pc
 
 
 def _reg_turno(cerebro, u_txt, a_txt, al_frase=None):
-    if callable(al_frase):
-        al_frase(a_txt)
-    cerebro.historial.append({"role": "user", "content": u_txt})
-    cerebro.historial.append({"role": "assistant", "content": a_txt})
-    if hasattr(cerebro, "_podar_historial"):
-        cerebro._podar_historial()
+    try:
+        if callable(al_frase):
+            al_frase(a_txt)
+    except Exception:
+        pass
+    try:
+        if hasattr(cerebro, "historial") and isinstance(cerebro.historial, list):
+            cerebro.historial.append({"role": "user", "content": u_txt})
+            cerebro.historial.append({"role": "assistant", "content": a_txt})
+        if hasattr(cerebro, "_podar_historial"):
+            cerebro._podar_historial()
+    except Exception:
+        pass
 
 
 def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
@@ -138,12 +145,7 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
                 msg = f"Listo, {creador}. Te recordaré {que} a las {hora_str}."
             else:
                 msg = "No entendí la hora o el tiempo para el recordatorio."
-        if callable(al_frase):
-            al_frase(msg)
-        cerebro.historial.append({"role": "user", "content": texto})
-        cerebro.historial.append({"role": "assistant", "content": msg})
-        if hasattr(cerebro, "_podar_historial"):
-            cerebro._podar_historial()
+        _reg_turno(cerebro, texto, msg, al_frase)
         return msg, None, "alegre"
 
     creador = getattr(getattr(app, "memoria", None), "creador", "Moisés") or "Moisés"
@@ -198,22 +200,12 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
             ok_d, res_d = acciones.ejecutar(nom_difuso, texto)
             if ok_d and res_d:
                 msg_d = str(res_d)
-                if callable(al_frase):
-                    al_frase(msg_d)
-                cerebro.historial.append({"role": "user", "content": texto})
-                cerebro.historial.append({"role": "assistant", "content": msg_d})
-                if hasattr(cerebro, "_podar_historial"):
-                    cerebro._podar_historial()
+                _reg_turno(cerebro, texto, msg_d, al_frase)
                 return msg_d, nom_difuso, "alegre"
 
         es_proactivo, msg_proactivo = cerebro_entrenamiento.gestionar_autoaprendizaje_proactivo(texto, app=app)
         if es_proactivo:
-            if callable(al_frase):
-                al_frase(msg_proactivo)
-            cerebro.historial.append({"role": "user", "content": texto})
-            cerebro.historial.append({"role": "assistant", "content": msg_proactivo})
-            if hasattr(cerebro, "_podar_historial"):
-                cerebro._podar_historial()
+            _reg_turno(cerebro, texto, msg_proactivo, al_frase)
             return msg_proactivo, None, "animada"
     except Exception as e:
         print(f"[entrenamiento] Error: {e}", flush=True)
@@ -277,7 +269,12 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
                 pass
             crudo = pc.respuesta_emergencia_local()
 
-    respuesta, accion, recuerdo, emocion = separar(crudo)
+    try:
+        respuesta, accion, recuerdo, emocion = separar(crudo)
+    except Exception as e:
+        print(f"[respuesta_flujo] Error en separar(crudo): {e}", flush=True)
+        respuesta, accion, recuerdo, emocion = str(crudo or ""), None, None, "neutral"
+
     try:
         import cerebro_mentor
         if cerebro_mentor.es_modo_mentor_activo():
@@ -285,14 +282,29 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
             _on_emocion("concentrada")
     except Exception:
         pass
+
     if recuerdo and not getattr(cerebro, "turno_invitado", False):
-        from memoria_adaptadores import procesar_candidato
-        app = getattr(cerebro, "app", None)
-        procesar_candidato(cerebro.memoria, recuerdo, texto, fuente="recuerdo_modelo",
-            canal=getattr(app, "origen_entrada_actual", "texto"))
-    cerebro.historial.append({"role": "assistant", "content": respuesta})
-    if hasattr(cerebro, "_podar_historial"):
-        cerebro._podar_historial()
+        try:
+            from memoria_adaptadores import procesar_candidato
+            app = getattr(cerebro, "app", None)
+            procesar_candidato(
+                getattr(cerebro, "memoria", None),
+                recuerdo,
+                texto,
+                fuente="recuerdo_modelo",
+                canal=getattr(app, "origen_entrada_actual", "texto"),
+            )
+        except Exception as e:
+            print(f"[memoria] Error procesando candidato de recuerdo: {e}", flush=True)
+
+    try:
+        if hasattr(cerebro, "historial") and isinstance(cerebro.historial, list):
+            cerebro.historial.append({"role": "assistant", "content": respuesta})
+        if hasattr(cerebro, "_podar_historial"):
+            cerebro._podar_historial()
+    except Exception as e:
+        print(f"[historial] Error guardando historial: {e}", flush=True)
+
     if not getattr(cerebro, "turno_invitado", False):
         try:
             import aprendizaje
@@ -300,17 +312,21 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         except Exception as e:
             print(f"[aprendizaje] Error al registrar interacción: {e}", flush=True)
 
-        turnos_u = sum(1 for m in getattr(cerebro, "historial", []) if m.get("role") == "user")
-        if turnos_u > 0 and turnos_u % 3 == 0 and hasattr(cerebro, "memoria") and hasattr(cerebro.memoria, "extraer_hechos_conversacion"):
-            import threading
-            pedir_fn = getattr(cerebro, "_pedir", None)
-            if pedir_fn is None:
-                import proveedores as prov_mod
-                pedir_fn = lambda msgs, tarea="charla": prov_mod.completar(msgs, tarea=tarea)
-            threading.Thread(
-                target=cerebro.memoria.extraer_hechos_conversacion,
-                args=(list(cerebro.historial[-6:]), pedir_fn),
-                daemon=True,
-                name="MemoriaExtraerFlujo"
-            ).start()
+        try:
+            turnos_u = sum(1 for m in getattr(cerebro, "historial", []) if m.get("role") == "user")
+            if turnos_u > 0 and turnos_u % 3 == 0 and hasattr(cerebro, "memoria") and hasattr(cerebro.memoria, "extraer_hechos_conversacion"):
+                import threading
+                pedir_fn = getattr(cerebro, "_pedir", None)
+                if pedir_fn is None:
+                    import proveedores as prov_mod
+                    pedir_fn = lambda msgs, tarea="charla": prov_mod.completar(msgs, tarea=tarea)
+                threading.Thread(
+                    target=cerebro.memoria.extraer_hechos_conversacion,
+                    args=(list(cerebro.historial[-6:]), pedir_fn),
+                    daemon=True,
+                    name="MemoriaExtraerFlujo"
+                ).start()
+        except Exception as e:
+            print(f"[memoria] Error en extracción en segundo plano: {e}", flush=True)
+
     return respuesta, accion, emocion
