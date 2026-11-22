@@ -34,3 +34,8 @@ Asistente personal modular Python/Windows con avatar PySide6, voz/escucha, perce
    - Grafo de Conocimiento Vivo: Tablas aditivas `grafo_nodos` y `grafo_relaciones` en SQLite con sobreescritura de datos obsoletos y consulta contextual compacta en prompt.
    - Planificador multi-paso: Encadena hasta 3 acciones reales (`planificar -> ejecutar -> verificar`) con auto-crítica verídica ante fallos parciales sin alucinaciones.
    - Auto-aprendizaje y voz sin cortes: Búsqueda difusa tolerante a Whisper (`SequenceMatcher`, `< 50 ms`), auto-propuesta proactiva de habilidades técnicas y segmentación TTS protegida contra cortes en contraseñas (`V9k!`), tokens y código (`prueba.py`).
+11. **Prioridad multi-paso, voz unificada y saneo Whisper (`respuesta_flujo.py`, `cerebro_planificador.py`, `habilidades_archivos.py`, `proveedores_cadenas.py`):**
+   - `respuesta_flujo.py` prioriza `cerebro_planificador` ante órdenes compuestas y retorna `accion=None`, impidiendo la re-ejecución errónea en `eventos.py` y la doble voz en recordatorios.
+   - Whisper tolerante fonéticamente (`llea`, `lea`, `crea`) y saneo de extensiones mal transcritas (`.tgit`, `.tequisde` -> `.txt`).
+   - Generación automática de contenido estructurado para archivos en órdenes compuestas.
+   - Exclusión de `openai/gpt-oss-20b` en Groq para prevenir enfriamientos por HTTP 429 TPM.

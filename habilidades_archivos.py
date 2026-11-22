@@ -33,13 +33,21 @@ def _asegurar_workspace():
         pass
 
 
+def sanear_extension_whisper(ruta):
+    """Normaliza extensiones habituales mal transcritas por Whisper."""
+    if not ruta:
+        return ""
+    r = str(ruta).strip().strip("'\"")
+    return re.sub(r"\.(?:tgit|tequisde|tequiste|t\s*x\s*t|txtt)$", ".txt", r, flags=re.I)
+
+
 def validar_ruta(ruta_usuario, modo="lectura"):
     """Valida y resuelve una ruta dentro de las zonas seguras autorizadas."""
     _asegurar_workspace()
     if not ruta_usuario or not str(ruta_usuario).strip():
         return False, "", "Ruta de archivo no especificada."
 
-    r = str(ruta_usuario).strip().strip("'\"")
+    r = sanear_extension_whisper(ruta_usuario)
 
     # Si es solo un nombre de archivo o ruta relativa simple, ubicarlo en workspace_lyris
     if not os.path.isabs(r):

@@ -229,7 +229,12 @@ def obtener_modelos_tarea(prov_dict, tarea):
         modelos = prov_dict.get("modelos", [])
     modelos = list(modelos)
     if nombre == "Groq":
-        restantes = [m for m in modelos if m not in MODELOS_RAPIDOS_GROQ and "qwen" not in m.lower()]
+        restantes = [
+            m for m in modelos
+            if m not in MODELOS_RAPIDOS_GROQ
+            and "qwen" not in m.lower()
+            and "gpt-oss" not in m.lower()
+        ]
         modelos = list(MODELOS_RAPIDOS_GROQ) + restantes
     return modelos
 

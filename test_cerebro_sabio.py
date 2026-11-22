@@ -88,6 +88,33 @@ class TestCerebroPlanificador(unittest.TestCase):
         self.assertIn("Pude completar 1 de 2 pasos", sintesis)
         self.assertIn("accion_totalmente_falsa_xyz", sintesis)
 
+    def test_orden_compuesta_whisper_y_respuesta_flujo(self):
+        orden = "Llea un archivo llamado TareasGioHoi.tgit con tres pendientes de programación y recuérdame revisarlo en cinco minutos"
+        self.assertTrue(cplan.detectar_intencion_multipaso(orden))
+
+        target_path = os.path.join("workspace_lyris", "tareasgiohoi.txt")
+        if os.path.exists(target_path):
+            os.remove(target_path)
+
+        try:
+            cerebro = DummyCerebro()
+            msg, accion, emocion = responder_flujo(cerebro, orden, al_frase=None)
+
+            # 1. No debe disparar accion para evitar re-ejecucion doble en eventos.py
+            self.assertIsNone(accion)
+            # 2. Mensaje unificado de confirmacion
+            self.assertIn("guardé 'tareasgiohoi.txt'", msg)
+            self.assertIn("programé tu recordatorio", msg)
+            # 3. Archivo creado en workspace_lyris con contenido real
+            self.assertTrue(os.path.exists(target_path))
+            with open(target_path, "r", encoding="utf-8") as f:
+                contenido = f.read()
+            self.assertGreater(len(contenido.strip()), 10)
+            self.assertIn("pendientes de programación", contenido.lower())
+        finally:
+            if os.path.exists(target_path):
+                os.remove(target_path)
+
 
 class TestCerebroEntrenamiento(unittest.TestCase):
     def test_coincidencia_difusa_whisper(self):
@@ -111,6 +138,10 @@ class TestCerebroEntrenamiento(unittest.TestCase):
         p = os.path.join("habilidades_aprendidas", "habilidad_el_hash_sha256_de_un_texto.py")
         if os.path.exists(p):
             os.remove(p)
+        reg = aprendiz_habilidades._cargar_registro()
+        if "el_hash_sha256_de_un_texto" in reg.get("habilidades", {}):
+            del reg["habilidades"]["el_hash_sha256_de_un_texto"]
+            aprendiz_habilidades._guardar_registro(reg)
 
     def test_deteccion_leccion_o_correccion(self):
         ok, msg = ce.detectar_y_guardar_leccion("No, mejor hazlo de forma más breve y sin rodeos", creador="Moisés")

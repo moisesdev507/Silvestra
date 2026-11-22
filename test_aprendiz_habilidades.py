@@ -43,7 +43,7 @@ class TestRecordatoriosSinFalsoBloqueo(unittest.TestCase):
     def test_flujo_respuesta_recordatorio_inmediato(self):
         cerebro = DummyCerebro()
         msg, accion, emocion = responder_flujo(cerebro, "Recuerdame tomar agua en un minuto por favor", None)
-        self.assertEqual(accion, "poner_recordatorio")
+        self.assertIsNone(accion)
         self.assertNotIn("No puedo guardar ese dato de forma segura", msg)
         self.assertIn("tomar agua", msg.lower())
 
@@ -144,25 +144,43 @@ class TestAprendizHabilidades(unittest.TestCase):
         self.assertIn("restringido", m.lower())
 
     def test_flujo_voz_aprender_aprobar_y_ejecutar_con_errata_whisper(self):
-        cerebro = DummyCerebro()
+        def _limpiar():
+            ruta_hab = os.path.join(aprendiz_habilidades.DIR_HABILIDADES, "habilidad_generar_contrasenas_seguras.py")
+            if os.path.exists(ruta_hab):
+                try:
+                    os.remove(ruta_hab)
+                except Exception:
+                    pass
+            reg = aprendiz_habilidades._cargar_registro()
+            if "generar_contrasenas_seguras" in reg.get("habilidades", {}):
+                del reg["habilidades"]["generar_contrasenas_seguras"]
+                aprendiz_habilidades._guardar_registro(reg)
+            if "generar_contrasenas_seguras" in acciones.VIVAS:
+                del acciones.VIVAS["generar_contrasenas_seguras"]
 
-        # 1. Aprender habilidad
-        texto_aprender = "Aprende a generar contraseñas seguras"
-        msg_a, acc_a, emo_a = responder_flujo(cerebro, texto_aprender, None)
-        self.assertEqual(acc_a, "aprender_habilidad")
-        self.assertIn("He preparado la nueva habilidad", msg_a)
+        _limpiar()
+        try:
+            cerebro = DummyCerebro()
 
-        # 2. Confirmar habilidad
-        texto_conf = "Aprueba la habilidad de generar contraseñas"
-        msg_c, acc_c, emo_c = responder_flujo(cerebro, texto_conf, None)
-        self.assertEqual(acc_c, "confirmar_habilidad")
-        self.assertIn("aprobada con éxito", msg_c)
+            # 1. Aprender habilidad
+            texto_aprender = "Aprende a generar contraseñas seguras"
+            msg_a, acc_a, emo_a = responder_flujo(cerebro, texto_aprender, None)
+            self.assertEqual(acc_a, "aprender_habilidad")
+            self.assertIn("He preparado la nueva habilidad", msg_a)
 
-        # 3. Ejecutar con errata común de Whisper ("contrasiña")
-        texto_ejec = "Genera una contrasiña"
-        msg_e, acc_e, emo_e = responder_flujo(cerebro, texto_ejec, None)
-        self.assertIn("generar_contrasenas", acc_e)
-        self.assertIn("ejecutada", msg_e)
+            # 2. Confirmar habilidad
+            texto_conf = "Aprueba la habilidad de generar contraseñas"
+            msg_c, acc_c, emo_c = responder_flujo(cerebro, texto_conf, None)
+            self.assertEqual(acc_c, "confirmar_habilidad")
+            self.assertIn("aprobada con éxito", msg_c)
+
+            # 3. Ejecutar con errata común de Whisper ("contrasiña")
+            texto_ejec = "Genera una contrasiña"
+            msg_e, acc_e, emo_e = responder_flujo(cerebro, texto_ejec, None)
+            self.assertIn("generar_contrasenas", acc_e)
+            self.assertIn("ejecutada", msg_e)
+        finally:
+            _limpiar()
 
 
 if __name__ == "__main__":

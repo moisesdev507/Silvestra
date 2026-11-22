@@ -19,6 +19,17 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
             cerebro._podar_historial()
         return msg, "activar_hud", "alegre"
 
+    # 1. Planificador cognitivo multi-paso (prioritario ante órdenes compuestas)
+    try:
+        import cerebro_planificador
+        if cerebro_planificador.detectar_intencion_multipaso(texto):
+            atendido_mp, resp_mp, acts_mp = cerebro_planificador.procesar_turno_multipaso(cerebro, texto, al_frase=al_frase)
+            if atendido_mp:
+                return resp_mp, None, "alegre"
+    except Exception as e:
+        print(f"[planificador] Error: {e}", flush=True)
+
+    # 2. Atajo de recordatorio simple (retorna None en accion para evitar re-ejecucion doble en eventos.py)
     import recordatorios
     if recordatorios.es_recordatorio_temporal(texto):
         rec_mgr = getattr(app, "recordatorios", None)
@@ -52,7 +63,7 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         cerebro.historial.append({"role": "assistant", "content": msg})
         if hasattr(cerebro, "_podar_historial"):
             cerebro._podar_historial()
-        return msg, "poner_recordatorio", "alegre"
+        return msg, None, "alegre"
 
     creador = getattr(getattr(app, "memoria", None), "creador", "Moisés") or "Moisés"
 
@@ -99,14 +110,6 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
             return msg_proactivo, "autoaprendizaje_proactivo", "animada"
     except Exception as e:
         print(f"[entrenamiento] Error: {e}", flush=True)
-
-    try:
-        import cerebro_planificador
-        atendido_mp, resp_mp, acts_mp = cerebro_planificador.procesar_turno_multipaso(cerebro, texto, al_frase=al_frase)
-        if atendido_mp:
-            return resp_mp, "multipaso", "alegre"
-    except Exception as e:
-        print(f"[planificador] Error: {e}", flush=True)
 
     import aprendiz_habilidades
     es_conf, nom_hab = aprendiz_habilidades.detectar_orden_confirmacion(texto)
