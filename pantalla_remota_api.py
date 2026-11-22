@@ -32,8 +32,30 @@ def obtener_ip_local():
             except Exception: pass
 
 
+_RED_TAILSCALE = ipaddress.ip_network("100.64.0.0/10")
+
+
+def _instalar_rutas_movil(handler_cls):
+    if handler_cls and not getattr(handler_cls, "_movil_instalado", False):
+        orig_do_get = getattr(handler_cls, "do_GET", None)
+        if callable(orig_do_get):
+            def do_GET_movil(self):
+                p = self.path.split("?", 1)[0]
+                if p in ("/movil", "/movil/", "/manifest.json", "/sw.js"):
+                    import app_movil_ui
+                    if app_movil_ui.despachar_get_movil(self, p):
+                        return
+                return orig_do_get(self)
+            handler_cls.do_GET = do_GET_movil
+            handler_cls._movil_instalado = True
+
+
 class ServidorPantallaRemota(http.server.ThreadingHTTPServer):
     daemon_threads = True
+
+    def __init__(self, server_address, RequestHandlerClass, bind_and_activate=True):
+        _instalar_rutas_movil(RequestHandlerClass)
+        super().__init__(server_address, RequestHandlerClass, bind_and_activate=bind_and_activate)
 
     def handle_error(self, request, client_address):
         exc_type, exc_val, _ = sys.exc_info()
@@ -64,7 +86,8 @@ def _es_lan_cliente(client_ip):
     cip = str(client_ip).split(":")[0].strip("[]")
     if cip in ("127.0.0.1", "localhost", "::1"): return True
     try:
-        return ipaddress.ip_address(cip).is_private
+        ip = ipaddress.ip_address(cip)
+        return ip.is_private or ip in _RED_TAILSCALE
     except Exception:
         return False
 
@@ -173,6 +196,14 @@ def manejar_post(h, app, gestor):
     path = h.path.split("?", 1)[0]
     p = gestor.puente; manager = gestor.ecosistema_gestor
     ip = h.client_address[0]
+    if path == "/api/movil/voz":
+        identity = _identidad(h)
+        if not identity:
+            return _respuesta(h, 401, {"ok": False, "error": "unauthorized"})
+        import app_movil_audio
+        code, res = app_movil_audio.manejar_http_voz(h, app)
+        return _respuesta(h, code, res)
+
     if path == "/api/emparejar":
         if not _origen(h, True): return _respuesta(h, 403, {"error": "origin_rejected"})
         if not h.server.bus_sse.permitir_peticion("pair:" + ip): return _respuesta(h, 429, {"error": "rate_limited"})

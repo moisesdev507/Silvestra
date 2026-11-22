@@ -1,0 +1,107 @@
+"""Pruebas unitarias para la aplicación móvil PWA de Lyris (UI, voz bidireccional y Tailscale)."""
+import json
+import unittest
+from unittest.mock import MagicMock, patch
+
+import app_movil_audio as ama
+import app_movil_ui as amui
+import pantalla_remota_api as pra
+
+
+class TestAppMovilPWA(unittest.TestCase):
+    """Verifica renderizado de /movil, manifest.json y service worker."""
+
+    def test_despachar_movil_html(self):
+        handler_mock = MagicMock()
+        ok = amui.despachar_get_movil(handler_mock, "/movil")
+        self.assertTrue(ok)
+        handler_mock.send_response.assert_called_with(200)
+        handler_mock.send_header.assert_any_call("Content-Type", "text/html; charset=utf-8")
+
+    def test_despachar_manifest_json(self):
+        handler_mock = MagicMock()
+        ok = amui.despachar_get_movil(handler_mock, "/manifest.json")
+        self.assertTrue(ok)
+        handler_mock.send_response.assert_called_with(200)
+        handler_mock.send_header.assert_any_call("Content-Type", "application/manifest+json; charset=utf-8")
+        manifest_data = json.loads(amui.MANIFEST_JSON)
+        self.assertEqual(manifest_data["name"], "Lyris - Asistente Personal")
+        self.assertEqual(manifest_data["display"], "standalone")
+
+    def test_despachar_service_worker_js(self):
+        handler_mock = MagicMock()
+        ok = amui.despachar_get_movil(handler_mock, "/sw.js")
+        self.assertTrue(ok)
+        handler_mock.send_response.assert_called_with(200)
+        handler_mock.send_header.assert_any_call("Content-Type", "application/javascript; charset=utf-8")
+
+
+class TestSeguridadRedTailscaleYLAN(unittest.TestCase):
+    """Verifica el soporte para Tailscale CGNAT (100.64.0.0/10) y subredes privadas."""
+
+    def test_ip_tailscale_reconocida_como_cliente_permitido(self):
+        # Rango Tailscale 100.64.0.0/10
+        self.assertTrue(pra._es_lan_cliente("100.64.1.25"))
+        self.assertTrue(pra._es_lan_cliente("100.100.100.100"))
+        self.assertTrue(pra._es_lan_cliente("100.127.255.254"))
+
+    def test_ip_lan_privada_reconocida(self):
+        self.assertTrue(pra._es_lan_cliente("192.168.1.50"))
+        self.assertTrue(pra._es_lan_cliente("10.0.0.15"))
+        self.assertTrue(pra._es_lan_cliente("172.16.0.5"))
+        self.assertTrue(pra._es_lan_cliente("127.0.0.1"))
+
+    def test_ip_publica_externa_rechazada(self):
+        self.assertFalse(pra._es_lan_cliente("8.8.8.8"))
+        self.assertFalse(pra._es_lan_cliente("1.1.1.1"))
+        self.assertFalse(pra._es_lan_cliente("200.50.10.1"))
+
+
+class TestAudioYConversacionMovil(unittest.TestCase):
+    """Verifica transcripción en memoria, llamada al cerebro y síntesis con Edge-TTS."""
+
+    def test_procesar_comando_texto_movil(self):
+        app_mock = MagicMock()
+        app_mock.cerebro = MagicMock()
+        app_mock.cola = MagicMock()
+
+        with patch("respuesta_flujo.responder_flujo", return_value=("Hola, estoy lista.", None, "alegre")):
+            with patch("app_movil_audio.sintetizar_respuesta_movil", return_value="base64audiofake"):
+                res = ama.procesar_comando_texto_movil(app_mock, "¿Cómo estás, Lyris?", sintetizar_voz=True)
+
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["texto_usuario"], "¿Cómo estás, Lyris?")
+        self.assertEqual(res["respuesta"], "Hola, estoy lista.")
+        self.assertEqual(res["emocion"], "alegre")
+        self.assertEqual(res["audio_base64"], "base64audiofake")
+        app_mock.cola.put.assert_any_call(("emocion", "alegre"))
+
+    def test_procesar_audio_movil_flujo_completo(self):
+        app_mock = MagicMock()
+        app_mock.cerebro = MagicMock()
+        fake_audio_bytes = b"OggS\x00\x02\x00\x00\x00\x00fakeaudiobytesforwhisper1234567890"
+
+        with patch("app_movil_audio.transcribir_audio_memoria", return_value="activa modo mentora"):
+            with patch("respuesta_flujo.responder_flujo", return_value=("Modo mentora socrática activado.", None, "concentrada")):
+                with patch("app_movil_audio.sintetizar_respuesta_movil", return_value="base64voice"):
+                    res = ama.procesar_audio_movil(app_mock, fake_audio_bytes, mime_type="audio/webm")
+
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["texto_usuario"], "activa modo mentora")
+        self.assertIn("Modo mentora", res["respuesta"])
+        self.assertEqual(res["emocion"], "concentrada")
+        self.assertEqual(res["audio_base64"], "base64voice")
+
+    def test_manejar_http_voz_rechaza_tamano_excesivo(self):
+        handler_mock = MagicMock()
+        handler_mock.headers = {"Content-Type": "audio/webm", "Content-Length": "10485760"}  # 10 MB
+        app_mock = MagicMock()
+
+        code, data = ama.manejar_http_voz(handler_mock, app_mock)
+        self.assertEqual(code, 400)
+        self.assertFalse(data["ok"])
+        self.assertEqual(data["error"], "audio_size_invalid")
+
+
+if __name__ == "__main__":
+    unittest.main()
