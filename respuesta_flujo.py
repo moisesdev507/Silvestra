@@ -54,6 +54,43 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
             cerebro._podar_historial()
         return msg, "poner_recordatorio", "alegre"
 
+    import aprendiz_habilidades
+    es_conf, nom_hab = aprendiz_habilidades.detectar_orden_confirmacion(texto)
+    if es_conf:
+        ok, msg = aprendiz_habilidades.confirmar_habilidad(nom_hab, app=app)
+        if callable(al_frase):
+            al_frase(msg)
+        cerebro.historial.append({"role": "user", "content": texto})
+        cerebro.historial.append({"role": "assistant", "content": msg})
+        if hasattr(cerebro, "_podar_historial"):
+            cerebro._podar_historial()
+        return msg, "confirmar_habilidad", "alegre" if ok else "seria"
+
+    orden_aprender = aprendiz_habilidades.detectar_orden_aprendizaje(texto)
+    if orden_aprender:
+        ok, msg = aprendiz_habilidades.aprender_habilidad(orden_aprender, app=app)
+        if callable(al_frase):
+            al_frase(msg)
+        cerebro.historial.append({"role": "user", "content": texto})
+        cerebro.historial.append({"role": "assistant", "content": msg})
+        if hasattr(cerebro, "_podar_historial"):
+            cerebro._podar_historial()
+        return msg, "aprender_habilidad", "alegre" if ok else "preocupada"
+
+    nom_ejec, info_ejec = aprendiz_habilidades.buscar_habilidad_por_intencion(texto)
+    if nom_ejec:
+        import acciones
+        ok, res_ejec = acciones.ejecutar(nom_ejec, texto)
+        if ok and res_ejec:
+            msg = str(res_ejec)
+            if callable(al_frase):
+                al_frase(msg)
+            cerebro.historial.append({"role": "user", "content": texto})
+            cerebro.historial.append({"role": "assistant", "content": msg})
+            if hasattr(cerebro, "_podar_historial"):
+                cerebro._podar_historial()
+            return msg, nom_ejec, "alegre"
+
     from memoria_adaptadores import atender_turno
     directo = atender_turno(cerebro, texto)
     if directo:

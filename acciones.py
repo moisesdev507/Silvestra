@@ -79,7 +79,7 @@ ACCIONES = {
     "activar_pantalla_remota": (_activar_hud, False, "activa la pantalla remota en la tablet"),
     "activar_tablet": (_activar_hud, False, "conecta e inicia la pantalla de la tablet"),
     "abrir_hud": (_activar_hud, False, "abre e inicia el HUD de la tablet"),
-    "escribir_archivo": (_escribir_archivo, True, "escribe contenido en un archivo seguro (ruta | contenido)"),
+    "escribir_archivo": (_escribir_archivo, True, "escribe contenido en un archivo. Obligatorio: ruta | texto completo redactado (ej: ACCION: escribir_archivo | archivo.txt | ideas o notas redactadas)"),
     "leer_archivo": (_leer_archivo, True, "lee un archivo de texto seguro autorizado"),
     "listar_archivos": (_listar_archivos, False, "lista los archivos existentes en el workspace de Lyris"),
     "aprender_habilidad": (_aprender_habilidad, True, "aprende una nueva habilidad programando código seguro"),

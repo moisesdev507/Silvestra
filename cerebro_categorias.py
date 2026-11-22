@@ -111,11 +111,11 @@ CATEGORIAS_ACCIONES = {
         {"activar_modo"}
     ),
     "archivos": (
-        {"archivo", "archivos", "crear archivo", "guardar archivo", "escribir archivo", "leer archivo", "listar archivos", "documento", "texto", "workspace", "codigo"},
+        {"archivo", "archivos", "crear archivo", "guardar archivo", "escribir archivo", "leer archivo", "listar archivos", "documento", "texto", "workspace", "codigo", "crear", "escribir", "guardar", "redactar", "nota", "notas", "ideas", "txt"},
         {"escribir_archivo", "leer_archivo", "listar_archivos"}
     ),
     "habilidades_aprendidas": (
-        {"aprender habilidad", "aprende a", "nueva habilidad", "aprende hacer", "habilidad", "habilidades", "aprobar habilidad", "confirmar habilidad"},
+        {"aprender habilidad", "aprende a", "nueva habilidad", "aprende hacer", "habilidad", "habilidades", "aprobar habilidad", "confirmar habilidad", "aprende", "aprender", "aprobar", "confirmar", "activar", "contrasiña", "contrasena"},
         {"aprender_habilidad", "confirmar_habilidad"}
     ),
 }

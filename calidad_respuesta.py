@@ -16,6 +16,7 @@ PALABRAS_ESENCIALES_ESPANOL = {
     "papi", "mami", "amigo", "amiga", "moises", "silvestra", "listo", "lista", "claro",
     "solo", "todo", "toda", "todos", "todas", "nada", "poco", "mucho", "mucha", "bueno", "buena",
     "python", "whisper", "youtube", "laptop", "pc", "script", "ia", "app", "codigo", "modelo",
+    "clave", "contrasena", "password", "segura", "caracteres", "archivo", "texto", "linea",
 }
 
 _PATRONES_CORRUPTOS = (
@@ -44,9 +45,12 @@ def es_token_corrupto(token):
     norm = _normalizar_token(token)
     if not norm or norm.isdigit() or len(norm) <= 2:
         return False
+    # Tokens alfanuméricos que mezclan letras y dígitos (contraseñas, hashes, IDs) no son palabras corruptas
+    if any(c.isdigit() for c in norm) and any(c.isalpha() for c in norm):
+        return False
     if norm in PALABRAS_ESENCIALES_ESPANOL:
         return False
-    # Una palabra de más de 2 letras en español debe contener al menos una vocal
+    # Una palabra puramente alfabética de más de 2 letras en español debe contener al menos una vocal
     if not any(c in "aeiouy" for c in norm):
         return True
     for pat in _PATRONES_CORRUPTOS:
@@ -104,18 +108,20 @@ def analizar_calidad_texto(texto, contexto_windows=None):
     if ultimo_char not in ".!?…\"'»)" and ultima_palabra in _CONECTORES_COLGANTES:
         return False, f"truncado_en_conector('{ultima_palabra}')"
 
-    # Detección de palabras fonotácticamente corruptas o imposibles en español
-    permitidas = _tokens_contexto_windows(contexto_windows)
-    corruptas = [p for p in palabras if _normalizar_token(p) not in permitidas
-                 and es_token_corrupto(p)]
-    if corruptas:
-        return False, f"token_corrupto({corruptas[:2]})"
-
     # Una frase o respuesta en español de 4 o más palabras debe tener conectores/palabras gramaticales
     norm_palabras = [_normalizar_token(p) for p in palabras]
     n_esenciales = sum(1 for p in norm_palabras if p in PALABRAS_ESENCIALES_ESPANOL)
     if len(palabras) >= 4 and n_esenciales == 0:
         return False, "sin_palabras_gramaticales_espanol"
+
+    # Detección de palabras fonotácticamente corruptas o imposibles en español
+    es_contexto_tecnico = bool(re.search(r"\b(?:contraseña|contrasena|clave|token|password|pin|hash|url|codigo|api|link|llave)\b", t, re.I))
+    permitidas = _tokens_contexto_windows(contexto_windows)
+    corruptas = [p for p in palabras if _normalizar_token(p) not in permitidas
+                 and es_token_corrupto(p)]
+    if corruptas:
+        if not (es_contexto_tecnico and n_esenciales >= 2):
+            return False, f"token_corrupto({corruptas[:2]})"
 
     return True, "ok"
 

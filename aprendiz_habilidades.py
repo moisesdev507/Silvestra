@@ -125,7 +125,9 @@ def aprender_habilidad(arg, app=None):
         return False, "Debes indicar el nombre y la descripción de la habilidad (ej: calcular_iva | Calcula el 7% de un monto)."
 
     partes = str(arg).split("|", 1)
-    nom_raw = partes[0].strip().lower().replace(" ", "_")
+    import unicodedata
+    nom_unic = "".join(c for c in unicodedata.normalize("NFD", partes[0].strip().lower()) if unicodedata.category(c) != "Mn")
+    nom_raw = nom_unic.replace(" ", "_")
     nombre = re.sub(r"[^a-z0-9_]", "", nom_raw)
     if not nombre:
         return False, "Nombre de habilidad inválido."
@@ -219,9 +221,112 @@ def _activar_modulo_habilidad(nombre, info, app=None):
 
         desc = info.get("descripcion", f"Habilidad aprendida {nombre}")
         acciones.registrar(nombre, _envoltorio, desc, con_texto=True)
+        sincronizar_con_cerebro_categorias()
         return True, "Activada"
     except Exception as e:
         return False, f"Error al cargar módulo: {e}"
+
+
+def sincronizar_con_cerebro_categorias():
+    """Expone todas las habilidades aprobadas en cerebro_categorias y ACCIONES."""
+    reg = _cargar_registro()
+    habs = reg.get("habilidades", {})
+    try:
+        import cerebro_categorias
+        if "habilidades_aprendidas" in cerebro_categorias.CATEGORIAS_ACCIONES:
+            kws, acts = cerebro_categorias.CATEGORIAS_ACCIONES["habilidades_aprendidas"]
+            for nombre, info in habs.items():
+                if info.get("estado") == "aprobada":
+                    acts.add(nombre)
+                    kws.add(nombre)
+                    for parte in nombre.split("_"):
+                        if len(parte) >= 3:
+                            kws.add(parte)
+                            if "contrasena" in parte:
+                                kws.add("contrasiña")
+                                kws.add("contraseña")
+                                kws.add("clave")
+                                kws.add("password")
+                    desc = info.get("descripcion", "")
+                    for palabra in re.findall(r"[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]{4,}", desc):
+                        kws.add(palabra.lower())
+    except Exception as e:
+        print(f"[aprendiz] Error sincronizando categorias: {e}", flush=True)
+
+
+def obtener_habilidades_aprobadas():
+    """Devuelve diccionario de habilidades con estado aprobada."""
+    reg = _cargar_registro()
+    habs = reg.get("habilidades", {})
+    return {k: v for k, v in habs.items() if v.get("estado") == "aprobada"}
+
+
+def buscar_habilidad_por_intencion(texto):
+    """Encuentra la habilidad aprobada que mejor coincida con la intención del usuario."""
+    if not texto or not str(texto).strip():
+        return None, None
+    import unicodedata
+    import acciones
+    t = str(texto).strip().lower()
+    t_norm = unicodedata.normalize("NFD", t)
+    t_limpio = "".join(c for c in t_norm if unicodedata.category(c) != "Mn")
+    t_limpio = t_limpio.replace("contrasina", "contrasena").replace("contrasenia", "contrasena")
+    t_limpio = t_limpio.replace("contraccin", "contrasena").replace("carateles", "caracteres")
+
+    t_palabras = set(re.findall(r"[a-z0-9]+", t_limpio))
+    for p in list(t_palabras):
+        if p.endswith("s"):
+            t_palabras.add(p[:-1])
+        if p.endswith("r"):
+            t_palabras.add(p[:-1])
+
+    habs = obtener_habilidades_aprobadas()
+    mejor_nom = None
+    mejor_info = None
+    max_score = 0
+
+    for nombre, info in habs.items():
+        nom_limpio = nombre.replace("_", " ")
+        partes = [p for p in nombre.split("_") if len(p) >= 4]
+        score = 0
+        if nom_limpio in t_limpio or nombre in t_limpio:
+            score += 10
+        for p in partes:
+            p_base = p.rstrip("s").rstrip("r")
+            if any(p_base in up or up in p_base for up in t_palabras if len(up) >= 4):
+                score += 3
+        if score > max_score and score >= 3:
+            max_score = score
+            mejor_nom = nombre
+            mejor_info = info
+
+    if mejor_nom:
+        if mejor_nom not in acciones.VIVAS:
+            _activar_modulo_habilidad(mejor_nom, mejor_info)
+        return mejor_nom, mejor_info
+
+    return None, None
+
+
+def detectar_orden_aprendizaje(texto):
+    """Detecta frases como 'aprende a...', 'aprende una habilidad...', 'aprende a generar...'"""
+    if not texto:
+        return None
+    m = re.search(r"\b(?:aprende\s+(?:a|una\s+habilidad|a\s+hacer)|nueva\s+habilidad|crea\s+(?:una\s+)?habilidad)\b\s*[:,-]?\s*(.+)", str(texto), re.I)
+    return m.group(1).strip() if m else None
+
+
+def detectar_orden_confirmacion(texto):
+    """Detecta frases como 'aprueba la habilidad...', 'confirma habilidad...', 'si, apruebala'."""
+    if not texto:
+        return False, None
+    t = str(texto).strip().lower()
+    patron = r"\b(?:aprueba(?:\s+la)?\s+habilidad|aprobar\s+habilidad|confirma(?:\s+la)?\s+habilidad|confirmar\s+habilidad|activa(?:\s+la)?\s+habilidad|si\s+apruebala|si\s+activala)\b"
+    if re.search(patron, t):
+        m_nom = re.search(r"\b(?:habilidad|para)\s+([a-zA-Z0-9_]+)", t)
+        nom = m_nom.group(1).strip() if m_nom else ""
+        return True, nom
+    return False, None
 
 
 def confirmar_habilidad(arg=None, app=None):

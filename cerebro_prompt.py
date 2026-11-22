@@ -232,7 +232,7 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         "describe ÚNICAMENTE lo visible en [ESTADO ACTUAL EN VIVO DE WINDOWS] tal como aparece AHORA, ignorando cualquier descripción de pantalla previa en el historial. "
         "Si no hay captura disponible, di qué ventana activa detectas sin inventar contenido ni repetir lo visto antes.\n"
         "Telegram: Tienes Telegram vinculado a tu dueño; si pide enviar un mensaje o nota de voz a su Telegram o celular, usa ACCION: avisar_celular | mensaje (o ACCION: enviar_nota_voz | mensaje). Jamás digas que no tienes acceso a Telegram.\n"
-        "Para las acciones con texto usa: ACCION: nombre | detalle (ej: ACCION: avisar_celular | mensaje; ACCION: poner_recordatorio | en 2 minutos | sacar comida; ACCION: buscar | tema; ACCION: activar_modo | normal/programacion/estudio/noche; ACCION: bailar | groove/salsa/fiesta/parar).\n"
+        "Para las acciones con texto usa: ACCION: nombre | detalle (ej: ACCION: avisar_celular | mensaje; ACCION: poner_recordatorio | en 2 minutos | sacar comida; ACCION: escribir_archivo | archivo.txt | contenido redactado completo; ACCION: leer_archivo | archivo.txt; ACCION: buscar | tema; ACCION: activar_modo | normal/programacion/estudio/noche; ACCION: bailar | groove/salsa/fiesta/parar).\n"
         "Cuando ejecutes una ACCION, la RESPUESTA debe ser solo una confirmación brevísima y natural (ej: 'Listo.', 'Ya está en pantalla.', 'Abierto.').\n"
         "EMOCIONES DISPONIBLES: neutral, alegre, calida, seria, preocupada, animada.\n\n"
         "FORMATO OBLIGATORIO:\n"

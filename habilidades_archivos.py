@@ -93,13 +93,42 @@ def escribir_archivo(arg):
     if not arg or not str(arg).strip():
         return False, "Debes especificar la ruta y el contenido (ej: archivo.txt | contenido)."
 
-    if "|" in arg:
-        partes = arg.split("|", 1)
+    arg_str = str(arg).strip()
+    ruta_raw = None
+    contenido = None
+
+    # 1. Soporte para JSON: {"ruta": "...", "contenido": "..."} o {"archivo": ..., "texto": ...}
+    if arg_str.startswith("{") and arg_str.endswith("}"):
+        try:
+            import json
+            datos = json.loads(arg_str)
+            if isinstance(datos, dict):
+                ruta_raw = str(datos.get("ruta") or datos.get("archivo") or datos.get("nombre") or "").strip()
+                contenido = str(datos.get("contenido") or datos.get("texto") or datos.get("body") or "")
+        except Exception:
+            pass
+
+    # 2. Formato pipe estándar: ruta | contenido
+    if ruta_raw is None and "|" in arg_str:
+        partes = arg_str.split("|", 1)
         ruta_raw = partes[0].strip()
         contenido = partes[1]
-    else:
-        ruta_raw = arg.strip()
-        contenido = ""
+
+    # 3. Formato multilínea: primera línea es la ruta y el resto el contenido
+    if ruta_raw is None and "\n" in arg_str:
+        lineas = arg_str.split("\n", 1)
+        primera = lineas[0].strip()
+        if re.search(r"\.[a-zA-Z0-9]{1,5}$", primera) or (len(primera.split()) <= 2 and ("/" in primera or "\\" in primera or "." in primera)):
+            ruta_raw = primera
+            contenido = lineas[1]
+
+    # 4. Caso de solo ruta sin contenido ni separador
+    if ruta_raw is None:
+        ruta_raw = arg_str
+        return False, f"Faltó el texto a escribir en '{ruta_raw}'. Formato requerido: {ruta_raw} | <contenido completo a redactar>"
+
+    if contenido is None:
+        return False, f"Faltó el texto a escribir en '{ruta_raw}'. Formato requerido: {ruta_raw} | <contenido completo a redactar>"
 
     valido, ruta_abs, motivo = validar_ruta(ruta_raw, modo="escritura")
     if not valido:

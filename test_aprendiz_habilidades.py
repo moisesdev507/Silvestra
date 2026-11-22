@@ -1,9 +1,11 @@
 """Pruebas unitarias para recordatorios sin falso bloqueo, habilidades de archivos y aprendiz de habilidades."""
+import json
 import os
 import unittest
 
 import acciones
 import aprendiz_habilidades
+import calidad_respuesta
 import habilidades_archivos
 import memoria_formacion
 import recordatorios
@@ -13,6 +15,7 @@ from respuesta_flujo import responder_flujo
 class DummyCerebro:
     def __init__(self):
         self.app = None
+        self.memoria = None
         self.historial = []
 
 
@@ -65,6 +68,26 @@ class TestHabilidadesArchivos(unittest.TestCase):
         self.assertTrue(ok_l)
         self.assertIn("Contenido de prueba unitaria", contenido)
 
+    def test_rechazo_solo_nombre_sin_contenido(self):
+        ok, msg = habilidades_archivos.escribir_archivo("ideas-web.txt")
+        self.assertFalse(ok)
+        self.assertIn("Faltó el texto a escribir", msg)
+
+    def test_escritura_formatos_json_y_multilinea(self):
+        # JSON
+        dato_json = json.dumps({"ruta": self.test_file, "contenido": "Texto via JSON"})
+        ok, msg = habilidades_archivos.escribir_archivo(dato_json)
+        self.assertTrue(ok)
+        _, c1 = habilidades_archivos.leer_archivo(self.test_file)
+        self.assertIn("Texto via JSON", c1)
+
+        # Multilínea
+        dato_multi = f"{self.test_file}\nLinea uno de ideas\nLinea dos de ideas"
+        ok2, msg2 = habilidades_archivos.escribir_archivo(dato_multi)
+        self.assertTrue(ok2)
+        _, c2 = habilidades_archivos.leer_archivo(self.test_file)
+        self.assertIn("Linea uno de ideas", c2)
+
     def test_listar_archivos_workspace(self):
         habilidades_archivos.escribir_archivo(f"{self.test_file} | Datos")
         ok, listado = habilidades_archivos.listar_archivos()
@@ -80,6 +103,18 @@ class TestHabilidadesArchivos(unittest.TestCase):
         ok, msg = habilidades_archivos.escribir_archivo("../config.py | hack")
         self.assertFalse(ok)
         self.assertIn("denegado", msg.lower())
+
+
+class TestFiltroCalidadContrasenas(unittest.TestCase):
+    def test_no_falso_positivo_token_corrupto_en_contrasena(self):
+        f1 = "Aquí tienes una contraseña segura de 16 caracteres: V9k!"
+        valido, motivo = calidad_respuesta.analizar_calidad_texto(f1)
+        self.assertTrue(valido, f"Frase válida rechazada: {motivo}")
+
+    def test_token_alfanumerico_no_es_corrupto(self):
+        self.assertFalse(calidad_respuesta.es_token_corrupto("V9k"))
+        self.assertFalse(calidad_respuesta.es_token_corrupto("p4ssw0rd"))
+        self.assertFalse(calidad_respuesta.es_token_corrupto("token123"))
 
 
 class TestAprendizHabilidades(unittest.TestCase):
@@ -108,20 +143,26 @@ class TestAprendizHabilidades(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("restringido", m.lower())
 
-    def test_ciclo_aprender_y_confirmar_habilidad(self):
-        nom = "calculadora_suma_test"
-        ok_p, msg_p = aprendiz_habilidades.aprender_habilidad(f"{nom} | Suma numeros")
-        self.assertTrue(ok_p)
-        self.assertIn("He preparado la nueva habilidad", msg_p)
+    def test_flujo_voz_aprender_aprobar_y_ejecutar_con_errata_whisper(self):
+        cerebro = DummyCerebro()
 
-        ok_c, msg_c = aprendiz_habilidades.confirmar_habilidad(nom)
-        self.assertTrue(ok_c)
-        self.assertIn("aprobada", msg_c.lower())
+        # 1. Aprender habilidad
+        texto_aprender = "Aprende a generar contraseñas seguras"
+        msg_a, acc_a, emo_a = responder_flujo(cerebro, texto_aprender, None)
+        self.assertEqual(acc_a, "aprender_habilidad")
+        self.assertIn("He preparado la nueva habilidad", msg_a)
 
-        # Probar ejecución a través de acciones
-        ok_e, res_e = acciones.ejecutar(nom, "arg_prueba")
-        self.assertTrue(ok_e)
-        self.assertIn("arg_prueba", res_e)
+        # 2. Confirmar habilidad
+        texto_conf = "Aprueba la habilidad de generar contraseñas"
+        msg_c, acc_c, emo_c = responder_flujo(cerebro, texto_conf, None)
+        self.assertEqual(acc_c, "confirmar_habilidad")
+        self.assertIn("aprobada con éxito", msg_c)
+
+        # 3. Ejecutar con errata común de Whisper ("contrasiña")
+        texto_ejec = "Genera una contrasiña"
+        msg_e, acc_e, emo_e = responder_flujo(cerebro, texto_ejec, None)
+        self.assertIn("generar_contrasenas", acc_e)
+        self.assertIn("ejecutada", msg_e)
 
 
 if __name__ == "__main__":
