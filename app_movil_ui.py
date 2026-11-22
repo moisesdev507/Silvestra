@@ -139,4 +139,21 @@ def despachar_get_movil(handler: Any, path: str) -> bool:
             pass
         return True
 
+    if p in ("/movil/cert.pem", "/movil/cert", "/movil/lyris_cert.pem", "/cert.pem", "/lyris_cert.pem", "/api/movil/cert"):
+        import os
+        cert_path = "hud_cert.pem"
+        if os.path.exists(cert_path):
+            with open(cert_path, "rb") as f:
+                raw_cert = f.read()
+            handler.send_response(200)
+            handler.send_header("Content-Type", "application/x-pem-file")
+            handler.send_header("Content-Disposition", 'attachment; filename="lyris_cert.pem"')
+            handler.send_header("Content-Length", str(len(raw_cert)))
+            handler.end_headers()
+            try:
+                handler.wfile.write(raw_cert)
+            except OSError:
+                pass
+            return True
+
     return False

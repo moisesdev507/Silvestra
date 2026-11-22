@@ -46,6 +46,14 @@ class TestAppMovilPWA(unittest.TestCase):
             png_bytes = amui.generar_icono_png(tam)
             self.assertTrue(png_bytes.startswith(b"\x89PNG\r\n\x1a\n"))
 
+    def test_despachar_descarga_certificado_ca(self):
+        handler_mock = MagicMock()
+        ok = amui.despachar_get_movil(handler_mock, "/movil/cert.pem")
+        self.assertTrue(ok)
+        handler_mock.send_response.assert_called_with(200)
+        handler_mock.send_header.assert_any_call("Content-Type", "application/x-pem-file")
+        handler_mock.send_header.assert_any_call("Content-Disposition", 'attachment; filename="lyris_cert.pem"')
+
 
 class TestSeguridadRedTailscaleYLAN(unittest.TestCase):
     """Verifica el soporte para Tailscale CGNAT (100.64.0.0/10) y subredes privadas."""
@@ -127,6 +135,21 @@ class TestAudioYConversacionMovil(unittest.TestCase):
         self.assertTrue(data["ok"])
         self.assertEqual(data["respuesta"], "Todo operativo.")
         self.assertEqual(data["emocion"], "alegre")
+
+    def test_manejar_http_tts_endpoint(self):
+        handler_mock = MagicMock()
+        payload = json.dumps({"texto": "Hola, voz en segundo plano", "emocion": "alegre"}).encode("utf-8")
+        handler_mock.headers = {"Content-Type": "application/json", "Content-Length": str(len(payload))}
+        handler_mock.rfile.read.return_value = payload
+        app_mock = MagicMock()
+
+        with patch("app_movil_audio.sintetizar_respuesta_movil", return_value="fake_mp3_base64"):
+            code, data = ama.manejar_http_movil(handler_mock, app_mock, "/api/movil/tts")
+
+        self.assertEqual(code, 200)
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["audio_base64"], "fake_mp3_base64")
+        self.assertEqual(data["mime"], "audio/mpeg")
 
 
 if __name__ == "__main__":

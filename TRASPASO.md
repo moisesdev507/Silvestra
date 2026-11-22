@@ -29,3 +29,7 @@ Asistente modular Python/Windows con avatar PySide6, voz/escucha, Context Engine
     - `memoria_progreso.py`: Hitos técnicos, calibración socrática en `cerebro_mentor` y reporte de evolución como programador.
     - `memoria_asociativa.py`: Consulta unificada (resúmenes + grafo + RAG) en una sola llamada compacta (<= 600 chars).
     - `app_movil_*.py`: Endpoint síncrono `POST /api/movil/chat` e íconos PNG (`192x192` y `512x512`) generados con Pillow en memoria.
+11. **Audio bidireccional móvil, UX rápida y certificado CA (`app_movil_audio.py`, `app_movil_html.py`, `app_movil_ui.py`):**
+    - `app_movil_audio.py`: Endpoint `POST /api/movil/tts` para síntesis desacoplada MP3 en memoria (`mime: audio/mpeg`).
+    - `app_movil_html.py`: Desbloqueo de audio en primer toque Android, indicador `"Lyris está pensando..."`, botón `🔊 Voz` y replay `🔊` en cada burbuja.
+    - `app_movil_ui.py`: Descarga de certificado CA `hud_cert.pem` en `/movil/cert.pem` para instalación segura en Android.

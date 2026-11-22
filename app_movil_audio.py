@@ -148,6 +148,7 @@ def procesar_comando_texto_movil(app: Any, texto: str, sintetizar_voz: bool = Tr
             "accion": accion,
             "emocion": emo,
             "audio_base64": audio_b64,
+            "mime": "audio/mpeg" if audio_b64 else "",
         }
 
 
@@ -218,11 +219,32 @@ def manejar_http_chat(handler: Any, app: Any) -> tuple[int, Dict[str, Any]]:
         return 500, {"ok": False, "error": f"Error procesando turno: {e}"}
 
 
+def manejar_http_tts(handler: Any, app: Any) -> tuple[int, Dict[str, Any]]:
+    """Sintetiza texto bajo demanda a MP3 base64 para reproducción ágil en cliente móvil."""
+    try:
+        size = int(handler.headers.get("Content-Length", 0))
+        data = json.loads(handler.rfile.read(size).decode("utf-8")) if size > 0 else {}
+    except Exception as e:
+        return 400, {"ok": False, "error": f"JSON inválido: {e}"}
+
+    texto = str(data.get("texto", "")).strip()
+    if not texto:
+        return 400, {"ok": False, "error": "Texto vacío"}
+
+    emocion = str(data.get("emocion", "neutral"))
+    audio_b64 = sintetizar_respuesta_movil(texto, emocion=emocion)
+    if audio_b64:
+        return 200, {"ok": True, "audio_base64": audio_b64, "mime": "audio/mpeg"}
+    return 500, {"ok": False, "error": "Fallo en síntesis TTS"}
+
+
 def manejar_http_movil(handler: Any, app: Any, path: str) -> tuple[int, Dict[str, Any]]:
     """Despachador unificado para los endpoints móviles /api/movil/*."""
     p = path.split("?", 1)[0]
     if p == "/api/movil/chat":
         return manejar_http_chat(handler, app)
+    if p == "/api/movil/tts":
+        return manejar_http_tts(handler, app)
     return manejar_http_voz(handler, app)
 
 
