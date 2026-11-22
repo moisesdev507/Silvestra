@@ -166,8 +166,18 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
     if len(hilos_res) > 100:
         hilos_res = hilos_res[:100].rsplit(" ", 1)[0] + "..."
 
+    grafo_texto = ""
+    try:
+        import cerebro_grafo
+        grafo_res = cerebro_grafo.consultar_contexto_grafo(texto_actual, limite=4)
+        if grafo_res:
+            grafo_texto = grafo_res.strip() + "\n"
+    except Exception:
+        pass
+
     memoria_texto = (
         f"[RECUERDOS HISTÓRICOS — PASADO]\nLo que sabes (fechas relativas al día en que se guardó):\n{hechos_str}\n"
+        f"{grafo_texto}"
         "Cada recuerdo conserva su procedencia y confianza. Las contradicciones son hipótesis y deben exponerse con ambas fuentes.\n"
         "Regla temporal: 'hoy'/'mañana' en un recuerdo son de su fecha guardada. Si el evento ya pasó, PROHIBIDO preguntar por él en futuro (ignóralo o pregunta cómo salió).\n"
         f"Ideas anotadas: {ideas_res}.\n"

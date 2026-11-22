@@ -109,7 +109,7 @@ _CONECTORES_COLGANTES = {
 
 
 _PATRON_CORTE = re.compile(
-    r"(?<!\b[ap]\. m)(?<!\b[ap]\.m)(?<!\b[ap])(?<!\b[0-9])[.!?]+(?:\s+(?=[A-ZÁÉÍÓÚ¡¿0-9])|\n+|$)",
+    r"(?<!\b[ap]\. m)(?<!\b[ap]\.m)(?<!\b[ap])(?<!\b[0-9])[.!?]+(?:\s+(?=[A-ZÁÉÍÓÚ¡¿])|\n+|$)",
     re.I,
 )
 
@@ -121,6 +121,12 @@ def _es_oracion_completa(texto):
         return False
     if re.search(r"\b[ap]\.$", t, re.I):
         return False
+    # No cortar en extensiones de archivos
+    if re.search(r"\.(?:py|txt|json|md|csv|log|html|js|exe|bat|db|tmp)[.!?]?$", t, re.I):
+        return False
+    # No cortar si termina en contraseña o token alfanumérico mixto
+    if re.search(r"\b(?:[a-zA-Z]+[0-9]+|[0-9]+[a-zA-Z]+)[!.]?$", t):
+        return False
     palabras = [w.lower() for w in re.findall(r"[a-záéíóúñ0-9]+", t)]
     if palabras and palabras[-1] in _CONECTORES_COLGANTES:
         return False
@@ -131,8 +137,17 @@ def _cortar(parcial, emitido, final=False):
     """Saca las oraciones completas nuevas sin cortar en conectores ni abreviaturas."""
     pendiente = parcial[emitido:]
     frases, inicio = [], 0
-    # Cortar por signos de puntuación evitando romper 'a. m.', números o conectores
+    # Cortar por signos de puntuación evitando romper 'a. m.', números, contraseñas o extensiones
     for m in _PATRON_CORTE.finditer(pendiente):
+        precedente = pendiente[:m.start()]
+        # Evitar cortar extensiones de archivo como script.py o datos.json
+        if re.search(r"\.(?:py|txt|json|md|csv|log|html|js|exe|bat|db|tmp)$", precedente, re.I):
+            continue
+        # Evitar cortar en contraseñas o tokens alfanuméricos con signos internos (ej: V9k!)
+        if re.search(r"\b(?:[a-zA-Z]+[0-9]+|[0-9]+[a-zA-Z]+)[!.]?$", precedente):
+            if not final or m.end() < len(pendiente):
+                continue
+
         frag = pendiente[inicio:m.end()].strip().replace("*", "")
         if _es_oracion_completa(frag):
             frases.append(frag)

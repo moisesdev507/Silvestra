@@ -54,6 +54,60 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
             cerebro._podar_historial()
         return msg, "poner_recordatorio", "alegre"
 
+    creador = getattr(getattr(app, "memoria", None), "creador", "Moisés") or "Moisés"
+
+    try:
+        import cerebro_grafo
+        cerebro_grafo.extraer_y_guardar_hechos(texto, creador=creador)
+    except Exception:
+        pass
+
+    try:
+        import cerebro_entrenamiento
+        es_lec, msg_lec = cerebro_entrenamiento.detectar_y_guardar_leccion(texto, creador=creador)
+        if es_lec:
+            if callable(al_frase):
+                al_frase(msg_lec)
+            cerebro.historial.append({"role": "user", "content": texto})
+            cerebro.historial.append({"role": "assistant", "content": msg_lec})
+            if hasattr(cerebro, "_podar_historial"):
+                cerebro._podar_historial()
+            return msg_lec, "guardar_leccion", "alegre"
+
+        nom_difuso, info_difuso = cerebro_entrenamiento.buscar_habilidad_difusa(texto)
+        if nom_difuso:
+            import acciones
+            ok_d, res_d = acciones.ejecutar(nom_difuso, texto)
+            if ok_d and res_d:
+                msg_d = str(res_d)
+                if callable(al_frase):
+                    al_frase(msg_d)
+                cerebro.historial.append({"role": "user", "content": texto})
+                cerebro.historial.append({"role": "assistant", "content": msg_d})
+                if hasattr(cerebro, "_podar_historial"):
+                    cerebro._podar_historial()
+                return msg_d, nom_difuso, "alegre"
+
+        es_proactivo, msg_proactivo = cerebro_entrenamiento.gestionar_autoaprendizaje_proactivo(texto, app=app)
+        if es_proactivo:
+            if callable(al_frase):
+                al_frase(msg_proactivo)
+            cerebro.historial.append({"role": "user", "content": texto})
+            cerebro.historial.append({"role": "assistant", "content": msg_proactivo})
+            if hasattr(cerebro, "_podar_historial"):
+                cerebro._podar_historial()
+            return msg_proactivo, "autoaprendizaje_proactivo", "animada"
+    except Exception as e:
+        print(f"[entrenamiento] Error: {e}", flush=True)
+
+    try:
+        import cerebro_planificador
+        atendido_mp, resp_mp, acts_mp = cerebro_planificador.procesar_turno_multipaso(cerebro, texto, al_frase=al_frase)
+        if atendido_mp:
+            return resp_mp, "multipaso", "alegre"
+    except Exception as e:
+        print(f"[planificador] Error: {e}", flush=True)
+
     import aprendiz_habilidades
     es_conf, nom_hab = aprendiz_habilidades.detectar_orden_confirmacion(texto)
     if es_conf:
