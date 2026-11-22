@@ -127,10 +127,11 @@ def atender_evento(app, tipo, texto):
             respuesta, accion, emocion = str(texto), None, "neutral"
 
         if accion and remoto:
-            app._ecosistema_origen = None
             import ecosistema_eventos
-            ecosistema_eventos.bloquear_accion_remota(app, remoto, accion)
-            return
+            if not ecosistema_eventos.accion_autorizada_remota(app, remoto, accion):
+                app._ecosistema_origen = None
+                ecosistema_eventos.bloquear_accion_remota(app, remoto, accion)
+                return
 
         if accion and hasattr(app, "voz_dueno") and app.voz_dueno:
             permitido, frase_negativa = app.voz_dueno.autorizar_accion(accion)

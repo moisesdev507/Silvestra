@@ -161,6 +161,17 @@ class TestCerebroEntrenamiento(unittest.TestCase):
         self.assertIn("contraseña", candidato)
         self.assertNotIn("contrase ", candidato + " ")
 
+    def test_detectar_peticion_tecnica_generador_y_funcion(self):
+        pet1 = "crea un generador de contraseñas"
+        c1 = ce.detectar_peticion_tecnica_nueva(pet1)
+        self.assertIsNotNone(c1)
+        self.assertIn("contraseñas", c1)
+
+        pet2 = "haz una función para calcular hash"
+        c2 = ce.detectar_peticion_tecnica_nueva(pet2)
+        self.assertIsNotNone(c2)
+        self.assertIn("calcular hash", c2)
+
     def test_propuesta_proactiva_confirmar_y_activar_inmediato(self):
         slug = "una_contrasena_personalizada_test"
         nom_hab = f"habilidad_{slug}.py"
@@ -222,6 +233,29 @@ class TestVozSinCortes(unittest.TestCase):
         t3 = "Primera oración terminada. Segunda oración concluida."
         frases3, _ = cp._cortar(t3, 0, final=True)
         self.assertEqual(len(frases3), 2)
+
+
+class TestEcosistemaAutorizacion(unittest.TestCase):
+    def test_autorizacion_sesion_lan_dueno(self):
+        import ecosistema_eventos
+        id_dueno = {
+            "device_id": "test-device-uuid",
+            "session_id": "test-session-uuid",
+            "tipo_dispositivo": "tablet_hud",
+            "scopes": ["operation:request", "ui:control", "state:read"],
+        }
+        self.assertTrue(ecosistema_eventos.accion_autorizada_remota(None, id_dueno, "escribir_archivo test.txt | hola"))
+        self.assertTrue(ecosistema_eventos.accion_autorizada_remota(None, id_dueno, "leer_archivo test.txt"))
+        self.assertTrue(ecosistema_eventos.accion_autorizada_remota(None, id_dueno, "poner_recordatorio tomar agua en 5 minutos"))
+
+        id_invalido = {
+            "device_id": "malicious-device",
+            "tipo_dispositivo": "desconocido",
+            "scopes": [],
+        }
+        self.assertFalse(ecosistema_eventos.accion_autorizada_remota(None, id_invalido, "escribir_archivo test.txt | hola"))
+        self.assertFalse(ecosistema_eventos.accion_autorizada_remota(None, {}, "escribir_archivo test.txt | hola"))
+        self.assertFalse(ecosistema_eventos.accion_autorizada_remota(None, None, "escribir_archivo test.txt | hola"))
 
 
 if __name__ == "__main__":

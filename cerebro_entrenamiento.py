@@ -94,7 +94,12 @@ def detectar_peticion_tecnica_nueva(texto):
         return None
 
     t = str(texto).strip()
-    patron = r"\b(?:calcula|genera|convierte|obten|obtén|extrae|crea\s+un[a]?|haz\s+un[a]?)\s+([a-zA-Z0-9_áéíóúüñÁÉÍÓÚÜÑ\s\-]+)"
+    patron = (
+        r"\b(?:calcula|genera|convierte|obten|obtén|extrae|"
+        r"crea\s+(?:un[a]?\s+)?(?:generador|funcion|función|habilidad|script|herramienta)|"
+        r"haz\s+(?:un[a]?\s+)?(?:funcion|función|habilidad|script|herramienta)|"
+        r"crea\s+un[a]?|haz\s+un[a]?)\s+(?:para\s+|de\s+)?([a-zA-Z0-9_áéíóúüñÁÉÍÓÚÜÑ\s\-]+)"
+    )
     m = re.search(patron, t, re.I)
     if not m:
         return None

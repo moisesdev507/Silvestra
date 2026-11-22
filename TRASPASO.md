@@ -47,3 +47,6 @@ Asistente personal modular Python/Windows con avatar PySide6, voz/escucha, perce
    - Extracción de peticiones técnicas con soporte Unicode completo (`áéíóúüñ`), impidiendo que palabras como *'contraseña'* se corten en *'contrase'*.
    - Activación inmediata de habilidades en 1 paso tras confirmación y eliminación de propuestas duplicadas en log.
    - Saneo de métrica de latencia en turnos de texto/HUD descartando marcas de voz obsoletas (> 30s).
+14. **Autorización directa HUD LAN y captura de habilidades (`ecosistema_eventos.py`, `eventos.py`, `cerebro_entrenamiento.py`):**
+   - Autorización en `ecosistema_eventos.py` para sesiones LAN del dueño (`tablet_hud`, `tablet`), suprimiendo el falso bloqueo de aprobación pendiente y cortes de voz.
+   - Soporte en `detectar_peticion_tecnica_nueva` para verbos y construcciones imperativas (*"crea un generador"*, *"haz una función"*), asegurando propuesta, confirmación y activación directa.
