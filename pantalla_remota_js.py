@@ -96,7 +96,7 @@ JS_JARVIS = """
       connEl.textContent = 'EN LÍNEA';
       connEl.style.color = 'var(--green)';
     }
-    if (window.fijarEstadoEnlaceContexto) window.fijarEstadoEnlaceContexto('CONECTADO');
+    if (window.fijarEstadoEnlaceContexto) window.fijarEstadoEnlaceContexto('EN LÍNEA');
   }
 
   function marcarReconectando() {
@@ -223,7 +223,7 @@ JS_JARVIS = """
     if (window._hudToken) h['X-Device-Token'] = window._hudToken;
     return h;
   }
-
+  window._hdr = _hdr;
   const sseUrl = '/eventos';
   let evtSource = null;
 
@@ -238,7 +238,7 @@ JS_JARVIS = """
     };
     evtSource.onerror = function() {
       fetch('/api/panel/estado', { headers: _hdr() })
-        .then(r => r.json()).then(d => aplicarDatos(d)).catch(() => marcarReconectando());
+        .then(r => r.json()).then(d => aplicarDatos(d)).catch(() => {});
     };
   }
 
@@ -282,17 +282,30 @@ JS_JARVIS = """
     })
     .then(function(r) {
       var status = r.status;
-      return r.json().then(function(d) { return { d: d, status: status }; });
+      return r.text().then(function(raw) {
+        var d = {};
+        try { d = JSON.parse(raw); } catch(e) { d = { ok: r.ok }; }
+        return { d: d, status: status, ok: r.ok };
+      });
     })
     .then(function(res) {
       var d = res.d;
+      var exitoso = res.ok && (d.ok !== false);
       if (fb) {
-        fb.textContent = d.ok ? '✔ ENVIADO' : ('✖ HTTP ' + res.status + ' — ' + (d.error || 'Error'));
-        fb.style.color  = d.ok ? 'var(--green)' : '#f87171';
+        fb.textContent = exitoso ? '✔ ENVIADO' : ('✖ HTTP ' + res.status + ' — ' + (d.error || 'Error'));
+        fb.style.color  = exitoso ? 'var(--green)' : '#f87171';
       }
-      if (d.ok && inp) inp.value = '';
+      if (exitoso) {
+        if (inp) inp.value = '';
+        marcarConectado();
+      }
     })
-    .catch(function() { if (fb) { fb.textContent = '✖ SIN CONEXIÓN'; fb.style.color = '#f87171'; } })
+    .catch(function(err) {
+      if (fb) {
+        fb.textContent = '✖ SIN CONEXIÓN (' + (err && err.message ? err.message.slice(0, 20) : 'fetch') + ')';
+        fb.style.color = '#f87171';
+      }
+    })
     .finally(function() { _cmdPending = false; setTimeout(function() { if (fb) fb.textContent = ''; }, 3500); });
   }
 
@@ -302,6 +315,7 @@ JS_JARVIS = """
   }
   var btnEnviar = document.getElementById('btnEnviar');
   if (btnEnviar) { btnEnviar.addEventListener('click', enviarComando); }
+  window.enviarComando = enviarComando;
 
 })();
 """

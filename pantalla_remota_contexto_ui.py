@@ -223,7 +223,7 @@ JS_CONTEXTO_PANEL = """
     const el = document.getElementById('ctxEnlace');
     if (el) {
       el.textContent = est;
-      el.style.color = est === 'CONECTADO' ? 'var(--green)' : (est === 'RECONECTANDO' ? 'var(--gold)' : '#ef4444');
+      el.style.color = (est === 'EN LÍNEA' || est === 'CONECTADO') ? 'var(--green)' : (est === 'RECONECTANDO' ? 'var(--gold)' : '#ef4444');
     }
   };
 })();

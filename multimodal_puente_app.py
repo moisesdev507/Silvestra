@@ -172,9 +172,12 @@ class SistemaMultimodalSilvestra:
         self._interpretar(obs)
         return dict(ventana)
 
-    def _actualizar_contexto(self):
+    def _actualizar_contexto(self, forzar_en_vivo=False):
         if not self._activo or self._cerrado.is_set():
             return None
+        if forzar_en_vivo:
+            with self._lock:
+                self._ultima_ventana_externa = {}
         try:
             from contexto_windows import obtener_contexto_windows
             actual = self._normalizar_ventana(obtener_contexto_windows())
@@ -190,6 +193,8 @@ class SistemaMultimodalSilvestra:
             respaldo = None
         if respaldo:
             return self._registrar_ventana(respaldo, "zorder")
+        if forzar_en_vivo:
+            return self._registrar_ventana(None, "zorder")
         with self._lock:
             previa = dict(self._ultima_ventana_externa)
         if previa:
@@ -255,7 +260,9 @@ class SistemaMultimodalSilvestra:
                 captura = self._pantalla.submit(self._captura_temporal_segura).result(timeout=2.0)
             except TimeoutError:
                 captura = "captura supero 2 s; se conserva solo el contexto"
-        ventana = self._actualizar_contexto() or dict(self._ultima_ventana_externa)
+        ventana = self._actualizar_contexto(forzar_en_vivo=pide_pantalla) or (
+            {} if pide_pantalla else dict(self._ultima_ventana_externa)
+        )
         situacion = self.interprete.consultar_interpretacion_actual(pregunta).get("respuesta", "")
         estado_audio = "sin observaciones auditivas recientes"
         if self.contexto_audio is not None:

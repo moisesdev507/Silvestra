@@ -76,7 +76,13 @@ def enumerar_ventana_externa():
                             "ejecutable": exe, "clase": clase.value})
             return False
 
-        user32.EnumWindows(tipo_cb(visitar), 0)
+        if not user32.EnumWindows(tipo_cb(visitar), 0) or not hallada:
+            desk = user32.OpenInputDesktop(0, False, 0x0100)
+            if desk:
+                try:
+                    user32.EnumDesktopWindows(desk, tipo_cb(visitar), 0)
+                finally:
+                    user32.CloseDesktop(desk)
         return hallada[0] if hallada else None
     except Exception:
         return None
