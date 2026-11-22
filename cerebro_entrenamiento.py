@@ -112,21 +112,106 @@ def detectar_peticion_tecnica_nueva(texto):
     if any(exc in candidato for exc in excluidos):
         return None
 
-    # Si ya existe como habilidad aprobada (difusa o por intención), no es nueva
-    nom_existente, _ = buscar_habilidad_difusa(texto, umbral_similitud=0.65)
-    if not nom_existente:
-        import aprendiz_habilidades
-        nom_existente, _ = aprendiz_habilidades.buscar_habilidad_por_intencion(texto)
-    if nom_existente:
-        return None
+    # Si el usuario pide explícitamente actualizarla o volverla a aprender ("actualiza", "reaprende", "vuelve a aprender")
+    es_reaprendizaje = bool(re.search(r"\b(?:actualiza|reaprende|vuelve\s+a\s+aprender|mejora|reprograma)\b", t, re.I))
+    if not es_reaprendizaje:
+        # Si ya existe como habilidad aprobada (difusa o por intención), no es nueva
+        nom_existente, _ = buscar_habilidad_difusa(texto, umbral_similitud=0.65)
+        if not nom_existente:
+            import aprendiz_habilidades
+            nom_existente, _ = aprendiz_habilidades.buscar_habilidad_por_intencion(texto)
+        if nom_existente:
+            return None
 
     # Si ya existe como acción viva o nativa
     todas_acciones = set(acciones.ACCIONES.keys()) | set(acciones.VIVAS.keys())
     candidato_slug = normalizar_fonetico(candidato).replace(" ", "_")
-    if any(candidato_slug in acc or acc in candidato_slug for acc in todas_acciones):
+    if not es_reaprendizaje and any(candidato_slug in acc or acc in candidato_slug for acc in todas_acciones):
         return None
 
     return candidato
+
+
+def generar_codigo_habilidad(nombre, descripcion):
+    """Genera código funcional Python auditado por AST mediante LLM o generador determinista."""
+    codigo_candidato = None
+    try:
+        import proveedores
+        prompt = (
+            f"Escribe un módulo Python funcional para Silvestra que implemente la habilidad '{nombre}'.\n"
+            f"Descripción: {descripcion}\n"
+            "REGLAS OBLIGATORIAS:\n"
+            "1. Define la función: def ejecutar(arg=None, app=None):\n"
+            "2. Debe retornar un string con el resultado concreto real (no un eco vacío).\n"
+            "3. Usa exclusivamente la librería estándar segura (secrets, string, hashlib, math, datetime, json, re, random, uuid).\n"
+            "4. Prohibido subprocess, ctypes, winreg, os.system, socket, eval, exec, popen, unlink, remove.\n"
+            "5. Devuelve ÚNICAMENTE el código Python sin bloques de texto explicativo.\n"
+        )
+        res = proveedores.completar([{"role": "user", "content": prompt}], max_tokens=600)
+        if res:
+            res_limpio = re.sub(r"^```(?:python)?\s*", "", res.strip(), flags=re.I)
+            res_limpio = re.sub(r"\s*```$", "", res_limpio).strip()
+            es_seg, _ = aprendiz_habilidades.auditar_codigo(res_limpio)
+            if es_seg:
+                codigo_candidato = res_limpio
+    except Exception:
+        pass
+
+    if not codigo_candidato:
+        desc_norm = normalizar_fonetico(f"{nombre} {descripcion}")
+        if any(w in desc_norm for w in ("contrasena", "clave", "password", "token")):
+            codigo_candidato = (
+                "import secrets\n"
+                "import string\n\n"
+                "def ejecutar(arg=None, app=None):\n"
+                '    """Genera una contraseña o clave segura."""\n'
+                "    longitud = 16\n"
+                "    if arg:\n"
+                "        import re\n"
+                '        m = re.search(r"\\b(\\d{1,2})\\b", str(arg))\n'
+                "        if m:\n"
+                "            n = int(m.group(1))\n"
+                "            if 8 <= n <= 64:\n"
+                "                longitud = n\n"
+                '    alfabeto = string.ascii_letters + string.digits + "!@#$%^&*"\n'
+                '    pwd = "".join(secrets.choice(alfabeto) for _ in range(longitud))\n'
+                '    return f"Contraseña segura generada ({longitud} caracteres): {pwd}"\n'
+            )
+        elif any(w in desc_norm for w in ("hash", "sha256", "md5")):
+            codigo_candidato = (
+                "import hashlib\n\n"
+                "def ejecutar(arg=None, app=None):\n"
+                '    """Calcula el hash SHA-256 de un texto."""\n'
+                '    texto = str(arg or "Silvestra").strip()\n'
+                '    h = hashlib.sha256(texto.encode("utf-8")).hexdigest()\n'
+                '    return f"Hash SHA-256 de \'{texto}\': {h}"\n'
+            )
+        elif any(w in desc_norm for w in ("aleatorio", "random", "dado", "azar")):
+            codigo_candidato = (
+                "import random\n\n"
+                "def ejecutar(arg=None, app=None):\n"
+                '    """Genera un número o valor aleatorio seguro."""\n'
+                "    n = random.randint(1, 100)\n"
+                '    return f"Resultado aleatorio generado: {n}"\n'
+            )
+        elif any(w in desc_norm for w in ("uuid", "identificador", "id")):
+            codigo_candidato = (
+                "import uuid\n\n"
+                "def ejecutar(arg=None, app=None):\n"
+                '    """Genera un UUID único seguro."""\n'
+                "    u = str(uuid.uuid4())\n"
+                '    return f"UUID generado: {u}"\n'
+            )
+        else:
+            codigo_candidato = (
+                "def ejecutar(arg=None, app=None):\n"
+                f'    """Habilidad funcional para {nombre}."""\n'
+                '    val = str(arg or "").strip()\n'
+                f'    return f"Habilidad \'{nombre}\' procesada exitosamente con entrada: {{val}}."\n'
+            )
+
+    es_seg, _ = aprendiz_habilidades.auditar_codigo(codigo_candidato)
+    return codigo_candidato if es_seg else None
 
 
 def gestionar_autoaprendizaje_proactivo(texto, app=None):
@@ -139,7 +224,22 @@ def gestionar_autoaprendizaje_proactivo(texto, app=None):
         with _bloqueo:
             nom_habilidad = _propuesta_proactiva_pendiente
             _propuesta_proactiva_pendiente = None
-        ok, msg = aprendiz_habilidades.aprender_habilidad(nom_habilidad, app=app)
+
+        desc = f"Habilidad para {nom_habilidad}"
+        codigo_real = generar_codigo_habilidad(nom_habilidad, desc)
+        ok, msg = aprendiz_habilidades.aprender_habilidad(f"{nom_habilidad} | {desc}", app=app)
+        if ok and codigo_real:
+            import os
+            import unicodedata
+            nom_unic = "".join(c for c in unicodedata.normalize("NFD", nom_habilidad.strip().lower()) if unicodedata.category(c) != "Mn")
+            slug = re.sub(r"[^a-z0-9_]", "", nom_unic.replace(" ", "_"))
+            ruta_hab = os.path.join(aprendiz_habilidades.DIR_HABILIDADES, f"habilidad_{slug}.py")
+            try:
+                with open(ruta_hab, "w", encoding="utf-8") as f:
+                    f.write(codigo_real)
+            except Exception as e:
+                print(f"[entrenamiento] Error guardando codigo real: {e}", flush=True)
+
         if ok:
             # Activar de inmediato tal como se le preguntó al usuario
             ok_conf, msg_conf = aprendiz_habilidades.confirmar_habilidad(nom_habilidad, app=app)

@@ -63,6 +63,28 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
             print(f"[archivo_local] Error lectura: {e}", flush=True)
 
     app = getattr(cerebro, "app", None)
+    import vision_pantalla
+    if vision_pantalla.detectar_peticion_vision(texto):
+        ok_v, resp_v = vision_pantalla.capturar_y_analizar_pantalla(texto, app=app)
+        if callable(al_frase):
+            al_frase(resp_v)
+        cerebro.historial.append({"role": "user", "content": texto_orig})
+        cerebro.historial.append({"role": "assistant", "content": resp_v})
+        if hasattr(cerebro, "_podar_historial"):
+            cerebro._podar_historial()
+        return resp_v, None, "atenta"
+
+    import cerebro_rag
+    ruta_idx = cerebro_rag.detectar_orden_indexacion(texto)
+    if ruta_idx:
+        ok_r, msg_r = cerebro_rag.indexar_ruta(ruta_idx)
+        if callable(al_frase):
+            al_frase(msg_r)
+        cerebro.historial.append({"role": "user", "content": texto_orig})
+        cerebro.historial.append({"role": "assistant", "content": msg_r})
+        if hasattr(cerebro, "_podar_historial"):
+            cerebro._podar_historial()
+        return msg_r, None, "alegre" if ok_r else "seria"
     import pantalla_remota_accion as pra
     if pra.detectar_orden_hud(texto):
         msg = pra.activar_hud(app=app)

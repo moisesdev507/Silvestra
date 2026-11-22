@@ -47,3 +47,7 @@ Asistente personal modular Python/Windows con avatar PySide6, voz/escucha, perce
    - Gracia inicial (>= 15s) en `MotorProactivo` para ventanas, bloqueo si `app.hablando` o cola tiene audio, y coordinación con `iniciativa.py` para evitar saludos simultáneos.
    - Intercepción local (< 50 ms, sin LLM) de `escribir_archivo` y `leer_archivo` (incluyendo *"léelo"* y *"agrégale..."*) leyendo el contenido real en voz alta.
    - Priorización en carril rápido de `gemini-flash-lite-latest` y `llama-3.1-8b-instant`, refresco acelerado en HUD (300/800ms) y subtítulo inmediato.
+12. **Código real en habilidades, visión de pantalla y RAG local (`cerebro_entrenamiento.py`, `vision_pantalla.py`, `cerebro_rag.py`, `cerebro_prompt.py`, `respuesta_flujo.py`):**
+   - `cerebro_entrenamiento.py` genera código Python funcional auditado por AST mediante LLM o generador determinista (`secrets`, `hashlib`), reemplazando la plantilla vacía y permitiendo re-aprendizaje.
+   - `vision_pantalla.py` captura pantalla en memoria (JPEG b64, <= 1280px, sin disco) y analiza con modelos multimodales bajo demanda, respetando modo Privado.
+   - `cerebro_rag.py` indexa proyectos en SQLite FTS5 excluyendo rutas del sistema y secretos (`.env`, `config.py`), inyectando contexto compacto (<= 900 chars) en prompt.

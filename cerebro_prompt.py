@@ -291,6 +291,11 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
     bloques.append(memoria_texto)
     if ctx_texto:
         bloques.append(ctx_texto)
+    try:
+        import cerebro_rag
+        rag_ctx = cerebro_rag.consultar_rag(texto_actual, limite=2)
+        if rag_ctx: bloques.append(rag_ctx)
+    except Exception: pass
     if perfil_texto:
         bloques.append(f"Perfil del usuario:\n{perfil_texto}")
     if corr_texto:
