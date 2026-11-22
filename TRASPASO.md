@@ -43,11 +43,15 @@ Asistente personal modular Python/Windows con avatar PySide6, voz/escucha, perce
 10. **Autorización directa HUD LAN y captura técnica (`ecosistema_eventos.py`, `eventos.py`):**
    - Autorización automática en `ecosistema_eventos.py` para sesiones LAN del dueño (`tablet_hud`, `tablet`).
    - Captura de construcciones imperativas (*"crea un generador"*, *"haz una función"*).
-11. **Cero atropello de voz, ejecución local y aceleración HUD (`cerebro_proactivo.py`, `iniciativa.py`, `respuesta_flujo.py`, `proveedores_cadenas.py`, `pantalla_remota_js.py`, `pantalla_remota_datos.py`):**
-   - Gracia inicial (>= 15s) en `MotorProactivo` para ventanas, bloqueo si `app.hablando` o cola tiene audio, y coordinación con `iniciativa.py` para evitar saludos simultáneos.
-   - Intercepción local (< 50 ms, sin LLM) de `escribir_archivo` y `leer_archivo` (incluyendo *"léelo"* y *"agrégale..."*) leyendo el contenido real en voz alta.
-   - Priorización en carril rápido de `gemini-flash-lite-latest` y `llama-3.1-8b-instant`, refresco acelerado en HUD (300/800ms) y subtítulo inmediato.
-12. **Código real en habilidades, visión de pantalla y RAG local (`cerebro_entrenamiento.py`, `vision_pantalla.py`, `cerebro_rag.py`, `cerebro_prompt.py`, `respuesta_flujo.py`):**
-   - `cerebro_entrenamiento.py` genera código Python funcional auditado por AST mediante LLM o generador determinista (`secrets`, `hashlib`), reemplazando la plantilla vacía y permitiendo re-aprendizaje.
-   - `vision_pantalla.py` captura pantalla en memoria (JPEG b64, <= 1280px, sin disco) y analiza con modelos multimodales bajo demanda, respetando modo Privado.
-   - `cerebro_rag.py` indexa proyectos en SQLite FTS5 excluyendo rutas del sistema y secretos (`.env`, `config.py`), inyectando contexto compacto (<= 900 chars) en prompt.
+11. **Cero atropello de voz, ejecución local y aceleración HUD (`cerebro_proactivo.py`, `respuesta_flujo.py`, `pantalla_remota_*.py`):**
+   - Gracia inicial (>= 15s) en `MotorProactivo`, bloqueo si `app.hablando` o cola con audio, y coordinación con `iniciativa.py`.
+   - Intercepción local (< 50 ms) de `escribir_archivo` y `leer_archivo` (con anáforas) leyendo contenido real.
+   - Carril rápido de modelos ligeros, refresco acelerado en HUD (300/800ms) y subtítulo inmediato.
+12. **Código real en habilidades, visión y RAG local (`cerebro_entrenamiento.py`, `vision_pantalla.py`, `cerebro_rag.py`):**
+   - Generación de código Python funcional auditado por AST mediante LLM o generador determinista (`secrets`, `hashlib`).
+   - Captura y análisis multimodal en memoria (JPEG b64, <= 1280px, sin disco) bajo demanda y modo Privado.
+   - Indexación en SQLite FTS5 excluyendo rutas del sistema y secretos (`.env`), con contexto compacto (<= 900 chars).
+13. **Modo Mentora socrática, presentación dinámica y nuevas expresiones (`cerebro_mentor.py`, `presentacion.py`, `cara_emociones.py`, `cara_dibujo.py`):**
+   - `cerebro_mentor.py`: Gestor socrático con activación por voz, directiva compacta (218 chars <= 220) y consolidación en grafo.
+   - `presentacion.py`: Detección de órdenes ("preséntate", "quién eres") y presentación viva (habilidades, proyectos, `orgullosa`).
+   - `cara_emociones.py` y `cara_dibujo.py`: Rasgos visuales y prosodia Edge-TTS (`concentrada`, `firme`, `orgullosa`) delegados limpiamente.

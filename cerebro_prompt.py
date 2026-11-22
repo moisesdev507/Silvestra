@@ -156,6 +156,13 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
             ctx_texto = (ctx_texto + "\n" + res_t).strip()
     except Exception:
         pass
+    try:
+        import cerebro_mentor
+        dir_m = cerebro_mentor.obtener_directiva_mentor()
+        if dir_m:
+            ctx_texto = (ctx_texto + "\n" + dir_m).strip()
+    except Exception:
+        pass
 
     if es_invitado:
         hechos_str = f"- (Protegido: datos privados de {m.creador} ocultos para invitados)"

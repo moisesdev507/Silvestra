@@ -16,16 +16,10 @@ AMARILLO = QColor(255, 209, 102)
 ROSA = QColor(255, 140, 160)
 GRIS = QColor(120, 132, 160)
 
-# Perfiles de expresión con mayor contraste emocional
-# (cejas_y, cejas_ang, ojos_apertura, boca_curva, boca_ancho, rubor_alpha, color_base)
-PERFILES_EMOCION = {
-    "neutral":    ( 0.0,   0.0, 1.00,  1.0, 28.0,  90.0, QColor(79, 209, 197)),
-    "alegre":     (-5.0,   3.5, 1.10,  2.0, 38.0, 170.0, QColor(16, 185, 129)),
-    "animada":    (-6.5,   4.0, 1.20,  2.2, 40.0, 180.0, QColor(245, 158, 11)),
-    "calida":     (-2.5,   2.0, 0.95,  1.4, 32.0, 160.0, QColor(244, 114, 182)),
-    "seria":      ( 3.5,  -4.5, 0.80,  0.0, 20.0,  40.0, QColor(59, 130, 246)),
-    "preocupada": (-5.5,   6.5, 1.12, -0.7, 22.0,  70.0, QColor(147, 51, 234)),
-}
+import cara_emociones
+
+# Perfiles de expresión y rasgos faciales (delegados a cara_emociones)
+PERFILES_EMOCION = cara_emociones.RASGOS_FACIALES
 
 
 def con_alpha(color, a):
@@ -66,7 +60,7 @@ def pintar(self):
     # Suavizado de transición emocional orgánico (factor ~0.14 por cuadro para evitar cambios bruscos)
     emo_clave = getattr(self, "emocion_objetivo", "neutral") or "neutral"
     t_cejas_y, t_cejas_ang, t_ojos_ap, t_boca_curva, t_boca_ancho, t_rubor, t_color = (
-        PERFILES_EMOCION.get(emo_clave, PERFILES_EMOCION["neutral"])
+        cara_emociones.obtener_rasgos(emo_clave)
     )
 
     factor = 0.14

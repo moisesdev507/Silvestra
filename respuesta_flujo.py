@@ -5,6 +5,15 @@ import proveedores
 import proveedores_cadenas as pc
 
 
+def _reg_turno(cerebro, u_txt, a_txt, al_frase=None):
+    if callable(al_frase):
+        al_frase(a_txt)
+    cerebro.historial.append({"role": "user", "content": u_txt})
+    cerebro.historial.append({"role": "assistant", "content": a_txt})
+    if hasattr(cerebro, "_podar_historial"):
+        cerebro._podar_historial()
+
+
 def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     """Genera la respuesta con streaming y conmutación automática de proveedores si hay fallos."""
     texto_orig = str(texto)
@@ -24,12 +33,7 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
             ok, msg = ha.escribir_archivo(arg)
             nom = os.path.basename(arg.split("|")[0].strip())
             resp = f"Listo, guardé los cambios en {nom}." if ok else msg
-            if callable(al_frase):
-                al_frase(resp)
-            cerebro.historial.append({"role": "user", "content": texto_orig})
-            cerebro.historial.append({"role": "assistant", "content": resp})
-            if hasattr(cerebro, "_podar_historial"):
-                cerebro._podar_historial()
+            _reg_turno(cerebro, texto_orig, resp, al_frase)
             return resp, None, "alegre"
         except Exception as e:
             print(f"[archivo_local] Error escritura: {e}", flush=True)
@@ -52,12 +56,7 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
                     resp = f"El archivo {nom_limpio} dice: {resumen}"
                 else:
                     resp = res_leer
-                if callable(al_frase):
-                    al_frase(resp)
-                cerebro.historial.append({"role": "user", "content": texto_orig})
-                cerebro.historial.append({"role": "assistant", "content": resp})
-                if hasattr(cerebro, "_podar_historial"):
-                    cerebro._podar_historial()
+                _reg_turno(cerebro, texto_orig, resp, al_frase)
                 return resp, None, "alegre"
         except Exception as e:
             print(f"[archivo_local] Error lectura: {e}", flush=True)
@@ -66,35 +65,34 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     import vision_pantalla
     if vision_pantalla.detectar_peticion_vision(texto):
         ok_v, resp_v = vision_pantalla.capturar_y_analizar_pantalla(texto, app=app)
-        if callable(al_frase):
-            al_frase(resp_v)
-        cerebro.historial.append({"role": "user", "content": texto_orig})
-        cerebro.historial.append({"role": "assistant", "content": resp_v})
-        if hasattr(cerebro, "_podar_historial"):
-            cerebro._podar_historial()
+        _reg_turno(cerebro, texto_orig, resp_v, al_frase)
         return resp_v, None, "atenta"
 
     import cerebro_rag
     ruta_idx = cerebro_rag.detectar_orden_indexacion(texto)
     if ruta_idx:
         ok_r, msg_r = cerebro_rag.indexar_ruta(ruta_idx)
-        if callable(al_frase):
-            al_frase(msg_r)
-        cerebro.historial.append({"role": "user", "content": texto_orig})
-        cerebro.historial.append({"role": "assistant", "content": msg_r})
-        if hasattr(cerebro, "_podar_historial"):
-            cerebro._podar_historial()
+        _reg_turno(cerebro, texto_orig, msg_r, al_frase)
         return msg_r, None, "alegre" if ok_r else "seria"
+
     import pantalla_remota_accion as pra
     if pra.detectar_orden_hud(texto):
         msg = pra.activar_hud(app=app)
-        if callable(al_frase):
-            al_frase(msg)
-        cerebro.historial.append({"role": "user", "content": texto})
-        cerebro.historial.append({"role": "assistant", "content": msg})
-        if hasattr(cerebro, "_podar_historial"):
-            cerebro._podar_historial()
+        _reg_turno(cerebro, texto, msg, al_frase)
         return msg, "activar_hud", "alegre"
+
+    import cerebro_mentor
+    orden_m = cerebro_mentor.detectar_orden_mentora(texto)
+    if orden_m:
+        tipo_m, resp_m, emo_m = orden_m
+        _reg_turno(cerebro, texto_orig, resp_m, al_frase)
+        return resp_m, None, emo_m
+
+    import presentacion
+    if presentacion.detectar_orden_presentacion(texto):
+        resp_p, emo_p = presentacion.generar_presentacion_dinamica(app=app)
+        _reg_turno(cerebro, texto_orig, resp_p, al_frase)
+        return resp_p, None, emo_p
 
     # 1. Planificador cognitivo multi-paso (prioritario ante órdenes compuestas)
     try:

@@ -4,9 +4,11 @@ Cada paso es:  ("idea que debe decir", "frase de respaldo", "accion1+accion2" o 
 Ella inventa cada vez cómo decirlo (así nunca suena igual). Si falla el internet usa la frase de respaldo.
 Al terminar se queda escuchando para contestar las preguntas del público.
 """
+import os
 import re
 import threading
 import time
+import unicodedata
 
 import acciones
 from cerebro import SOBRE_MI
@@ -207,3 +209,91 @@ def instalar(app):
         "se presenta ante un grupo con una demostración completa, con sus propias palabras, y luego contesta preguntas "
         "(úsala cuando te pidan presentarte, saludar al grupo o hacer una demo)",
     )
+
+
+def detectar_orden_presentacion(texto):
+    """Detecta si el usuario pide a Lyris presentarse o describir sus capacidades."""
+    if not texto:
+        return False
+    t = unicodedata.normalize("NFD", str(texto).strip().lower())
+    limpio = "".join(c for c in t if unicodedata.category(c) != "Mn")
+    patrones = [
+        r"\b(?:presentate|presentese|quien\s+eres|quien\s+sos)\b",
+        r"\bque\s+(?:puedes|sabes)\s+hacer\b",
+        r"\b(?:hablame|cuentame)\s+(?:un\s+poco\s+)?de\s+ti\b",
+        r"\bpresentate\s+ante\b",
+    ]
+    return any(re.search(p, limpio) for p in patrones)
+
+
+def recopilar_metricas_en_vivo(app=None):
+    """Obtiene métricas reales del sistema sin exponer datos privados."""
+    nombre = "Lyris"
+    creador = "Moisés"
+    if app and hasattr(app, "memoria"):
+        m = app.memoria
+        nombre = getattr(m, "nombre", None) or nombre
+        creador = getattr(m, "creador", None) or creador
+
+    total_habilidades = 0
+    try:
+        import json
+        reg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "habilidades_aprendidas", "registro.json")
+        if os.path.exists(reg_path):
+            with open(reg_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                total_habilidades = len([h for h in data.get("habilidades", {}).values() if h.get("aprobada", True)])
+    except Exception:
+        pass
+
+    total_relaciones = 0
+    try:
+        import cerebro_grafo
+        relaciones = cerebro_grafo.consultar_relaciones(creador)
+        total_relaciones = len(relaciones)
+    except Exception:
+        pass
+
+    return {
+        "nombre": nombre,
+        "creador": creador,
+        "habilidades": total_habilidades,
+        "grafo_relaciones": total_relaciones,
+    }
+
+
+def generar_presentacion_dinamica(app=None):
+    """Genera una presentación elocuente y actualizada de Lyris retornando (texto, emocion)."""
+    info = recopilar_metricas_en_vivo(app)
+    nom = info["nombre"]
+    creador = info["creador"]
+    nhab = info["habilidades"]
+
+    texto_llm = None
+    if app and hasattr(app, "cerebro") and hasattr(app.cerebro, "_pedir"):
+        try:
+            prompt = (
+                f"Eres {nom}, asistente modular de IA desarrollada por {creador}. "
+                f"Cuentas con {nhab} habilidades aprendidas, visión de pantalla, RAG local y HUD LAN para tablet. "
+                "Preséntate de forma profesional, dinámica y elocuente en 2 oraciones concisas (máximo 40 palabras). "
+                "Sin emojis ni viñetas, en tono seguro y orgulloso."
+            )
+            res = app.cerebro._pedir([
+                {"role": "system", "content": "Eres una IA asistente profesional y concisa."},
+                {"role": "user", "content": prompt}
+            ])
+            if res and len(res.strip()) > 20:
+                texto_llm = res.strip().replace('"', '')
+        except Exception:
+            texto_llm = None
+
+    if texto_llm:
+        return (texto_llm, "orgullosa")
+
+    hab_txt = f", {nhab} habilidades prácticas aprendidas" if nhab > 0 else ""
+    fallback = (
+        f"Hola, soy {nom}, la asistente de inteligencia artificial personal desarrollada por {creador}. "
+        f"Cuento con visión de pantalla en vivo, memoria relacional continua{hab_txt} "
+        "y un entorno multimodal conectado a tu tablet para colaborar contigo en cada proyecto."
+    )
+    return (fallback, "orgullosa")
