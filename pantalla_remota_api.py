@@ -103,7 +103,7 @@ def _identidad(h, scope=None, mutacion=None):
                                      (Scope.STATE_READ, Scope.UI_CONTROL, Scope.OPERATION_REQUEST))
         if pair:
             identity = manager.autenticar_token(pair["token"]) or pair
-            h._lan_cookie = manager.cookie_header(pair["cookie"], secure=h.server.tls)
+            h._lan_cookie = manager.cookie_header(pair["cookie"], secure=h.server.tls, samesite="Lax")
             h._lan_token = pair.get("token", "")
     if identity and scope and not manager.autorizar(identity, scope): return None
     if identity and not h.server.bus_sse.permitir_peticion(identity["device_id"]): return None
@@ -127,7 +127,7 @@ def responder_sesion(h, identity):
                                      (Scope.STATE_READ, Scope.UI_CONTROL, Scope.OPERATION_REQUEST))
         if pair:
             identity = manager.autenticar_token(pair["token"]) or pair
-            lan_c = manager.cookie_header(pair["cookie"], secure=h.server.tls)
+            lan_c = manager.cookie_header(pair["cookie"], secure=h.server.tls, samesite="Lax")
             h._lan_token = pair.get("token", "")
     if not identity:
         return _respuesta(h, 401, {"ok": False, "error": "No autenticado"})

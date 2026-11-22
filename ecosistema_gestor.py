@@ -122,7 +122,7 @@ class GestorEcosistema(GestorSesiones):
         tipo = TipoDispositivo(tipo); scopes = self._scopes(tipo, scopes)
         capacidades = self._capacidades(tipo, capacidades); now = self._now()
         token = _b64(secrets.token_bytes(32)); cookie = _b64(secrets.token_bytes(32))
-        did, sid = f"lan_{uuid4()}", str(uuid4())
+        did, sid = str(uuid4()), str(uuid4())
         ts, cs = _salt(), _salt(); result = {}
         with self._lock:
             def register(data):
@@ -150,8 +150,8 @@ class GestorEcosistema(GestorSesiones):
         return bool(self.almacen.cargar()["preferencias"].get("modo_privado", False))
 
     @staticmethod
-    def cookie_header(cookie, secure=False, ttl=_TTL_SESION):
-        flags = "; HttpOnly; SameSite=Lax; Path=/; Max-Age=" + str(int(ttl))
+    def cookie_header(cookie, secure=False, ttl=_TTL_SESION, samesite="Strict"):
+        flags = f"; HttpOnly; SameSite={samesite}; Path=/; Max-Age=" + str(int(ttl))
         return "SilvestraSession=" + cookie + flags + ("; Secure" if secure else "")
 
     @staticmethod
