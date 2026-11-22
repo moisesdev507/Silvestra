@@ -115,7 +115,7 @@ async function enviarTexto(){
   const input=document.getElementById('txtInput'),txt=input.value.trim();
   if(!txt)return;input.value='';agregarMensaje(txt,'user');
   try{
-    const res=await fetch('/api/movil/voz',{method:'POST',headers:{'Content-Type':'application/json','X-Device-Token':token},body:JSON.stringify({texto:txt})});
+    const res=await fetch('/api/movil/chat',{method:'POST',headers:{'Content-Type':'application/json','X-Device-Token':token},body:JSON.stringify({texto:txt,hablar:false})});
     const d=await res.json();
     if(d.ok){actualizarCara(d.emocion);agregarMensaje(d.respuesta,'lyris',Boolean(d.audio_base64));if(d.audio_base64)reproducirAudio(d.audio_base64);}
     else{agregarMensaje(d.error||'Error procesando consulta.','lyris');}

@@ -64,6 +64,17 @@ class GestorMentor:
                 return ""
             return self.DIRECTIVA_SOCRATICA
 
+    def obtener_calibracion_estudiante(self) -> str:
+        """Consulta el mapa de progreso para calibrar la pedagogía socrática."""
+        with _bloqueo:
+            if not self._activo:
+                return ""
+            try:
+                import memoria_progreso
+                return memoria_progreso.resumen_nivel_programador()
+            except Exception:
+                return ""
+
     def consolidar_aprendizaje_sesion(self, app=None, creador="Moisés"):
         """Registra los avances técnicos trabajados en el Grafo de Conocimiento."""
         detalles = []
@@ -89,6 +100,18 @@ class GestorMentor:
                 for t in self._temas:
                     cerebro_grafo.registrar_hecho(creador, "estudio_tema", t, tipo_sujeto="usuario", tipo_objeto="concepto")
                     detalles.append(f"tema {t}")
+        except Exception:
+            pass
+
+        try:
+            import memoria_progreso
+            if ult_arch:
+                memoria_progreso.registrar_avance_tecnico("Python", f"Práctica en {os.path.basename(ult_arch)}", "practicado")
+            if ult_hab:
+                memoria_progreso.registrar_avance_tecnico("Python", f"Habilidad creada: {ult_hab}", "aplicado")
+            with _bloqueo:
+                for t in self._temas:
+                    memoria_progreso.registrar_avance_tecnico("Arquitectura", f"Concepto: {t}", "comprendido")
         except Exception:
             pass
 

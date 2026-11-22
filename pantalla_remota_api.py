@@ -41,7 +41,7 @@ def _instalar_rutas_movil(handler_cls):
         if callable(orig_do_get):
             def do_GET_movil(self):
                 p = self.path.split("?", 1)[0]
-                if p in ("/movil", "/movil/", "/manifest.json", "/sw.js"):
+                if p.startswith("/movil") or p in ("/manifest.json", "/sw.js", "/icon-192.png", "/icon-512.png"):
                     import app_movil_ui
                     if app_movil_ui.despachar_get_movil(self, p):
                         return
@@ -196,12 +196,12 @@ def manejar_post(h, app, gestor):
     path = h.path.split("?", 1)[0]
     p = gestor.puente; manager = gestor.ecosistema_gestor
     ip = h.client_address[0]
-    if path == "/api/movil/voz":
+    if path.startswith("/api/movil/"):
         identity = _identidad(h)
         if not identity:
             return _respuesta(h, 401, {"ok": False, "error": "unauthorized"})
         import app_movil_audio
-        code, res = app_movil_audio.manejar_http_voz(h, app)
+        code, res = app_movil_audio.manejar_http_movil(h, app, path)
         return _respuesta(h, code, res)
 
     if path == "/api/emparejar":

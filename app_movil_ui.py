@@ -1,21 +1,53 @@
 """Manejador y despachador de la interfaz web PWA móvil para Lyris."""
 from __future__ import annotations
 
+import io
 import json
-from typing import Any
+import threading
+from typing import Any, Dict
+
+from PIL import Image, ImageDraw
 
 from app_movil_html import PAGINA_MOVIL_HTML
 
-# Icono vectorizado SVG para el manifest PWA
-ICONO_LYRIS_SVG = (
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">'
-    '<circle cx="64" cy="64" r="60" fill="#0a0d14" stroke="#38bdf8" stroke-width="4"/>'
-    '<circle cx="64" cy="64" r="48" fill="none" stroke="#0ea5e9" stroke-width="1.5" stroke-dasharray="4 4"/>'
-    '<ellipse cx="44" cy="54" rx="8" ry="12" fill="#38bdf8"/>'
-    '<ellipse cx="84" cy="54" rx="8" ry="12" fill="#38bdf8"/>'
-    '<path d="M48 80 Q64 96 80 80" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linecap="round"/>'
-    '</svg>'
-)
+_bloqueo = threading.RLock()
+_cache_iconos: Dict[int, bytes] = {}
+
+
+def generar_icono_png(tam: int = 192) -> bytes:
+    """Genera en memoria un ícono PNG de alta definición con el emblema holográfico de Lyris."""
+    with _bloqueo:
+        if tam in _cache_iconos:
+            return _cache_iconos[tam]
+
+        img = Image.new("RGBA", (tam, tam), (10, 13, 20, 255))
+        draw = ImageDraw.Draw(img)
+
+        # Anillo exterior cian
+        ancho_borde = max(2, tam // 36)
+        draw.ellipse((4, 4, tam - 5, tam - 5), outline=(56, 189, 248, 255), width=ancho_borde)
+
+        # Anillo interno suave
+        pad = tam // 6
+        draw.ellipse((pad, pad, tam - pad, tam - pad), outline=(14, 165, 233, 180), width=max(1, tam // 64))
+
+        # Ojos holográficos
+        ey_w, ey_h = max(3, tam // 12), max(5, tam // 8)
+        cx1, cx2 = int(tam * 0.36), int(tam * 0.64)
+        cy = int(tam * 0.46)
+        draw.ellipse((cx1 - ey_w, cy - ey_h, cx1 + ey_w, cy + ey_h), fill=(56, 189, 248, 255))
+        draw.ellipse((cx2 - ey_w, cy - ey_h, cx2 + ey_w, cy + ey_h), fill=(56, 189, 248, 255))
+
+        # Sonrisa sutil
+        m_pad = int(tam * 0.32)
+        draw.arc((m_pad, int(tam * 0.42), tam - m_pad, int(tam * 0.74)), start=25, end=155, fill=(56, 189, 248, 255), width=ancho_borde)
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+        _cache_iconos[tam] = png_bytes
+        return png_bytes
+
 
 MANIFEST_JSON = json.dumps({
     "name": "Lyris - Asistente Personal",
@@ -27,9 +59,15 @@ MANIFEST_JSON = json.dumps({
     "theme_color": "#0a0d14",
     "icons": [
         {
-            "src": f"data:image/svg+xml;utf8,{ICONO_LYRIS_SVG}",
-            "sizes": "192x192 512x512",
-            "type": "image/svg+xml",
+            "src": "/icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
             "purpose": "any maskable"
         }
     ]
@@ -48,7 +86,7 @@ self.addEventListener('fetch', (e) => {
 
 
 def despachar_get_movil(handler: Any, path: str) -> bool:
-    """Atiende rutas web PWA para el cliente móvil: /movil, /manifest.json, /sw.js."""
+    """Atiende rutas web PWA para el cliente móvil: /movil, /manifest.json, /sw.js, /icon-*.png."""
     p = path.split("?", 1)[0].rstrip("/")
     if p in ("/movil", ""):
         raw = PAGINA_MOVIL_HTML.encode("utf-8")
@@ -83,6 +121,20 @@ def despachar_get_movil(handler: Any, path: str) -> bool:
         handler.end_headers()
         try:
             handler.wfile.write(raw)
+        except OSError:
+            pass
+        return True
+
+    if p in ("/icon-192.png", "/icon-512.png"):
+        tam = 512 if "512" in p else 192
+        png_data = generar_icono_png(tam)
+        handler.send_response(200)
+        handler.send_header("Content-Type", "image/png")
+        handler.send_header("Content-Length", str(len(png_data)))
+        handler.send_header("Cache-Control", "public, max-age=86400")
+        handler.end_headers()
+        try:
+            handler.wfile.write(png_data)
         except OSError:
             pass
         return True

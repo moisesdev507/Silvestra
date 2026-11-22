@@ -246,6 +246,8 @@ def gestionar_autoaprendizaje_proactivo(texto, app=None):
             try:
                 import cerebro_trabajo
                 cerebro_trabajo.actualizar_habilidad(nom_habilidad)
+                import memoria_progreso
+                memoria_progreso.registrar_avance_tecnico("Python", f"Habilidad creada: {nom_habilidad}", "aplicado")
             except Exception:
                 pass
             return True, f"Listo. He programado, auditado y activado la habilidad '{nom_habilidad}' con éxito. Ya puedes usarla."

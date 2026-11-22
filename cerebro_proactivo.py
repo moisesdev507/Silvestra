@@ -80,6 +80,7 @@ class MotorProactivo:
         with _bloqueo:
             self.arranque_ts = time.time()
             self.ultimo_aviso = 0.0
+            self.ultimo_sueno_ts = 0.0
             self.ultimo_briefing_fecha = None
             self.ultimo_aviso_nocturno_fecha = None
             self.proyectos_comentados_sesion.clear()
@@ -205,8 +206,25 @@ class MotorProactivo:
         msg = f"Detecté tu entorno de desarrollo. ¿Deseas que revisemos los pendientes de {proyecto}?"
         return msg, "atenta"
 
+    def evaluar_sueno_cognitivo(self, db_path="silvestra_memoria.db", forzar=False):
+        """Ejecuta sueño cognitivo en reposo (>= 20 min inactividad, máx. 1 vez cada 12h)."""
+        with _bloqueo:
+            ahora = time.time()
+            if not forzar:
+                if (ahora - self.ultimo_aviso) < 1200.0 or (ahora - self.ultimo_sueno_ts) < 43200.0:
+                    return None
+            try:
+                import memoria_sueno
+                r = memoria_sueno.ejecutar_sueno_cognitivo(db_path=db_path)
+                self.ultimo_sueno_ts = ahora
+                return r
+            except Exception as e:
+                print(f"[proactividad] Error en sueño automático: {e}", flush=True)
+                return None
+
     def evaluar_oportunidad(self, app=None, motivo=None, ventana=None, forzar_cooldown=False):
         """Evalúa todas las reglas de proactividad y devuelve (mensaje, emocion) si aplica."""
+        self.evaluar_sueno_cognitivo()
         with _bloqueo:
             puede, razon = self.puede_intervenir(app, forzar_cooldown=forzar_cooldown, motivo=motivo)
             if not puede:

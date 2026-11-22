@@ -35,6 +35,17 @@ class TestAppMovilPWA(unittest.TestCase):
         handler_mock.send_response.assert_called_with(200)
         handler_mock.send_header.assert_any_call("Content-Type", "application/javascript; charset=utf-8")
 
+    def test_despachar_iconos_png_pwa(self):
+        for path, tam in [("/icon-192.png", 192), ("/icon-512.png", 512)]:
+            handler_mock = MagicMock()
+            ok = amui.despachar_get_movil(handler_mock, path)
+            self.assertTrue(ok)
+            handler_mock.send_response.assert_called_with(200)
+            handler_mock.send_header.assert_any_call("Content-Type", "image/png")
+            # Verificar firma de archivo PNG
+            png_bytes = amui.generar_icono_png(tam)
+            self.assertTrue(png_bytes.startswith(b"\x89PNG\r\n\x1a\n"))
+
 
 class TestSeguridadRedTailscaleYLAN(unittest.TestCase):
     """Verifica el soporte para Tailscale CGNAT (100.64.0.0/10) y subredes privadas."""
@@ -101,6 +112,21 @@ class TestAudioYConversacionMovil(unittest.TestCase):
         self.assertEqual(code, 400)
         self.assertFalse(data["ok"])
         self.assertEqual(data["error"], "audio_size_invalid")
+
+    def test_manejar_http_chat_sincrono(self):
+        handler_mock = MagicMock()
+        payload = json.dumps({"texto": "¿Cómo está el sistema?", "hablar": False}).encode("utf-8")
+        handler_mock.headers = {"Content-Type": "application/json", "Content-Length": str(len(payload))}
+        handler_mock.rfile.read.return_value = payload
+        app_mock = MagicMock()
+
+        with patch("respuesta_flujo.responder_flujo", return_value=("Todo operativo.", None, "alegre")):
+            code, data = ama.manejar_http_movil(handler_mock, app_mock, "/api/movil/chat")
+
+        self.assertEqual(code, 200)
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["respuesta"], "Todo operativo.")
+        self.assertEqual(data["emocion"], "alegre")
 
 
 if __name__ == "__main__":

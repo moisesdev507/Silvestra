@@ -94,6 +94,12 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         _reg_turno(cerebro, texto_orig, resp_p, al_frase)
         return resp_p, None, emo_p
 
+    import memoria_sueno, memoria_progreso
+    if memoria_sueno.detectar_orden_sueno(texto):
+        r_s = memoria_sueno.ejecutar_orden_sueno(texto, app=app); _reg_turno(cerebro, texto_orig, r_s, al_frase); return r_s, None, "calida"
+    if memoria_progreso.detectar_orden_progreso(texto):
+        r_p = memoria_progreso.consultar_mi_progreso(); _reg_turno(cerebro, texto_orig, r_p, al_frase); return r_p, None, "orgullosa"
+
     # 1. Planificador cognitivo multi-paso (prioritario ante órdenes compuestas)
     try:
         import cerebro_planificador
