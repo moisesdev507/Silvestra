@@ -10,6 +10,8 @@ import sqlite3
 import threading
 
 _bloqueo = threading.RLock()
+# DDL ejecutado una sola vez por proceso y ruta de BD (clave = ruta absoluta).
+_inicializado = set()
 RUTA_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "silvestra_memoria.db")
 
 EXTENSIONES_VALIDAS = {".py", ".js", ".ts", ".html", ".css", ".sql", ".md", ".txt", ".json"}
@@ -24,9 +26,18 @@ def _obtener_conexion():
     return con
 
 
-def inicializar_rag():
-    """Crea las tablas aditivas de indexación RAG sin modificar tablas existentes."""
+def invalidar_cache_rag():
+    """Permite repetir el DDL tras cambiar RUTA_DB (útil en pruebas aisladas)."""
     with _bloqueo:
+        _inicializado.clear()
+
+
+def inicializar_rag(forzar=False):
+    """Crea las tablas de indexación una sola vez por ruta de BD y proceso."""
+    clave = os.path.abspath(RUTA_DB)
+    with _bloqueo:
+        if not forzar and clave in _inicializado:
+            return
         with _obtener_conexion() as con:
             con.execute("""
                 CREATE TABLE IF NOT EXISTS rag_rutas (
@@ -75,6 +86,7 @@ def inicializar_rag():
             except Exception as e:
                 print(f"[rag] FTS5 trigger notice: {e}", flush=True)
             con.commit()
+        _inicializado.add(clave)
 
 
 def es_ruta_segura(ruta):

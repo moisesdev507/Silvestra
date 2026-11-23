@@ -16,10 +16,9 @@ MESES = [
 ]
 
 SOBRE_MI = (
-    "SOBRE TI: Lyris, prototipo hecho en Python por tu dueño Moisés en Panamá (estudiante de programación). "
-    "Escuchas con Whisper, piensas con LLMs y hablas con voz panameña. Tu meta a futuro es vivir en un anillo inteligente. "
-    "Moisés es tu creador y amigo; sé leal, honesta, curiosa, ingeniosa y afectuosa con él. "
-    "Si te pide que te presentes, saludes o expliques quién eres, hazlo con orgullo, personalidad, chispa panameña y calidez."
+    "SOBRE TI: Lyris, prototipo en Python creado por tu dueño Moisés en Panamá (estudiante de programación). "
+    "Escuchas con Whisper, piensas con LLMs y tu meta es vivir en un anillo inteligente. "
+    "Moisés es tu creador y amigo: sé leal y afectuosa con él."
 )
 
 
@@ -51,10 +50,8 @@ def cargar_alma():
         pass
     return (
         "Cómo hablas: amiga cercana y lista, español natural de Panamá. "
-        "Solo cambias de idioma cuando te lo piden explícitamente y luego vuelves al español. "
-        "Respuestas directas de 1 a 2 frases cortas por defecto. "
-        "Prohibido cerrar con preguntas de relleno de chatbot ('¿en qué te ayudo?', '¿algo más?'). "
-        "Al ejecutar acciones, confirma con una frase breve ('Listo.', 'Abierto.'). Sin listas ni asteriscos."
+        "Solo cambias de idioma cuando te lo piden y luego vuelves al español. "
+        "Respuestas directas de 1 a 2 frases cortas. Sin listas ni asteriscos."
     )
 
 
@@ -62,7 +59,12 @@ def recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5, contexto="", pa
     """Selecciona hasta max_recuerdos relevantes al tema actual por categorías y palabras clave."""
     if hasattr(memoria, "recuperar"):
         try:
-            paquete = paquete or memoria.recuperar(texto_actual or "", contexto=contexto, limite=max_recuerdos)
+            # Reutiliza el paquete ya recuperado por memoria.razonar(): nunca
+            # repetir la búsqueda (doble recuperación por turno).
+            if paquete is None:
+                paquete = memoria.recuperar(
+                    texto_actual or "", contexto=contexto, limite=max_recuerdos
+                )
             import memoria_recuperacion
             texto = memoria_recuperacion.formatear(paquete, 1050)
             import contexto_prompt
@@ -133,7 +135,6 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
                      contexto_adicional="", paquete_memoria=None, contexto_engine=None):
     """Construye el prompt del sistema optimizado por debajo de 2000 tokens."""
     m = memoria
-    tokens_base = int((len("\n".join(m.hechos)) + 6800) / 3.6)
 
     hora_local = obtener_hora_local()
     print(f"[hora] inyectada='{hora_local}'", flush=True)
@@ -237,29 +238,24 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
 
     instrucciones_texto = (
         f"Te llamas {m.nombre}. Vives en la laptop de {m.creador}, quien te dio vida. Propósito: {m.proposito}.\n"
-        "Personalidad: Habla siempre en español de Panamá con calidez, ingenio y chispa natural. "
-        "Reacciona primero a lo que te dicen antes de responder. Si te piden presentarte, hazlo con orgullo y personalidad.\n"
-        "Estilo conversacional: Respuestas habladas directas de 1 a 2 frases cortas por defecto (solo extiéndete si te piden explicar o charlar). "
-        "PROHIBIDO terminar con preguntas de relleno automáticas ('¿en qué te ayudo?', '¿qué tienes en mente?', '¿algo más?'). Solo pregunta si falta un dato indispensable.\n"
-        f"FECHA Y HORA LOCAL REAL: {hora_local}. 12:xx a. m. significa medianoche/madrugada; 12:xx p. m., mediodía. Usa exactamente este dato.\n\n"
+        "Estilo: responde en 1 a 2 frases cortas por defecto (extiéndete solo si te piden explicar o charlar). "
+        "Si te piden presentarte, hazlo con orgullo y chispa. "
+        "PROHIBIDO terminar con preguntas de relleno ('¿en qué te ayudo?', '¿algo más?'); solo pregunta si falta un dato indispensable.\n"
+        f"FECHA Y HORA LOCAL REAL: {hora_local}. 12:xx a. m. es medianoche; 12:xx p. m., mediodía. Usa exactamente este dato.\n\n"
         "ACCIONES DISPONIBLES en la laptop (SOLO estas; no inventes que algo ya está hecho):\n"
         f"{desc_acciones}\n\n"
-        "Regla anti-invención estricta: jamás inventes vivencias ni datos falsos. "
-        f"Si no recuerdas algo o {m.creador} no te lo ha contado, di honestamente que no lo recuerdas sin inventar.\n"
-        "Privacidad: captura y cámara solo cuando lo pidan. Jamás repitas ni guardes claves, contraseñas o tokens.\n"
-        "Los recuerdos de memoria a largo plazo son históricos (pasado) y NUNCA representan lo que está abierto ahora mismo. "
-        "Cuando el usuario pregunte qué aplicación, ventana o archivo está abierto en el presente (ahorita, ahora, en este momento), "
-        "responde EXCLUSIVAMENTE usando [ESTADO ACTUAL EN VIVO DE WINDOWS] e ignora aplicaciones o archivos mencionados en recuerdos pasados.\n"
-        "Visión de pantalla: si el usuario pregunta '¿qué ves?', '¿qué tengo en pantalla?', 'mira mi pantalla', 'lee la pantalla' u otras variantes, "
-        "describe ÚNICAMENTE lo visible en [ESTADO ACTUAL EN VIVO DE WINDOWS] tal como aparece AHORA, ignorando cualquier descripción de pantalla previa en el historial. "
-        "Si no hay captura disponible, di qué ventana activa detectas sin inventar contenido ni repetir lo visto antes.\n"
-        "Telegram: Tienes Telegram vinculado a tu dueño; si pide enviar un mensaje o nota de voz a su Telegram o celular, usa ACCION: avisar_celular | mensaje (o ACCION: enviar_nota_voz | mensaje). Jamás digas que no tienes acceso a Telegram.\n"
-        "Para las acciones con texto usa: ACCION: nombre | detalle (ej: ACCION: avisar_celular | mensaje; ACCION: poner_recordatorio | en 2 minutos | sacar comida; ACCION: escribir_archivo | archivo.txt | contenido redactado completo; ACCION: leer_archivo | archivo.txt; ACCION: buscar | tema; ACCION: activar_modo | normal/programacion/estudio/noche; ACCION: bailar | groove/salsa/fiesta/parar).\n"
-        "Cuando ejecutes una ACCION, la RESPUESTA debe ser solo una confirmación brevísima y natural (ej: 'Listo.', 'Ya está en pantalla.', 'Abierto.').\n"
-        "EMOCIONES DISPONIBLES: neutral, alegre, calida, seria, preocupada, animada.\n\n"
+        "Regla anti-invención: jamás inventes vivencias ni datos falsos. "
+        f"Si {m.creador} no te lo ha contado, di que no lo recuerdas. Captura y cámara solo cuando lo pidan; jamás repitas claves ni contraseñas.\n"
+        "Los recuerdos de memoria a largo plazo son históricos: NUNCA representan lo abierto ahora. "
+        "Para ventana, archivo o pantalla actual (ahora, ahorita, '¿qué ves?', 'mira mi pantalla'), responde EXCLUSIVAMENTE usando [ESTADO ACTUAL EN VIVO DE WINDOWS] e ignora aplicaciones o archivos mencionados en recuerdos pasados. "
+        "Describe ÚNICAMENTE lo visible AHORA; sin captura, di qué ventana detectas sin inventar.\n"
+        "Telegram: usa ACCION: avisar_celular | mensaje (o enviar_nota_voz | mensaje) si pide enviarlo; jamás digas que no tienes acceso.\n"
+        "Acciones con texto: ACCION: nombre | detalle (ej: poner_recordatorio | en 2 minutos | sacar comida; escribir_archivo | archivo.txt | contenido). "
+        "Modos: normal/programacion/estudio/noche. Bailes: groove/salsa/fiesta/parar. Al ejecutar, confirma en una frase breve ('Listo.').\n"
+        "EMOCIONES: neutral, alegre, calida, seria, preocupada, animada.\n\n"
         "FORMATO OBLIGATORIO:\n"
         "EMOCION: <neutral | alegre | calida | seria | preocupada | animada>\n"
-        "RESPUESTA: <lo que dices en voz alta: 1 a 2 frases cortas y naturales; si disparas una acción, confirma en una sola frase breve>\n"
+        "RESPUESTA: <1 a 2 frases cortas y naturales; si hay acción, una frase breve>\n"
         "ACCION: <acción de la lista, o ninguna>\n"
         f"{recuerdo_fmt}"
         f"{aviso_invitado}"
@@ -268,15 +264,6 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
 
     hist_podado = historial_reciente or []
     tok_hist = max(0, int(sum(len(h.get("content", "")) for h in hist_podado) / 3.6))
-
-    tok_total = tok_alma + tok_memoria + tok_perfil + tok_corr + tok_contexto + tok_inst + tok_hist
-    ahorro = max(0, int(100 * (1 - tok_total / max(1, tokens_base))))
-    print(
-        f"[tiempo] prompt_desglose alma={tok_alma} memoria={tok_memoria} perfil={tok_perfil} "
-        f"correcciones={tok_corr} contexto={tok_contexto} historial={tok_hist} instrucciones={tok_inst} total={tok_total}",
-        flush=True,
-    )
-    print(f"[tiempo] prompt_tokens={tok_total} anterior={tokens_base} ahorro={ahorro}%", flush=True)
 
     bloques = [instrucciones_texto, alma_texto]
     try:
@@ -305,4 +292,13 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         bloques.append(f"Perfil del usuario:\n{perfil_texto}")
     if corr_texto:
         bloques.append(f"Correcciones aplicadas:\n{corr_texto}")
-    return "\n\n".join(bloques)
+
+    prompt_final = "\n\n".join(bloques)
+    tok_total = max(1, int(len(prompt_final) / 3.6))
+    print(
+        f"[tiempo] prompt_desglose_aprox alma={tok_alma} memoria={tok_memoria} perfil={tok_perfil} "
+        f"correcciones={tok_corr} contexto={tok_contexto} historial={tok_hist} instrucciones={tok_inst}",
+        flush=True,
+    )
+    print(f"[tiempo] prompt_tokens={tok_total}", flush=True)
+    return prompt_final

@@ -28,6 +28,25 @@ VALOR_SENSIBLE = re.compile(
     r"\s+(?:es|[:=])\s*([^\s,;.!?]+)", re.I
 )
 
+_PALABRA_SECRETO = (
+    r"(?:contrase(?:ñ|n)a|clave|token|secret[o]|pin|cvv|"
+    r"c[oó]digo\s+(?:de\s+seguridad|temporal|de\s+verificaci[oó]n)|api[_ -]?key)"
+)
+# Detecta menciones de secretos aunque NO tengan formato 'clave: valor',
+# p. ej. 'Enela 1 cuenta con la contraseña generada.'
+_VERBO_SECRETOS = (
+    r"(?:cuenta\s+con|tiene|tengo|guard[oó]|guardad[oa]|cre[oó]|cread[oa]|gener[oó]|"
+    r"generad[oa]|escribi[oó]|dijo|comparti[oó]|envia(?:do|da)?|recib[ií]|sabe)"
+)
+_PALABRA_SECRETO_POST = (
+    r"\s+(?:generad[oa]|guardad[oa]|cread[oa]|temporal|actual|secreta|de\s+acceso|de\s+mi\s+cuenta)"
+)
+PATRON_MENCION_SECRETO = re.compile(
+    _VERBO_SECRETOS + r"\s+(?:(?:la|el|una|un|mi|su)\s+)*" + _PALABRA_SECRETO
+    + r"|" + _PALABRA_SECRETO + _PALABRA_SECRETO_POST,
+    re.I,
+)
+
 
 def _alta_entropia(valor):
     if len(valor) < 18 or not re.search(r"[a-z]", valor, re.I) or not re.search(r"\d", valor):
@@ -39,10 +58,17 @@ def _alta_entropia(valor):
 def _contiene_secreto(texto):
     if any(re.search(p, texto, re.I) for p in PATRONES_SECRETOS):
         return True
+    if PATRON_MENCION_SECRETO.search(texto):
+        return True
     for valor in VALOR_SENSIBLE.findall(texto):
         if re.fullmatch(r"\d{4,8}", valor) or _alta_entropia(valor):
             return True
     return False
+
+
+def contiene_pii(texto):
+    """True si el texto menciona contraseñas, claves, tokens u otros secretos."""
+    return _contiene_secreto(str(texto or ""))
 
 PATRONES_META_NORMALIZADOS = [
     r"^\s*none\s*$",
@@ -136,8 +162,42 @@ def es_duplicado(nuevo_hecho, hechos_existentes):
         sim_jaccard = inter / union
         sim_min = inter / min(len(pk_nuevo), len(pk_existente))
 
-        # Coincidencia semántica por vocabulario
-        if sim_jaccard >= 0.40 or (sim_min >= 0.50 and inter >= 3) or inter >= 4:
+        # Solo proporciones: un solapamiento absoluto (p. ej. 4 palabras) no
+        # puede descartar señal válida en frases largas con vocabulario distinto.
+        if sim_jaccard >= 0.55 or (sim_min >= 0.80 and inter >= 3):
             return True
 
     return False
+
+
+def recuerdos_con_pii(almacen, usuario_id=None, limite=10000):
+    """Lista (id, contenido) de recuerdos activos que mencionan datos sensibles."""
+    filas = almacen.listar_recuerdos(limite, solo_activos=True, usuario_id=usuario_id)
+    return [(f["id"], f["contenido"]) for f in filas if contiene_pii(f.get("contenido"))]
+
+
+def depurar_recuerdos_pii(almacen, usuario_id=None, aplicar=False, limite=10000):
+    """Inspecciona o marca como eliminados los recuerdos con PII.
+
+    Seguro por diseño: exige un almacén explícito (nunca abre la BD productiva)
+    y solo escribe cuando `aplicar=True`. Devuelve un informe serializable.
+    """
+    if almacen is None:
+        raise ValueError("depurar_recuerdos_pii requiere un almacén explícito")
+    filas = almacen.listar_recuerdos(limite, solo_activos=True, usuario_id=usuario_id)
+    sospechosos = [(f["id"], f["contenido"]) for f in filas if contiene_pii(f.get("contenido"))]
+    informe = {
+        "inspeccionados": len(filas),
+        "sospechosos": len(sospechosos),
+        "eliminados": 0,
+        "detalle": [{"id": rid, "motivo": "PII detectada"} for rid, _ in sospechosos],
+    }
+    if not aplicar:
+        return informe
+    for rid, _ in sospechosos:
+        try:
+            if almacen.eliminar_recuerdo(rid, fisico=False, usuario_id=usuario_id):
+                informe["eliminados"] += 1
+        except Exception:
+            continue
+    return informe
