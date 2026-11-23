@@ -16,6 +16,31 @@ from oido_flujo import (
 from oido_vad import DetectorVozSilero
 
 
+# Vocabulario compacto para Whisper. Sin instrucciones largas: inducen alucinaciones en silencio.
+PROMPT_WHISPER = (
+    "Silvestra, Moisés, Lyris. Visual Studio Code, VS Code, Chrome, Edge, "
+    "Spotify, WhatsApp, YouTube, minimiza, maximiza, volumen, ¿qué hora es?, "
+    "bloc de notas, calculadora."
+)
+
+
+def _es_eco_prompt(texto, prompt):
+    """Descarta ecos del prompt de Whisper y bucles de repetición en silencios."""
+    t = " ".join(str(texto or "").lower().split())
+    p = " ".join(str(prompt or "").lower().split())
+    if not t:
+        return True
+    if p and (t == p or (len(t) >= 40 and (p.startswith(t) or t in p))):
+        return True
+    tokens = re.findall(r"\w+", t, flags=re.UNICODE)
+    if len(tokens) >= 6:
+        if any(tokens[i] == tokens[i - 1] == tokens[i - 2] for i in range(2, len(tokens))):
+            return True
+        if len(tokens) <= 14 and any(tokens.count(w) >= 4 for w in set(tokens) if len(w) >= 4):
+            return True
+    return False
+
+
 class Oido:
     """Escucha el micrófono con VAD adaptativo y transcribe a texto con Whisper y Vosk."""
 
@@ -264,7 +289,10 @@ class Oido:
         buffer = crear_buffer_wav(audio, rate=rate)
 
         vocab_nombres = self.vocabulario() if callable(self.vocabulario) else ""
-        prompt_whisper = f"Silvestra, Moisés. {vocab_nombres}".strip()
+        extras = ", ".join(n.strip() for n in vocab_nombres.split(",")[:3]
+                           if n.strip() and len(n.strip()) < 25
+                           and n.strip().lower() not in PROMPT_WHISPER.lower())[:40]
+        prompt_whisper = f"{PROMPT_WHISPER} {extras}".strip() if extras else PROMPT_WHISPER
 
         r = None
         t0 = time.time()
@@ -298,6 +326,9 @@ class Oido:
             if f in t_low:
                 print(f"[oido] transcripcion='{texto}' descartada motivo=alucinacion_whisper('{f}')", flush=True)
                 return None
+        if _es_eco_prompt(texto, prompt_whisper):
+            print(f"[oido] transcripcion='{texto}' descartada motivo=eco_prompt_o_repeticion", flush=True)
+            return None
         valida, motivo_whisper = validar_calidad_whisper(r, texto)
         if not valida:
             print(f"[oido] transcripcion='{texto}' descartada motivo={motivo_whisper}", flush=True)
