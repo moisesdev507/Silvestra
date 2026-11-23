@@ -14,10 +14,59 @@ def _hablar_en_conversacion(app):
     )
 
 
+def reanudar_escucha(app, motivo="accion_sistema"):
+    """Rearma el micrófono en el hilo Qt tras una acción, salvo modos silenciosos."""
+    if not getattr(app, "conversacion", False):
+        return
+    motivo_txt = str(motivo or "").lower()
+    silenciosos = (
+        "silenciar", "silenciada", "mute", "suspender", "suspender_laptop",
+        "apagar", "reiniciar", "cerrar_sesion", "descansar",
+    )
+    if any(s in motivo_txt for s in silenciosos):
+        return
+    raiz = getattr(getattr(app, "cara", None), "root", None)
+
+    def _hacer():
+        voz = getattr(app, "voz", None)
+        if voz and hasattr(voz, "ocupada") and voz.ocupada():
+            intentos = getattr(app, "_reanudar_intentos", 0)
+            if intentos >= 8:
+                flujo = getattr(app, "flujo", None)
+                if flujo is not None:
+                    try:
+                        flujo.cerrar()
+                    except Exception:
+                        pass
+                if hasattr(voz, "cancelar"):
+                    try:
+                        voz.cancelar("escucha_bloqueada")
+                    except Exception:
+                        pass
+                app._reanudar_intentos = 0
+            else:
+                app._reanudar_intentos = intentos + 1
+            if raiz is not None and hasattr(raiz, "after"):
+                raiz.after(300, _hacer)
+            return
+        app._reanudar_intentos = 0
+        if getattr(app, "conversacion", False) and not getattr(app, "escuchando", False):
+            app._dejar_de_escuchar()
+            app.escuchar()
+            app._ultima_accion_sistema = ""
+            print(f"[conversacion] reanudar_escucha motivo='{motivo}'", flush=True)
+
+    if raiz is not None and hasattr(raiz, "after"):
+        raiz.after(700, _hacer)
+    else:
+        _hacer()
+
+
 def atender_resto(app, tipo, texto, es_confirmacion_rutinaria):
     """Atiende los eventos que no pasan por la verificación Qt de eventos.py."""
     if tipo == "ejecutar_accion":
         app._t_accion_llm = 0
+        app._ultima_accion_sistema = str(texto)
         app.ejecutar(texto)
 
     elif tipo == "hablar":
@@ -71,7 +120,19 @@ def atender_resto(app, tipo, texto, es_confirmacion_rutinaria):
             app.hud.actualizar_clima(texto)
         app.ultimo_clima = texto
 
+    elif tipo == "reanudar_escucha":
+        reanudar_escucha(app, texto)
+
     elif tipo == "fin_voz":
+        temporizador = getattr(app, "_timer_watchdog_frase", None)
+        app._timer_watchdog_frase = None
+        raiz = getattr(getattr(app, "cara", None), "root", None)
+        if temporizador is not None and raiz is not None and hasattr(raiz, "after_cancel"):
+            try:
+                raiz.after_cancel(temporizador)
+            except Exception:
+                pass
+        app._reanudar_intentos = 0
         app.flujo = None
         if getattr(app, "musica_activa", False) and not app.escuchando:
             try:
@@ -88,6 +149,7 @@ def atender_resto(app, tipo, texto, es_confirmacion_rutinaria):
 
     elif tipo == "oido":
         app._t_accion_llm = 0
+        app._ultima_accion_sistema = ""
         if hasattr(app, "iniciativa"):
             app.iniciativa.interaccion()
         app._dejar_de_escuchar()

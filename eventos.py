@@ -12,6 +12,12 @@ def es_confirmacion_rutinaria(texto):
         return True
     t = str(texto).strip().lower()
 
+    confirmaciones_accion = (
+        "minimizando", "pantalla bloqueada", "captura de pantalla guardada",
+    )
+    if any(c in t for c in confirmaciones_accion):
+        return True
+
     alertas = (
         "error", "fallo", "falló", "no pude", "no puedo", "no se pudo", "no está", "no esta",
         "no existe", "no encontré", "no encontre", "no tengo", "bloquead", "prohibid",
@@ -41,6 +47,34 @@ def es_confirmacion_rutinaria(texto):
     return len(t) <= 30
 
 
+def _cancelar_watchdog_frase(app):
+    """Cancela el cierre automático de un flujo creado por una frase."""
+    temporizador = getattr(app, "_timer_watchdog_frase", None)
+    app._timer_watchdog_frase = None
+    raiz = getattr(getattr(app, "cara", None), "root", None)
+    if temporizador is not None and raiz is not None and hasattr(raiz, "after_cancel"):
+        try:
+            raiz.after_cancel(temporizador)
+        except Exception:
+            pass
+
+
+def _vigilar_frase_huerfana(app, flujo):
+    """Cierra un flujo de frase que no recibió un 'respuesta' posterior."""
+    raiz = getattr(getattr(app, "cara", None), "root", None)
+    if raiz is None or not hasattr(raiz, "after"):
+        return
+
+    def _cerrar():
+        if getattr(app, "flujo", None) is flujo:
+            try:
+                flujo.cerrar()
+            except Exception:
+                pass
+
+    app._timer_watchdog_frase = raiz.after(5000, _cerrar)
+
+
 def atender_evento(app, tipo, texto):
     if tipo == "frase":
         if isinstance(texto, (tuple, list)):
@@ -49,6 +83,16 @@ def atender_evento(app, tipo, texto):
         else:
             frase_txt = str(texto)
             frase_emo = None
+        t_llm = getattr(app, "_t_accion_llm", 0)
+        if t_llm and (time.time() - t_llm < 4.0) and es_confirmacion_rutinaria(frase_txt):
+            motivo = getattr(app, "_ultima_accion_sistema", "") or frase_txt
+            print(f"[eventos] Omitiendo confirmacion hablada duplicada de accion: '{frase_txt}'", flush=True)
+            try:
+                import eventos_dialogo as ed
+                ed.reanudar_escucha(app, motivo)
+            except Exception:
+                pass
+            return
         if frase_emo and hasattr(app, "cara") and app.cara:
             app.cara.fijar_emocion(frase_emo)
         if getattr(app, "musica_activa", False):
@@ -75,6 +119,7 @@ def atender_evento(app, tipo, texto):
                 t_inicio_texto=t_in_txt,
             )
             app.t_inicio_texto = None
+            _vigilar_frase_huerfana(app, app.flujo)
         app.texto_flujo = (app.texto_flujo + " " + frase_txt).strip()
         app.flujo.agregar(frase_txt, emocion=frase_emo)
         app._frases_flujo_emitidas = getattr(app, "_frases_flujo_emitidas", 0) + 1
@@ -112,6 +157,7 @@ def atender_evento(app, tipo, texto):
         app.decir(txt_s, emocion=emo_s)
 
     elif tipo == "interrupcion":
+        _cancelar_watchdog_frase(app)
         if app.flujo is not None:
             try:
                 app.flujo.cerrar()
@@ -139,6 +185,7 @@ def atender_evento(app, tipo, texto):
                 emocion = "neutral"
         else:
             respuesta, accion, emocion = str(texto), None, "neutral"
+        _cancelar_watchdog_frase(app)
 
         if respuesta is None or not str(respuesta).strip():
             return
@@ -178,6 +225,7 @@ def atender_evento(app, tipo, texto):
         else:
             app.decir(respuesta, emocion=emocion)
         if accion:
+            app._ultima_accion_sistema = str(accion)
             if respuesta and str(respuesta).strip():
                 app._t_accion_llm = time.time()
             app.ejecutar(accion)
@@ -258,6 +306,7 @@ def atender_evento(app, tipo, texto):
             app.dispositivo_entrada_actual = (texto.get("device_id"), texto.get("tipo_dispositivo"))
             texto = texto.get("texto", "")
         app._t_accion_llm = 0
+        app._ultima_accion_sistema = ""
         app.origen_entrada_actual = "chat"
         app.t_fin_habla, app.t_inicio_texto = None, time.time()
         if hasattr(app, "iniciativa"):

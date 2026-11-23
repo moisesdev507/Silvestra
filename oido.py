@@ -133,7 +133,11 @@ class Oido:
             # Anti-eco inteligente: guarda de ~350 ms solo cuando la voz de Silvestra estuvo activa
             hablaba_ella = False
             if app is not None and hasattr(app, "voz") and hasattr(app.voz, "ocupada"):
+                t_espera_voz = time.monotonic()
                 while app.voz.ocupada() and self._sesion_vigente(app, generacion):
+                    if time.monotonic() - t_espera_voz >= 2.5:
+                        print("[oido] Aviso: voz ocupada en la espera anti-eco; reanudando captura.", flush=True)
+                        break
                     hablaba_ella = True
                     self._flujo.drenar()
                     time.sleep(0.04)
