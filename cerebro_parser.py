@@ -3,7 +3,23 @@ import re
 
 _ETIQ_RESP = re.compile(r"RESPUESTA\s*\*{0,2}\s*:\s*\*{0,2}", re.I)
 _ETIQ_FIN = re.compile(r"\s*\*{0,2}(ACCI[OÓ]N|RECUERDO|EMOCI[OÓ]N)\*{0,2}\s*:", re.I)
-_ETIQ_VOZ = re.compile(r"\*{0,2}(EMOCI[OÓ]N|ACCI[OÓ]N|RESPUESTA|RECUERDO)\*{0,2}\s*:\s*", re.I)
+_ETIQ_VOZ = re.compile(
+    r"\*{0,2}(?<!\w)(RESPUES[A-Z]*|EMOCI?[OÓ]N?|ACC?I?[OÓ]N?|RECUERD[A-Z]*)\*{0,2}\s*:\s*",
+    re.I,
+)
+
+
+def _canon_etiqueta(etq):
+    e = etq.upper().replace("Ó", "O")
+    if e.startswith("RESP"):
+        return "RESPUESTA"
+    if e.startswith("EMOC"):
+        return "EMOCION"
+    if e.startswith("AC"):
+        return "ACCION"
+    if e.startswith("REC"):
+        return "RECUERDO"
+    return e
 
 
 def limpiar_etiquetas(texto):
@@ -14,7 +30,7 @@ def limpiar_etiquetas(texto):
     partes = _ETIQ_VOZ.split(txt)
     salida = [partes[0]]
     for i in range(1, len(partes) - 1, 2):
-        nombre = partes[i].upper().replace("Ó", "O")
+        nombre = _canon_etiqueta(partes[i])
         valor = partes[i + 1]
         if nombre == "EMOCION":
             valor = re.sub(r"^\s*[A-Za-zÁÉÍÓÚáéíóúÑñ]+", "", valor)

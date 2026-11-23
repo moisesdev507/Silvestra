@@ -127,6 +127,12 @@ class TestNoHablarEtiquetas(unittest.TestCase):
         self.assertEqual(cp.limpiar_etiquetas(natural), natural)
         self.assertEqual(cp.separar("RESPUESTA: " + natural)[0], natural)
 
+        self.assertEqual(cp.limpiar_etiquetas("RESPUESA: ¡De nada!"), "¡De nada!")
+        self.assertEqual(cp.limpiar_etiquetas("RESPUEST: Hola"), "Hola")
+        self.assertEqual(cp.limpiar_etiquetas("EMOCON: alegre Hola"), "Hola")
+        self.assertEqual(cp.limpiar_etiquetas("Hola. ACION: abrir_app"), "Hola.")
+        self.assertEqual(cp.limpiar_etiquetas("RECUERDA: dato"), "")
+
         resp, _accion, _recuerdo, emo = cp.separar(
             "EMOCION: calida RESPUESTA: Dame un segundito.")
         self.assertEqual(resp, "Dame un segundito.")

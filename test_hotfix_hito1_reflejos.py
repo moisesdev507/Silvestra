@@ -29,6 +29,10 @@ class TestHito1Reflejos(unittest.TestCase):
             oido.motivo_descarte_transcripcion("Muchas gracias.", 1290.4, clara))
         self.assertIsNone(
             oido.motivo_descarte_transcripcion("Muchas gracias, bebé.", 1100.0, clara))
+        self.assertIsNone(
+            oido.motivo_descarte_transcripcion("Gracias, muchas gracias.", 1180.0, clara))
+        self.assertIsNone(
+            oido.motivo_descarte_transcripcion("muchas gracias, gracias", 1180.0, clara))
 
         self.assertIsNotNone(
             oido.motivo_descarte_transcripcion("Muchas gracias.", 20.0, clara))

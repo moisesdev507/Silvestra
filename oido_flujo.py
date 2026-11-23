@@ -25,7 +25,8 @@ FALSAS = (
 # si la señal es débil o la confianza es baja.
 CORTESIAS_AMBIGUAS = ("muchas gracias",)
 _CORTESIA_RE = re.compile(
-    r"^(?:muchas\s+gracias|gracias)(?:[\s,]+(?:baby|beb[eé]|mucho|por\s+todo|liris|lyris|silvestra)){0,2}\s*[.!?]*$",
+    r"^(?:(?:muchas\s+gracias|gracias)(?:[\s,]+(?:baby|beb[eé]|mucho|por\s+todo|liris|lyris|silvestra))?"
+    r")(?:[\s,]+(?:muchas\s+gracias|gracias))*\s*[.!?]*$",
     re.I,
 )
 RMS_CORTESIA_MIN = 120.0
