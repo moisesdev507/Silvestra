@@ -132,12 +132,15 @@ def atender_evento(app, tipo, texto):
 
         if app.flujo is not None:
             app.flujo.cerrar()
-            app.ultimo_dicho = respuesta
-            if hasattr(app, "cara") and app.cara:
-                app.cara.fijar_emocion(emocion)
-            app.cara.decir(respuesta, None, emocion=emocion)
-        else:
+            if str(respuesta or "").strip():
+                app.ultimo_dicho = respuesta
+                if hasattr(app, "cara") and app.cara:
+                    app.cara.fijar_emocion(emocion)
+                app.cara.decir(respuesta, None, emocion=emocion)
+        elif str(respuesta or "").strip():
             app.decir(respuesta, emocion=emocion)
+        else:
+            app.cola.put(("fin_voz", None))
         if accion:
             if respuesta and str(respuesta).strip():
                 app._t_accion_llm = time.time()

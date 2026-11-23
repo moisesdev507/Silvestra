@@ -7,9 +7,15 @@ que se cierra de inmediato y emite ``fin_voz`` al terminar, sin dejar
 """
 import time
 
+from cerebro_parser import limpiar_etiquetas
+
 
 def _suelta(app, frase, emo, al_terminar):
     """Habla una frase puntual en un flujo autocerrado."""
+    frase = limpiar_etiquetas(frase)
+    if not frase:
+        al_terminar()
+        return
     flujo = app.voz.flujo(al_terminar, emocion=emo or "neutral")
     flujo.agregar(frase, emocion=emo)
     flujo.cerrar()
@@ -24,6 +30,9 @@ def suelta(app, texto, emo=None):
 
 def frase(app, frase_txt, frase_emo=None):
     """Encadena el streaming del LLM o habla una frase suelta de acción."""
+    frase_txt = limpiar_etiquetas(frase_txt)
+    if not frase_txt:
+        return
     if app.flujo is None and not getattr(app, "_flujo_cerrado", False):
         app.texto_flujo = ""
         t_fin = getattr(app, "t_fin_habla", None)

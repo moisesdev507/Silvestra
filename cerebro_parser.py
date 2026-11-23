@@ -3,6 +3,26 @@ import re
 
 _ETIQ_RESP = re.compile(r"RESPUESTA\s*\*{0,2}\s*:\s*\*{0,2}", re.I)
 _ETIQ_FIN = re.compile(r"\s*\*{0,2}(ACCI[OÓ]N|RECUERDO|EMOCI[OÓ]N)\*{0,2}\s*:", re.I)
+_ETIQ_VOZ = re.compile(r"\*{0,2}(EMOCI[OÓ]N|ACCI[OÓ]N|RESPUESTA|RECUERDO)\*{0,2}\s*:\s*", re.I)
+
+
+def limpiar_etiquetas(texto):
+    """Quita etiquetas internas del modelo antes de sintetizar voz."""
+    txt = re.sub(r"\s+", " ", str(texto or "")).strip()
+    if not txt:
+        return ""
+    partes = _ETIQ_VOZ.split(txt)
+    salida = [partes[0]]
+    for i in range(1, len(partes) - 1, 2):
+        nombre = partes[i].upper().replace("Ó", "O")
+        valor = partes[i + 1]
+        if nombre == "EMOCION":
+            valor = re.sub(r"^\s*[A-Za-zÁÉÍÓÚáéíóúÑñ]+", "", valor)
+            valor = re.sub(r"^[\s.;:]+", "", valor)
+        elif nombre != "RESPUESTA":
+            valor = ""
+        salida.append(valor)
+    return re.sub(r"\s+", " ", " ".join(salida)).strip()
 
 
 def separar(texto):
@@ -25,7 +45,11 @@ def separar(texto):
             elif actual == "ACCION":
                 accion = valor
             elif actual == "EMOCION":
-                emocion = valor
+                palabras = valor.split(None, 1)
+                emocion = palabras[0] if palabras else None
+                if len(palabras) > 1:
+                    resp.append(palabras[1].strip())
+                actual = "RESPUESTA"
             else:
                 recuerdo = valor
         elif actual == "RESPUESTA":
@@ -34,7 +58,7 @@ def separar(texto):
             antes.append(s)
 
     final = " ".join(p for p in (resp if resp else antes) if p).replace("*", "").strip()
-    final = re.sub(r"(?i)\bEMOCI[OÓ]N\s*:\s*[a-zA-ZáéíóúÁÉÍÓÚñÑ]+", "", final).strip()
+    final = limpiar_etiquetas(final)
     if recuerdo and recuerdo.lower().strip(" .*") in ("", "ninguno", "ninguna", "nada"):
         recuerdo = None
     if accion:
@@ -52,7 +76,7 @@ def separar(texto):
     except Exception:
         emocion_final = "neutral"
 
-    return final or (texto.strip() if texto else ""), accion, recuerdo, emocion_final
+    return final or limpiar_etiquetas(texto), accion, recuerdo, emocion_final
 
 
 def extraer_emocion_parcial(crudo):
