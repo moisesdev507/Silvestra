@@ -117,6 +117,15 @@ def registrar(nombre, funcion, descripcion, con_texto=False):
         CON_TEXTO.add(nombre)
 
 
+def telemetria_local(texto):
+    """Atajo local de hardware: frase breve o None si no aplica (nunca falla)."""
+    try:
+        import telemetria
+        return telemetria.responder_telemetria(texto)
+    except Exception:
+        return None
+
+
 def describir():
     lineas = [f"- {n}: {d}" for n, (_, _, d) in ACCIONES.items()]
     lineas += [f"- {n}: {d}" for n, d in ESPECIALES.items()]
