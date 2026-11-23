@@ -70,8 +70,8 @@ MANIFEST_JSON = json.dumps({
     ]
 }, ensure_ascii=False, indent=2)
 
-SW_JS = """// Service Worker para PWA Lyris
-const CACHE_NAME = 'lyris-pwa-v1';
+SW_JS = """// Service Worker para PWA Lyris v2
+const CACHE_NAME = 'lyris-pwa-v2';
 self.addEventListener('install', (e) => { self.skipWaiting(); });
 self.addEventListener('activate', (e) => { e.waitUntil(clients.claim()); });
 self.addEventListener('fetch', (e) => {
@@ -91,7 +91,7 @@ def despachar_get_movil(handler: Any, path: str) -> bool:
         handler.send_response(200)
         handler.send_header("Content-Type", "text/html; charset=utf-8")
         handler.send_header("Content-Length", str(len(raw)))
-        handler.send_header("Cache-Control", "no-cache")
+        handler.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
         handler.end_headers()
         try:
             handler.wfile.write(raw)
@@ -143,6 +143,7 @@ def despachar_get_movil(handler: Any, path: str) -> bool:
         handler.send_response(200)
         handler.send_header("Content-Type", "application/javascript; charset=utf-8")
         handler.send_header("Content-Length", str(len(raw)))
+        handler.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
         handler.end_headers()
         try:
             handler.wfile.write(raw)

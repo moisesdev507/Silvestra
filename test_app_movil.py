@@ -21,6 +21,7 @@ class TestAppMovilPWA(unittest.TestCase):
         self.assertTrue(ok)
         handler_mock.send_response.assert_called_with(200)
         handler_mock.send_header.assert_any_call("Content-Type", "text/html; charset=utf-8")
+        handler_mock.send_header.assert_any_call("Cache-Control", "no-store, no-cache, must-revalidate")
 
     def test_despachar_manifest_json(self):
         handler_mock = MagicMock()
@@ -38,6 +39,7 @@ class TestAppMovilPWA(unittest.TestCase):
         self.assertTrue(ok)
         handler_mock.send_response.assert_called_with(200)
         handler_mock.send_header.assert_any_call("Content-Type", "application/javascript; charset=utf-8")
+        handler_mock.send_header.assert_any_call("Cache-Control", "no-store, no-cache, must-revalidate")
 
     def test_despachar_iconos_png_pwa(self):
         for path, tam in [("/icon-192.png", 192), ("/icon-512.png", 512)]:
@@ -84,22 +86,11 @@ class TestAppMovilPWA(unittest.TestCase):
 class TestSeguridadRedTailscaleYLAN(unittest.TestCase):
     """Verifica el soporte para Tailscale CGNAT (100.64.0.0/10) y subredes privadas."""
 
-    def test_ip_tailscale_reconocida_como_cliente_permitido(self):
-        # Rango Tailscale 100.64.0.0/10
-        self.assertTrue(pra._es_lan_cliente("100.64.1.25"))
-        self.assertTrue(pra._es_lan_cliente("100.100.100.100"))
-        self.assertTrue(pra._es_lan_cliente("100.127.255.254"))
-
-    def test_ip_lan_privada_reconocida(self):
-        self.assertTrue(pra._es_lan_cliente("192.168.1.50"))
-        self.assertTrue(pra._es_lan_cliente("10.0.0.15"))
-        self.assertTrue(pra._es_lan_cliente("172.16.0.5"))
-        self.assertTrue(pra._es_lan_cliente("127.0.0.1"))
-
-    def test_ip_publica_externa_rechazada(self):
-        self.assertFalse(pra._es_lan_cliente("8.8.8.8"))
-        self.assertFalse(pra._es_lan_cliente("1.1.1.1"))
-        self.assertFalse(pra._es_lan_cliente("200.50.10.1"))
+    def test_filtro_ips_lan_tailscale_y_publicas(self):
+        for ip in ("100.64.1.25", "100.100.100.100", "192.168.1.50", "10.0.0.15", "172.16.0.5", "127.0.0.1"):
+            self.assertTrue(pra._es_lan_cliente(ip))
+        for ip in ("8.8.8.8", "1.1.1.1", "200.50.10.1"):
+            self.assertFalse(pra._es_lan_cliente(ip))
 
 
 class TestAudioYConversacionMovil(unittest.TestCase):
@@ -199,6 +190,9 @@ class TestAudioYConversacionMovil(unittest.TestCase):
     def test_html_movil_capacidades_completas(self):
         import app_movil_html as amh
         html = amh.PAGINA_MOVIL_HTML
+        self.assertIn("AudioContext", html)
+        self.assertIn("decodeAudioData", html)
+        self.assertIn("createBufferSource", html)
         self.assertIn("Blob", html)
         self.assertIn("createObjectURL", html)
         self.assertIn("revokeObjectURL", html)

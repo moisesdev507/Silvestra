@@ -12,6 +12,7 @@ if (_uP.has('token')) {
 }
 
 let vozActiva = true, audioInit = false, _audioBlobUrl = null;
+let _audioCtx = null, _currentSource = null;
 const SILENT_WAV = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
 
 function toggleVoz() {
@@ -19,11 +20,29 @@ function toggleVoz() {
 }
 
 function initAudio() {
-  if (audioInit) return;
+  if (!_audioCtx) {
+    const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtxClass) {
+      try { _audioCtx = new AudioCtxClass(); } catch (e) {}
+    }
+  }
+  if (_audioCtx) {
+    if (_audioCtx.state === 'suspended') {
+      _audioCtx.resume().catch(() => {});
+    }
+    try {
+      const b = _audioCtx.createBuffer(1, 1, 22050);
+      const src = _audioCtx.createBufferSource();
+      src.buffer = b;
+      src.connect(_audioCtx.destination);
+      src.start(0);
+    } catch (e) {}
+  }
   const p = document.getElementById('lyrisAudio');
-  if (!p) return;
-  p.src = SILENT_WAV;
-  p.play().then(() => { audioInit = true; }).catch(() => {});
+  if (p && !audioInit) {
+    p.src = SILENT_WAV;
+    p.play().then(() => { audioInit = true; }).catch(() => {});
+  }
 }
 document.addEventListener('click', initAudio, { once: true });
 document.addEventListener('touchstart', initAudio, { once: true });
@@ -101,11 +120,11 @@ function quitarPensando() {
   if (el) el.remove();
 }
 
-function guardarEnHistorial(rol, texto, hora, emocion, b64) {
+function guardarEnHistorial(rol, texto, hora, emocion) {
   try {
     let hist = JSON.parse(localStorage.getItem('lyris_chat_hist') || '[]');
     if (!Array.isArray(hist)) hist = [];
-    hist.push({ rol: rol, texto: texto, hora: hora, emocion: emocion || 'neutral', b64: b64 || '' });
+    hist.push({ rol: rol, texto: texto, hora: hora, emocion: emocion || 'neutral' });
     if (hist.length > 50) hist = hist.slice(-50);
     localStorage.setItem('lyris_chat_hist', JSON.stringify(hist));
   } catch (e) {}
@@ -135,12 +154,11 @@ function agregarMensaje(txt, rem, emo = 'neutral', b64 = '', hora = '', guardar 
   c.appendChild(m);
   c.scrollTop = c.scrollHeight;
   if (guardar) {
-    guardarEnHistorial(rem, txt, h, emo, b64);
+    guardarEnHistorial(rem, txt, h, emo);
   }
 }
 
-function playAudio(b64) {
-  if (!b64) return;
+function reproducirConAudioTag(ab) {
   const p = document.getElementById('lyrisAudio');
   if (!p) return;
   p.pause();
@@ -149,14 +167,52 @@ function playAudio(b64) {
     _audioBlobUrl = null;
   }
   try {
-    const bs = atob(b64);
-    const ab = new Uint8Array(bs.length);
-    for (let i = 0; i < bs.length; i++) ab[i] = bs.charCodeAt(i);
     const blob = new Blob([ab], { type: 'audio/mpeg' });
     _audioBlobUrl = URL.createObjectURL(blob);
     p.src = _audioBlobUrl;
-    p.play().catch(() => {});
-  } catch (err) {}
+    p.load();
+    p.play().catch((err) => {
+      const st = document.getElementById('txtStatus');
+      if (st) st.textContent = 'Audio bloqueado (toca la pantalla)';
+    });
+  } catch (err) {
+    const st = document.getElementById('txtStatus');
+    if (st) st.textContent = 'Error de audio';
+  }
+}
+
+function playAudio(b64) {
+  if (!b64) return;
+  if (_currentSource) {
+    try { _currentSource.stop(); } catch (e) {}
+    _currentSource = null;
+  }
+  const bs = atob(b64);
+  const ab = new Uint8Array(bs.length);
+  for (let i = 0; i < bs.length; i++) ab[i] = bs.charCodeAt(i);
+
+  if (_audioCtx) {
+    if (_audioCtx.state === 'suspended') {
+      _audioCtx.resume().catch(() => {});
+    }
+    try {
+      _audioCtx.decodeAudioData(ab.buffer.slice(0), (audioBuf) => {
+        if (_currentSource) {
+          try { _currentSource.stop(); } catch (e) {}
+        }
+        const src = _audioCtx.createBufferSource();
+        src.buffer = audioBuf;
+        src.connect(_audioCtx.destination);
+        _currentSource = src;
+        src.onended = () => { if (_currentSource === src) _currentSource = null; };
+        src.start(0);
+      }, () => {
+        reproducirConAudioTag(ab);
+      });
+      return;
+    } catch (e) {}
+  }
+  reproducirConAudioTag(ab);
 }
 
 async function pedirVoz(b, txt, emo) {
@@ -235,7 +291,7 @@ function cargarHistorial() {
   if (Array.isArray(hist) && hist.length > 0) {
     c.innerHTML = '';
     for (const m of hist) {
-      agregarMensaje(m.texto, m.rol, m.emocion, m.b64, m.hora, false);
+      agregarMensaje(m.texto, m.rol, m.emocion, '', m.hora, false);
     }
     c.scrollTop = c.scrollHeight;
   } else {
