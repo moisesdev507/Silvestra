@@ -295,7 +295,7 @@ def atender_evento(app, tipo, texto):
         if app.pendiente_descanso:
             app.descansar()
         elif app.conversacion and not app.escuchando:
-            app.cara.root.after(700, app.escuchar)
+            import eventos_rearme; eventos_rearme.rearmar(app)
 
     elif tipo == "oido":
         app._t_accion_llm = 0
