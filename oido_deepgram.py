@@ -1,11 +1,12 @@
 """STT principal con Deepgram Nova; devuelve None para caer a Whisper.
 
-La clave se lee del entorno en cada llamada: nunca se imprime ni se guarda.
+La clave se lee de config.py con respaldo al entorno en cada llamada: nunca se imprime ni se guarda.
 """
 import os
 import threading
 import time
 
+import config
 import httpx
 
 URL = "https://api.deepgram.com/v1/listen"
@@ -36,10 +37,12 @@ def _desactivar(codigo):
 
 def transcribir(wav_bytes):
     """Devuelve (texto, duracion) o None si no hay clave, falla o está desactivado."""
-    clave = os.environ.get("DEEPGRAM_API_KEY", "").strip()
+    clave = str(getattr(config, "DEEPGRAM_API_KEY", "")
+                or os.environ.get("DEEPGRAM_API_KEY", "")).strip()
     if not clave or not wav_bytes or not esta_activo():
         return None
-    modelo = os.environ.get("DEEPGRAM_MODEL", "nova-3").strip() or "nova-3"
+    modelo = str(getattr(config, "DEEPGRAM_MODEL", "")
+                 or os.environ.get("DEEPGRAM_MODEL", "nova-3")).strip() or "nova-3"
     t0 = time.time()
     try:
         respuesta = httpx.post(

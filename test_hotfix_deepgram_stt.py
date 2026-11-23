@@ -8,6 +8,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+import config
 import httpx
 import numpy as np
 
@@ -98,6 +99,11 @@ class TestHotfixDeepgramSTT(unittest.TestCase):
     def setUp(self):
         oido_deepgram.reiniciar()
         self.clave = "prueba-" + secrets.token_hex(4)
+        # Aislar los tests de cualquier clave real definida en config.py.
+        for atributo in ("DEEPGRAM_API_KEY", "DEEPGRAM_MODEL"):
+            parche = patch.object(config, atributo, "", create=True)
+            parche.start()
+            self.addCleanup(parche.stop)
 
     def _oido(self, texto_whisper=TEXTO_WHISPER):
         cliente = ClienteFalso(texto_whisper)
@@ -132,6 +138,22 @@ class TestHotfixDeepgramSTT(unittest.TestCase):
         self.assertLessEqual(peticion["timeout"], 6.0)
         self.assertNotIn(self.clave, salida.getvalue())
         self.assertIn("deepgram=", salida.getvalue())
+
+    def test_clave_y_modelo_desde_config_tienen_prioridad(self):
+        oido, cliente = self._oido()
+        modelo_config = "nova-3-config"
+        post = Mock(return_value=RespuestaDG(200))
+        with patch.object(config, "DEEPGRAM_API_KEY", self.clave, create=True), \
+             patch.object(config, "DEEPGRAM_MODEL", modelo_config, create=True), \
+             patch.dict(os.environ, {"DEEPGRAM_API_KEY": "", "DEEPGRAM_MODEL": "nova-3"}), \
+             patch.object(oido_deepgram.httpx, "post", post):
+            resultado = oido.escuchar()
+
+        self.assertEqual(resultado, TEXTO_DG)
+        self.assertIsNone(cliente.kwargs)
+        peticion = post.call_args.kwargs
+        self.assertEqual(peticion["headers"]["Authorization"], "Token " + self.clave)
+        self.assertEqual(peticion["params"]["model"], modelo_config)
 
     def test_timeout_y_500_caen_a_whisper_en_el_mismo_turno(self):
         for fallo in ("timeout", 500):
