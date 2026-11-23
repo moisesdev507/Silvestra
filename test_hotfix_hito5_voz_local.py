@@ -1,4 +1,4 @@
-"""Regresión Hito 5: Kokoro local con fallback y barge-in solo ante orden clara."""
+"""Regresión Hito 5: Piper VITS local, prioridad edge-tts y barge-in."""
 import io
 import os
 import queue
@@ -10,7 +10,9 @@ from unittest.mock import patch
 
 import config
 import oido
+import bajar_modelos
 import voz
+import voz_fonemas
 import voz_local
 
 
@@ -18,8 +20,8 @@ class TtsFalso:
     def __init__(self):
         self.ultimo = None
 
-    def generate(self, texto, speed=1.0):
-        self.ultimo = (texto, speed)
+    def generate(self, texto, config=None, speed=1.0):
+        self.ultimo = (texto, getattr(config, "speed", speed))
         return SimpleNamespace(samples=[0.0, 0.25, -0.25], sample_rate=24000)
 
 
@@ -57,57 +59,62 @@ class CommunicateFalso:
 
 
 class TestHotfixHito5VozLocal(unittest.TestCase):
-    def test_config_kokoro_recibe_lexicon_y_data_dir(self):
+    def test_g2p_español_y_descarga_piper(self):
+        self.assertEqual(''.join(chr(c) for c in
+                                 voz_fonemas.fonemas_es('hola que tal')[0]),
+                         'ola ke tal ')
+        self.assertTrue(all("vits-piper-es_" in u for u in bajar_modelos.PIPER_URLS))
+        self.assertIs(bajar_modelos.bajar_kokoro, bajar_modelos.bajar_piper)
+
+    def test_config_vits_recibe_model_tokens_y_data_dir(self):
         captura = {}
 
-        class KokoroCfg:
+        class VitsCfg:
             def __init__(self, **kw):
-                captura["kokoro"] = kw
+                captura["vits"] = kw
 
         class ModeloCfg:
-            def __init__(self, kokoro):
-                captura["modelo"] = kokoro
+            def __init__(self, vits):
+                captura["modelo"] = vits
 
         class TtsCfg:
             def __init__(self, model):
                 captura["tts_model"] = model
 
         sherpa = SimpleNamespace(
-            OfflineTtsKokoroModelConfig=KokoroCfg,
+            OfflineTtsVitsModelConfig=VitsCfg,
             OfflineTtsModelConfig=ModeloCfg,
             OfflineTtsConfig=TtsCfg,
             OfflineTts=lambda _cfg: TtsFalso(),
         )
-        lexico = "modelos/kokoro/lexicon-us-en.txt,modelos/kokoro/lexicon-gb-en.txt"
-        rutas = ("modelos/kokoro/model.int8.onnx", "modelos/kokoro/voices.bin",
-                 "modelos/kokoro/tokens.txt", lexico,
-                 "modelos/kokoro/espeak-ng-data")
+        rutas = ("modelos/vits-piper-es_MX-claude-high/voz.onnx",
+                 "modelos/vits-piper-es_MX-claude-high/tokens.txt",
+                 "modelos/vits-piper-es_MX-claude-high/espeak-ng-data")
         with patch.object(voz_local, "_archivos", lambda: rutas), \
              patch.dict(sys.modules, {"sherpa_onnx": sherpa}), \
              patch.object(voz_local, "_TTS", None), \
              patch.object(voz_local, "_FALLADO", False):
             self.assertIsNotNone(voz_local._cargar())
 
-        self.assertEqual(captura["kokoro"]["lexicon"], lexico)
-        self.assertEqual(captura["kokoro"]["data_dir"],
-                         "modelos/kokoro/espeak-ng-data")
-        self.assertIsInstance(captura["modelo"], KokoroCfg)
+        self.assertEqual(captura["vits"]["model"], rutas[0])
+        self.assertEqual(captura["vits"]["tokens"], rutas[1])
+        self.assertEqual(captura["vits"]["data_dir"], rutas[2])
+        self.assertIsInstance(captura["modelo"], VitsCfg)
         self.assertIsInstance(captura["tts_model"], ModeloCfg)
 
-    def test_resolucion_real_de_lexicons_y_data_dir(self):
-        if not os.path.isdir("modelos/kokoro-int8-multi-lang-v1_0"):
-            self.skipTest("modelo Kokoro no descargado")
+    def test_resolucion_real_de_piper_vits(self):
+        if not voz_local._carpeta_modelo():
+            self.skipTest("modelo Piper VITS no descargado")
         rutas = voz_local._archivos()
         self.assertIsNotNone(rutas)
-        modelo, _voces, _tokens, lexico, dato = rutas
-        self.assertTrue(modelo.endswith("model.int8.onnx"))
-        self.assertIn("lexicon-us-en.txt", lexico)
-        self.assertIn("lexicon-gb-en.txt", lexico)
+        modelo, tokens, dato = rutas
+        self.assertTrue(modelo.endswith(".onnx"))
+        self.assertTrue(tokens.endswith("tokens.txt"))
         self.assertTrue(dato.endswith("espeak-ng-data"))
 
     def test_sintesis_real_devuelve_wav_valido(self):
-        if not os.path.isdir("modelos/kokoro-int8-multi-lang-v1_0"):
-            self.skipTest("modelo Kokoro no descargado")
+        if not voz_local._carpeta_modelo():
+            self.skipTest("modelo Piper VITS no descargado")
         audio = voz_local.sintetizar_wav("Hola")
         self.assertTrue(audio and audio.startswith(b"RIFF"))
         with wave.open(io.BytesIO(audio), "rb") as archivo:
@@ -133,7 +140,8 @@ class TestHotfixHito5VozLocal(unittest.TestCase):
         with patch.object(voz_local, "_cargar", lambda: tts):
             audio = voz_local.sintetizar_wav("  hola  Lyris  ", "animada")
         self.assertTrue(audio.startswith(b"RIFF"))
-        self.assertEqual(tts.ultimo, ("hola Lyris", 1.08))
+        self.assertEqual(tts.ultimo[0], "hola Lyris")
+        self.assertAlmostEqual(tts.ultimo[1], 1.08, places=5)
 
     def test_sin_modelo_devuelve_none_y_voz_cae_a_edge_tts(self):
         with patch.object(voz_local, "_cargar", lambda: None):
@@ -147,11 +155,47 @@ class TestHotfixHito5VozLocal(unittest.TestCase):
              patch.object(voz_local, "sintetizar_wav", lambda *_a: None):
             self.assertEqual(voz.Voz._audio(frase, "neutral"), b"EDGE_AUDIO")
 
-    def test_voz_prefiere_kokoro_cuando_devuelve_audio(self):
-        frase = "frase kokoro hito5 " + str(id(self))
-        with patch.object(voz_local, "sintetizar_wav", lambda *_a: b"KOKORO_WAV"), \
-             patch("voz_cache.obtener_audio_cache", lambda *_a: None):
-            self.assertEqual(voz.Voz._audio(frase, "alegre"), b"KOKORO_WAV")
+    def test_edge_primero_por_defecto_y_fallback_a_piper_si_falla(self):
+        frase = "frase prioridad hito5 " + str(id(self))
+        falso = SimpleNamespace(Communicate=CommunicateFalso)
+        with patch.dict(os.environ, {"LYRIS_TTS_LOCAL": "0"}), \
+             patch.dict(sys.modules, {"edge_tts": falso}), \
+             patch("voz_cache.obtener_audio_cache", lambda *_a: None), \
+             patch("voz_cache.guardar_audio_cache", lambda *_a: None), \
+             patch.object(voz_local, "fallback_local",
+                          side_effect=AssertionError("edge no debió fallar")):
+            self.assertEqual(voz.Voz._audio(frase, "alegre"), b"EDGE_AUDIO")
+
+        with patch.dict(os.environ, {"LYRIS_TTS_LOCAL": "0"}), \
+             patch.dict(sys.modules, {"edge_tts": falso}), \
+             patch("voz_cache.obtener_audio_cache", lambda *_a: None), \
+             patch.object(voz_local, "generar_edge", lambda *_a: None), \
+             patch.object(voz_local, "fallback_local", lambda *_a: b"PIPER_WAV"):
+            self.assertEqual(voz.Voz._audio(frase, "alegre"), b"PIPER_WAV")
+
+    def test_local_primero_con_env_y_cae_a_edge_si_falla(self):
+        frase = "frase local hito5 " + str(id(self))
+        falso = SimpleNamespace(Communicate=CommunicateFalso)
+        vistos = []
+
+        def local(frase, emocion):
+            vistos.append(emocion)
+            return None
+
+        with patch.dict(os.environ, {"LYRIS_TTS_LOCAL": "1"}), \
+             patch.dict(sys.modules, {"edge_tts": falso}), \
+             patch("voz_cache.obtener_audio_cache", lambda *_a: None), \
+             patch("voz_cache.guardar_audio_cache", lambda *_a: None), \
+             patch.object(voz_local, "fallback_local", local):
+            self.assertEqual(voz.Voz._audio(frase, "calmada"), b"EDGE_AUDIO")
+        self.assertEqual(vistos, ["calmada"])
+
+        with patch.dict(os.environ, {"LYRIS_TTS_LOCAL": "1"}), \
+             patch("voz_cache.obtener_audio_cache", lambda *_a: None), \
+             patch.object(voz_local, "fallback_local", lambda *_a: b"PIPER_WAV"), \
+             patch.object(voz_local, "generar_edge",
+                          side_effect=AssertionError("no debe llamar a edge")):
+            self.assertEqual(voz.Voz._audio(frase), b"PIPER_WAV")
 
     def test_barge_in_ignora_ruido_y_exige_voz_activa(self):
         datos = SimpleNamespace(tobytes=lambda: b"\x00\x00")

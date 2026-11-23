@@ -1,8 +1,9 @@
-"""TTS local con sherpa-onnx/Kokoro: modelo perezoso, emoción -> speed y WAV en memoria.
+"""TTS local de respaldo: Piper VITS en español vía sherpa-onnx.
 
-Nunca lanza excepción hacia la voz: si faltan archivos o falla la síntesis,
-devuelve None para que ``Voz._audio`` caiga limpiamente a edge-tts.
+Carga perezosa con Lock, emoción -> speed y WAV PCM16 en memoria. Devuelve
+None ante cualquier fallo para que ``Voz._audio`` siga con edge-tts o SAPI.
 """
+import asyncio
 import io
 import os
 import re
@@ -10,13 +11,15 @@ import threading
 import wave
 from array import array
 
+from voz_fonemas import fonemas_es
+
 _RAIZ = os.path.dirname(os.path.abspath(__file__))
 _MODELOS = os.path.join(_RAIZ, "modelos")
 _LOCK = threading.Lock()
 _TTS = None
 _FALLADO = False
 
-# Velocidad hablada por emoción (Kokoro solo expone speed/speaker id).
+# Piper VITS solo expone speed; estas son las variaciones usadas por Lyris.
 _VELOCIDADES = {
     "neutral": 1.0, "normal": 1.0, "enojada": 1.0,
     "alegre": 1.06, "animada": 1.08, "orgullosa": 1.06,
@@ -33,53 +36,49 @@ def normalizar_emocion(emocion):
 
 
 def velocidad_para(emocion):
-    """Traduce la emoción de Lyris al parámetro speed de Kokoro."""
+    """Traduce la emoción al parámetro speed de Piper VITS."""
     return _VELOCIDADES[normalizar_emocion(emocion)]
 
 
-def _archivos():
-    """Localiza model/voices/tokens, lexicons y espeak-ng-data dentro de modelos/."""
+def debe_ir_local_primero():
+    """Solo LYRIS_TTS_LOCAL=1 invierte la prioridad natural (edge-tts primero)."""
+    return os.environ.get("LYRIS_TTS_LOCAL") == "1"
+
+
+def _carpeta_modelo():
+    """Localiza vits-piper-* en modelos/, prefiriendo una voz en español."""
     if not os.path.isdir(_MODELOS):
+        return ""
+    candidatas = [
+        raiz for raiz, _dirs, _archivos in os.walk(_MODELOS)
+        if os.path.basename(raiz).lower().startswith("vits-piper")
+    ]
+    return next((r for r in candidatas if "es_" in os.path.basename(r).lower()),
+                candidatas[0] if candidatas else "")
+
+
+def _archivos():
+    """Devuelve (model.onnx, tokens.txt, espeak-ng-data) del modelo Piper."""
+    carpeta = _carpeta_modelo()
+    if not carpeta:
         return None
-    encontrados, datos = [], []
-    for raiz, dirs, archivos in os.walk(_MODELOS):
-        for nombre in archivos:
-            encontrados.append((nombre.lower(), os.path.join(raiz, nombre)))
-        if "espeak-ng-data" in dirs:
-            datos.append(os.path.join(raiz, "espeak-ng-data"))
-
-    def buscar(nombres):
-        return next((ruta for nombre, ruta in encontrados if nombre in nombres), "")
-
     modelo = next(
-        (ruta for nombre, ruta in encontrados
-         if nombre.endswith(".onnx")
-         and ("kokoro" in nombre
-              or "kokoro" in os.path.basename(os.path.dirname(ruta)).lower())),
-        "",
-    )
-    voces = buscar(("voices.bin",)) or next(
-        (ruta for nombre, ruta in encontrados
-         if nombre.endswith(".bin") and "voices" in os.path.dirname(ruta).lower()),
-        "",
-    )
-    tokenes = buscar(("tokens.txt",))
-    if not (modelo and voces and tokenes):
+        (os.path.join(carpeta, n) for n in sorted(os.listdir(carpeta))
+         if n.lower().endswith(".onnx")), "")
+    tokenes = os.path.join(carpeta, "tokens.txt")
+    if not (modelo and os.path.isfile(tokenes)):
         return None
-    carpeta = os.path.dirname(modelo)
-    lexicos = sorted(
-        ruta for nombre, ruta in encontrados
-        if os.path.dirname(ruta) == carpeta
-        and nombre.startswith("lexicon-") and nombre.endswith(".txt")
-    )
-    lexico = ",".join(lexicos) or buscar(("lexicon.txt", "lexicon_us.txt"))
-    dato = next((d for d in datos if os.path.dirname(d) == carpeta),
-                datos[0] if datos else "")
-    return modelo, voces, tokenes, lexico, dato
+    dato = os.path.join(carpeta, "espeak-ng-data")
+    if not os.path.isdir(dato):
+        dato = next(
+            (os.path.join(r, "espeak-ng-data")
+             for r, dirs, _f in os.walk(carpeta)
+             if "espeak-ng-data" in dirs), "")
+    return modelo, tokenes, dato
 
 
 def disponible():
-    """True si sherpa-onnx y los archivos del modelo están listos."""
+    """True si sherpa-onnx y el modelo Piper están listos."""
     if _TTS is not None:
         return True
     try:
@@ -102,17 +101,16 @@ def _cargar():
             import sherpa_onnx
             rutas = _archivos()
             if not rutas:
-                print("[voz_local] sin modelo Kokoro; edge-tts sigue activo", flush=True)
+                print("[voz_local] sin modelo Piper; edge-tts sigue activo", flush=True)
                 return None
-            modelo, voces, tokenes, lexico, dato = rutas
-            kokoro = sherpa_onnx.OfflineTtsKokoroModelConfig(
-                model=modelo, voices=voces, tokens=tokenes,
-                lexicon=lexico, data_dir=dato)
+            modelo, tokenes, dato = rutas
+            vits = sherpa_onnx.OfflineTtsVitsModelConfig(
+                model=modelo, tokens=tokenes, data_dir=dato)
             config = sherpa_onnx.OfflineTtsConfig(
-                model=sherpa_onnx.OfflineTtsModelConfig(kokoro=kokoro))
+                model=sherpa_onnx.OfflineTtsModelConfig(vits=vits))
             _TTS = sherpa_onnx.OfflineTts(config)
             _FALLADO = False
-            print("[voz_local] Kokoro cargado", flush=True)
+            print("[voz_local] Piper VITS cargado", flush=True)
             return _TTS
         except Exception as e:
             print(f"[voz_local] no disponible: {e}", flush=True)
@@ -138,18 +136,51 @@ def samples_a_wav(samples, sample_rate=24000):
 
 
 def sintetizar_wav(frase, emocion="neutral"):
-    """Devuelve WAV local o None; jamás propaga errores al flujo de voz."""
+    """Devuelve WAV de Piper o None; jamás propaga errores."""
     texto = " ".join(str(frase or "").split())
     if not texto:
         return None
     try:
+        import sherpa_onnx
         tts = _cargar()
         if tts is None:
             return None
-        audio = tts.generate(texto, speed=velocidad_para(emocion))
+        velocidad = velocidad_para(emocion)
+        generacion = getattr(sherpa_onnx, "GenerationConfig", None)
+        if generacion is None:  # sherpa-onnx < 2 usa data_dir directamente
+            audio = tts.generate(texto, speed=velocidad)
+        else:
+            config = generacion()
+            config.speed = velocidad
+            config.phoneme_codepoints = fonemas_es(texto)
+            audio = tts.generate(texto, config)
         muestras = getattr(audio, "samples", None)
         if muestras is None or len(muestras) == 0:
             return None
         return samples_a_wav(muestras, getattr(audio, "sample_rate", 24000))
     except Exception:
         return None
+
+
+def fallback_local(frase, emocion="neutral"):
+    """Respaldo offline con log del motor; None si Piper no está listo."""
+    try:
+        audio = sintetizar_wav(frase, emocion)
+    except Exception:
+        return None
+    if audio:
+        print("[voz] motor=piper_local", flush=True)
+    return audio
+
+
+def generar_edge(crear, frase, emocion):
+    """Ejecuta el stream edge-tts con timeout y lo cachea; None si falla."""
+    import voz_cache
+    try:
+        audio = asyncio.run(asyncio.wait_for(crear(), 10))
+    except Exception:
+        return None
+    if not audio:
+        return None
+    voz_cache.guardar_audio_cache(frase, audio, emocion)
+    return audio

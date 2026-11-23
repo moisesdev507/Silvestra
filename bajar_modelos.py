@@ -47,34 +47,49 @@ def bajar(nombre, urls):
     return False
 
 
-KOKORO_URLS = (
+PIPER_URLS = (
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/"
-    "kokoro-int8-multi-lang-v1_0.tar.bz2",
+    "vits-piper-es_MX-claude-high.tar.bz2",
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/"
-    "kokoro-multi-lang-v1_0.tar.bz2",
+    "vits-piper-es_AR-daniela-high.tar.bz2",
 )
 
 
-def bajar_kokoro():
-    """Descarga opcional del TTS local Kokoro. No altera los modelos existentes."""
-    archivo = os.path.join(CARPETA, "kokoro-int8-multi-lang-v1_0.tar.bz2")
-    for url in KOKORO_URLS:
+def _piper_presente():
+    """Detecta cualquier voz Piper VITS en español ya extraída."""
+    return any(n.startswith("vits-piper-es_") and
+               os.path.isdir(os.path.join(CARPETA, n))
+               for n in os.listdir(CARPETA))
+
+
+def bajar_piper():
+    """Descarga opcional de Piper VITS en español; no altera otros modelos."""
+    if _piper_presente():
+        print("Ya está: Piper VITS en español")
+        return True
+    archivo = os.path.join(CARPETA, "piper-es.tar.bz2")
+    for url in PIPER_URLS:
         try:
             if not os.path.exists(archivo) or os.path.getsize(archivo) < 1_000_000:
-                print("Bajando modelo Kokoro (TTS local)...")
+                print("Bajando modelo Piper VITS (español)...")
                 urllib.request.urlretrieve(url, archivo)
             with tarfile.open(archivo, "r:bz2") as tar:
                 try:
                     tar.extractall(CARPETA, filter="data")
                 except TypeError:
                     tar.extractall(CARPETA)
-            print("  listo modelo Kokoro")
-            if os.path.exists(archivo):
-                os.remove(archivo)
-            return True
+            if _piper_presente():
+                print("  listo modelo Piper VITS")
+                if os.path.exists(archivo):
+                    os.remove(archivo)
+                return True
         except Exception as e:
-            print(f"  falló Kokoro: {str(e)[:100]}")
+            print(f"  falló Piper: {str(e)[:100]}")
     return False
+
+
+# Alias conservado: --kokoro sigue funcionando y apunta al respaldo en español.
+bajar_kokoro = bajar_piper
 
 
 def bajar_vosk():
@@ -107,7 +122,7 @@ def bajar_vosk():
 if __name__ == "__main__":
     os.makedirs(CARPETA, exist_ok=True)
     todo = all([bajar(n, u) for n, u in MODELOS.items()]) and bajar_vosk()
-    if "--kokoro" in sys.argv or os.environ.get("LYRIS_TTS_LOCAL") == "1":
-        if not bajar_kokoro():
-            print("Kokoro opcional no disponible: se seguirá usando edge-tts.")
+    if {"--piper", "--kokoro"} & set(sys.argv) or os.environ.get("LYRIS_TTS_LOCAL") == "1":
+        if not bajar_piper():
+            print("Piper VITS opcional no disponible: se seguirá usando edge-tts.")
     print("\nTodo listo." if todo else "\nFaltó algún archivo. Mándame lo que salió arriba.")

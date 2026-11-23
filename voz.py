@@ -172,14 +172,11 @@ class Voz:
         if en_cache:
             return en_cache
 
-        try:
-            import voz_local
-            audio_local = voz_local.sintetizar_wav(frase, emocion)
+        import voz_local
+        if voz_local.debe_ir_local_primero():
+            audio_local = voz_local.fallback_local(frase, emocion)
             if audio_local:
-                print("[voz] motor=kokoro_local", flush=True)
                 return audio_local
-        except Exception:
-            pass
 
         import edge_tts
 
@@ -198,9 +195,10 @@ class Voz:
                     datos += trozo["data"]
             return bytes(datos)
 
-        audio_generado = asyncio.run(asyncio.wait_for(crear(), 10))
-        voz_cache.guardar_audio_cache(frase, audio_generado, emocion)
-        return audio_generado
+        audio_generado = voz_local.generar_edge(crear, frase, emocion)
+        if audio_generado:
+            return audio_generado
+        return voz_local.fallback_local(frase, emocion) or b""
 
     def soltar_espera(self):
         """Reproduce inmediatamente una muletilla o sonido natural en caché si la respuesta demora."""
