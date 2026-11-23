@@ -30,6 +30,12 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     except Exception:
         pass
 
+    import acciones
+    if acciones.es_minimizar(texto):
+        resp = "Minimizando la ventana."
+        _reg_turno(cerebro, texto_orig, resp, al_frase)
+        return resp, "minimizar_todo", "alegre"
+
     # 0. Intercepción local instantánea (< 50 ms) para escritura y lectura real de archivos
     import os
     import re

@@ -107,6 +107,18 @@ def describir():
     return "\n".join(lineas)
 
 
+def es_minimizar(texto):
+    """Tolera erratas de Whisper: 'minimaliza/minimizar la ventana'."""
+    import re
+    import unicodedata
+    norm = "".join(c for c in unicodedata.normalize("NFD", str(texto or "").lower())
+                   if unicodedata.category(c) != "Mn")
+    if re.search(r"\bno\s+(?:minimi|minimaliz)", norm):
+        return False
+    return bool(re.search("minim(?:i|ali)za", norm)
+                and re.search("ventana|escritorio|pantalla|todo", norm))
+
+
 def interpretar(linea):
     """'buscar | recetas de arroz' -> ('buscar', 'recetas de arroz')."""
     if not linea:
@@ -116,6 +128,9 @@ def interpretar(linea):
     arg = partes[1].strip() if len(partes) > 1 else None
     if nombre in ("ninguna", "ninguno", "nada", ""):
         return None, None
+    if nombre in ("minimizar", "minimizar_ventanas", "minimizar_todas",
+                  "minimizar_ventana_actual", "minimalizar_ventanas"):
+        nombre = "minimizar_todo"
     return nombre, arg
 
 
