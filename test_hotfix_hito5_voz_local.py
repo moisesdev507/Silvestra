@@ -57,6 +57,63 @@ class CommunicateFalso:
 
 
 class TestHotfixHito5VozLocal(unittest.TestCase):
+    def test_config_kokoro_recibe_lexicon_y_data_dir(self):
+        captura = {}
+
+        class KokoroCfg:
+            def __init__(self, **kw):
+                captura["kokoro"] = kw
+
+        class ModeloCfg:
+            def __init__(self, kokoro):
+                captura["modelo"] = kokoro
+
+        class TtsCfg:
+            def __init__(self, model):
+                captura["tts_model"] = model
+
+        sherpa = SimpleNamespace(
+            OfflineTtsKokoroModelConfig=KokoroCfg,
+            OfflineTtsModelConfig=ModeloCfg,
+            OfflineTtsConfig=TtsCfg,
+            OfflineTts=lambda _cfg: TtsFalso(),
+        )
+        lexico = "modelos/kokoro/lexicon-us-en.txt,modelos/kokoro/lexicon-gb-en.txt"
+        rutas = ("modelos/kokoro/model.int8.onnx", "modelos/kokoro/voices.bin",
+                 "modelos/kokoro/tokens.txt", lexico,
+                 "modelos/kokoro/espeak-ng-data")
+        with patch.object(voz_local, "_archivos", lambda: rutas), \
+             patch.dict(sys.modules, {"sherpa_onnx": sherpa}), \
+             patch.object(voz_local, "_TTS", None), \
+             patch.object(voz_local, "_FALLADO", False):
+            self.assertIsNotNone(voz_local._cargar())
+
+        self.assertEqual(captura["kokoro"]["lexicon"], lexico)
+        self.assertEqual(captura["kokoro"]["data_dir"],
+                         "modelos/kokoro/espeak-ng-data")
+        self.assertIsInstance(captura["modelo"], KokoroCfg)
+        self.assertIsInstance(captura["tts_model"], ModeloCfg)
+
+    def test_resolucion_real_de_lexicons_y_data_dir(self):
+        if not os.path.isdir("modelos/kokoro-int8-multi-lang-v1_0"):
+            self.skipTest("modelo Kokoro no descargado")
+        rutas = voz_local._archivos()
+        self.assertIsNotNone(rutas)
+        modelo, _voces, _tokens, lexico, dato = rutas
+        self.assertTrue(modelo.endswith("model.int8.onnx"))
+        self.assertIn("lexicon-us-en.txt", lexico)
+        self.assertIn("lexicon-gb-en.txt", lexico)
+        self.assertTrue(dato.endswith("espeak-ng-data"))
+
+    def test_sintesis_real_devuelve_wav_valido(self):
+        if not os.path.isdir("modelos/kokoro-int8-multi-lang-v1_0"):
+            self.skipTest("modelo Kokoro no descargado")
+        audio = voz_local.sintetizar_wav("Hola")
+        self.assertTrue(audio and audio.startswith(b"RIFF"))
+        with wave.open(io.BytesIO(audio), "rb") as archivo:
+            self.assertEqual(archivo.getnchannels(), 1)
+            self.assertGreater(archivo.getnframes(), 0)
+
     def test_wav_valido_y_mapeo_de_emocion(self):
         wav = voz_local.samples_a_wav([0.0, 0.5, -0.5, 1.0, -1.0], 22050)
         self.assertTrue(wav.startswith(b"RIFF"))

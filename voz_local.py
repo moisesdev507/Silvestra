@@ -38,13 +38,15 @@ def velocidad_para(emocion):
 
 
 def _archivos():
-    """Localiza model/voices/tokens (y lexicon opcional) dentro de modelos/."""
+    """Localiza model/voices/tokens, lexicons y espeak-ng-data dentro de modelos/."""
     if not os.path.isdir(_MODELOS):
         return None
-    encontrados = []
-    for raiz, _dirs, archivos in os.walk(_MODELOS):
+    encontrados, datos = [], []
+    for raiz, dirs, archivos in os.walk(_MODELOS):
         for nombre in archivos:
             encontrados.append((nombre.lower(), os.path.join(raiz, nombre)))
+        if "espeak-ng-data" in dirs:
+            datos.append(os.path.join(raiz, "espeak-ng-data"))
 
     def buscar(nombres):
         return next((ruta for nombre, ruta in encontrados if nombre in nombres), "")
@@ -64,7 +66,16 @@ def _archivos():
     tokenes = buscar(("tokens.txt",))
     if not (modelo and voces and tokenes):
         return None
-    return modelo, voces, tokenes, buscar(("lexicon.txt", "lexicon_us.txt"))
+    carpeta = os.path.dirname(modelo)
+    lexicos = sorted(
+        ruta for nombre, ruta in encontrados
+        if os.path.dirname(ruta) == carpeta
+        and nombre.startswith("lexicon-") and nombre.endswith(".txt")
+    )
+    lexico = ",".join(lexicos) or buscar(("lexicon.txt", "lexicon_us.txt"))
+    dato = next((d for d in datos if os.path.dirname(d) == carpeta),
+                datos[0] if datos else "")
+    return modelo, voces, tokenes, lexico, dato
 
 
 def disponible():
@@ -93,9 +104,10 @@ def _cargar():
             if not rutas:
                 print("[voz_local] sin modelo Kokoro; edge-tts sigue activo", flush=True)
                 return None
-            modelo, voces, tokenes, lexico = rutas
+            modelo, voces, tokenes, lexico, dato = rutas
             kokoro = sherpa_onnx.OfflineTtsKokoroModelConfig(
-                model=modelo, voices=voces, tokens=tokenes, lexicon=lexico)
+                model=modelo, voices=voces, tokens=tokenes,
+                lexicon=lexico, data_dir=dato)
             config = sherpa_onnx.OfflineTtsConfig(
                 model=sherpa_onnx.OfflineTtsModelConfig(kokoro=kokoro))
             _TTS = sherpa_onnx.OfflineTts(config)
