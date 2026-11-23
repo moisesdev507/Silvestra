@@ -1,4 +1,6 @@
 """Manejo de respuestas en streaming para Silvestra mediante la cadena de proveedores."""
+import traceback
+
 from cerebro import separar
 import cerebro_enrutador
 import proveedores
@@ -9,6 +11,10 @@ import respuesta_flujo_acciones
 def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     """Genera la respuesta con streaming y conmutación automática de proveedores si hay fallos."""
     texto_orig = str(texto)
+    # Los llamadores en modo texto/silencio (p. ej. app_movil_audio) pasan
+    # al_frase=None: el streaming debe seguir funcionando sin emitir voz.
+    al_frase_fn = al_frase if callable(al_frase) else None
+    on_token_fn = on_primer_token if callable(on_primer_token) else None
     try:
         import agente_confirmacion as ac
         if ac.resolver(getattr(cerebro, "app", None), texto) in ("aprobado", "rechazado"):
@@ -44,7 +50,8 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
 
     def _al_frase(fragmento):
         if frases_diferidas is None:
-            al_frase(fragmento)
+            if callable(al_frase_fn):
+                al_frase_fn(fragmento)
         else:
             frases_diferidas.append(fragmento)
 
@@ -83,7 +90,7 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     if carril == "pro":
         try:
             crudo = cerebro_enrutador.completar_pro_flujo(
-                mensajes, al_frase=_al_frase, on_primer_token=on_primer_token, on_emocion=_on_emocion
+                mensajes, al_frase=_al_frase, on_primer_token=on_token_fn, on_emocion=_on_emocion
             )
         except Exception as e:
             print(f"[enrutador] fallback_pro->rapido motivo={e}", flush=True)
@@ -92,11 +99,13 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     if crudo is None:
         try:
             crudo = proveedores.completar_flujo(
-                mensajes, _al_frase, tarea=tarea, on_primer_token=on_primer_token,
+                mensajes, _al_frase, tarea=tarea, on_primer_token=on_token_fn,
                 on_emocion=_on_emocion, carril=carril
             )
         except Exception as e:
             print(f"[respuesta_flujo] Excepción en streaming: {e}. Usando respuesta local.", flush=True)
+            tb = traceback.format_exc(limit=5).replace("\n", " | ")
+            print(f"[respuesta_flujo] traceback: {type(e).__name__}: {e} | {tb[:400]}", flush=True)
             try:
                 _al_frase(pc.FRASE_EMERGENCIA_LOCAL)
             except Exception:
@@ -107,6 +116,8 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         respuesta, accion, recuerdo, emocion = separar(crudo)
     except Exception as e:
         print(f"[respuesta_flujo] Error en separar(crudo): {e}", flush=True)
+        tb = traceback.format_exc(limit=5).replace("\n", " | ")
+        print(f"[respuesta_flujo] traceback: {type(e).__name__}: {e} | {tb[:400]}", flush=True)
         respuesta, accion, recuerdo, emocion = str(crudo or ""), None, None, "neutral"
 
     try:
@@ -125,14 +136,14 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     except Exception as e:
         print(f"[respuesta_flujo] Guard operativo no disponible: {e}", flush=True)
 
-    if frases_diferidas is not None:
+    if frases_diferidas is not None and callable(al_frase_fn):
         try:
             if corregido:
                 if str(respuesta or "").strip():
-                    al_frase(respuesta)
+                    al_frase_fn(respuesta)
             else:
                 for _frag in frases_diferidas:
-                    al_frase(_frag)
+                    al_frase_fn(_frag)
         except Exception:
             pass
 
