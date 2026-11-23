@@ -4,16 +4,11 @@ from datetime import date
 
 import memoria_busqueda as mb
 import memoria_consulta
+import memoria_embeddings as me
+import memoria_indice_vectorial as miv
 import memoria_tiempo as mt
 
-SINONIMOS = {
-    "arreglar": ("solucionar", "reparar", "corregir"), "solucion": ("arreglo", "reparacion", "solucionar"),
-    "error": ("problema", "falla", "fallo", "averia"), "averia": ("error", "fallo", "problema"),
-    "trabajo": ("empleo", "labor", "proyecto"), "gustar": ("preferir", "encantar"),
-    "decidir": ("acordar", "resolver", "elegir"), "problema": ("error", "fallo", "incidente"),
-    "meta": ("objetivo", "plan", "proposito"), "comida": ("alimento", "plato", "comer"),
-    "comprar": ("adquirir", "pedido"), "estudiar": ("aprender", "curso", "estudio"),
-}
+SINONIMOS = dict(me.SINONIMOS)
 NEGACION = {"no", "nunca", "ya_no", "dejo_de", "sin"}
 PARES = (("usar", "evitar"), ("activo", "inactivo"), ("aceptar", "rechazar"),
          ("elegir", "descartar"), ("preferir", "evitar"), ("trabajar", "renunciar"))
@@ -44,7 +39,17 @@ def _expandidos(terminos):
     return salida - mb.STOPWORDS
 
 
-def _puntuacion(item, analisis, contexto, hoy):
+def _calibrar(base):
+    """Curva sigmoid suave: rompe el plano 0.40-0.46 sin aplanar extremos."""
+    x = max(0.0, min(1.0, float(base)))
+    try:
+        y = 1.0 / (1.0 + math.exp(-10.0 * (x - 0.5)))
+    except OverflowError:
+        y = 0.0 if x < 0.5 else 1.0
+    return round(0.15 * x + 0.85 * y, 4)
+
+
+def _puntuacion(item, analisis, contexto, hoy, similitud=0.0):
     q, texto = set(analisis["terminos"]), _palabras(item.get("contenido"))
     expand = _expandidos(q)
     literal = len(q & texto) / max(1, len(q))
@@ -68,8 +73,10 @@ def _puntuacion(item, analisis, contexto, hoy):
         importancia = .5
     importancia = max(0.0, min(1.0, importancia))
     afinidad = min(1.0, len(q & texto) / 3.0)
-    score = .30*literal + .20*sem + .15*alineacion + .10*frescura + .10*confianza + .08*procedencia + .05*importancia + .02*afinidad
-    return score
+    sim = max(0.0, min(1.0, float(similitud or 0.0)))
+    base = (.22*literal + .10*sem + .07*alineacion + .34*sim + .09*frescura
+            + .08*confianza + .06*procedencia + .03*importancia + .01*afinidad)
+    return _calibrar(base)
 
 
 def _polaridad(texto):
@@ -112,6 +119,23 @@ def recuperar(gestor, consulta, usuario_id="local", contexto="", limite=5):
     busqueda = analisis["consulta"]
     if analisis["resolucion"]:
         busqueda += " " + analisis["resolucion"]
+
+    almacen = getattr(gestor, "almacen", None)
+    tipo_vector = miv.tipo_dominante(almacen, usuario_id) if almacen is not None else 0
+    q_vector = None
+    vectoriales = []
+    try:
+        if almacen is not None:
+            texto_vector = str(consulta or "") + " " + str(contexto or "")
+            q_vector, _ = me.vector_consulta(
+                texto_vector, analisis["terminos"], tipo_vector == me.TIPO_API)
+        if q_vector is not None:
+            vectoriales = miv.candidatos_vectoriales(
+                almacen, q_vector, tipo_vector, usuario_id,
+                limite=max(20, limite * 5))
+    except Exception as exc:
+        error = error or type(exc).__name__
+
     candidatos, vistos = [], set()
     try:
         for consulta_busqueda in (busqueda, " ".join(sorted(_expandidos(set(analisis["terminos"]))))) :
@@ -133,6 +157,22 @@ def recuperar(gestor, consulta, usuario_id="local", contexto="", limite=5):
                     "metadatos": {"volatil": True}})
     except Exception as exc:
         error = type(exc).__name__
+
+    por_clave = {}
+    for item in candidatos:
+        rid = item.get("id")
+        if isinstance(rid, int):
+            por_clave[("db", rid)] = item
+    for item in vectoriales:
+        clave = ("db", item["id"])
+        previo = por_clave.get(clave)
+        if previo is not None:
+            previo["similitud_vectorial"] = item["similitud_vectorial"]
+        else:
+            item.setdefault("tipo_memoria", "semantica")
+            candidatos.append(item)
+            por_clave[clave] = item
+
     hoy = mt.obtener_fecha_actual()
     inicio, fin = analisis["rango_temporal"] or (None, None)
     puntuados = []
@@ -144,7 +184,8 @@ def recuperar(gestor, consulta, usuario_id="local", contexto="", limite=5):
         f = _fecha(item)
         if inicio and (f is None or not (date.fromisoformat(inicio) <= f <= date.fromisoformat(fin))):
             continue
-        item["puntuacion"] = round(_puntuacion(item, analisis, contexto, hoy), 4)
+        similitud = item.get("similitud_vectorial", 0.0)
+        item["puntuacion"] = _puntuacion(item, analisis, contexto, hoy, similitud)
         puntuados.append(item)
     preferidos = set(analisis["tipos"])
     puntuados.sort(key=lambda x: (x["puntuacion"], x.get("tipo_memoria") in preferidos,
@@ -162,7 +203,8 @@ def recuperar(gestor, consulta, usuario_id="local", contexto="", limite=5):
     return {"consulta": analisis, "resultados": elegidos, "contradicciones": _contradicciones(elegidos),
             "ambigua": analisis["ambigua"], "cobertura": cobertura,
             "sin_resultados": not bool(elegidos), "error_almacenamiento": error,
-            "usuario_id": usuario_id, "relaciones": relaciones}
+            "usuario_id": usuario_id, "relaciones": relaciones,
+            "vectorial_disponible": q_vector is not None}
 
 
 def formatear(paquete, limite_caracteres=1200):

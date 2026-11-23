@@ -3,6 +3,7 @@ import re
 import time
 import unicodedata
 
+import cerebro_historial
 from config import MODELOS
 from cerebro_parser import separar, _respuesta_parcial, _cortar
 from cerebro_prompt import (
@@ -34,19 +35,19 @@ class Cerebro:
         self.historial = []
 
     def _podar_historial(self):
-        if len(self.historial) > 16:
-            self.historial = self.historial[-10:]
+        self.historial = cerebro_historial.podar(self.historial)
+
+    def _carril_actual(self):
+        carril = getattr(self, "carril_activo", None)
+        if carril in ("rapido", "pro"):
+            return carril
+        app = getattr(self, "app", None)
+        modo = getattr(app, "modo_activo", "") if app else ""
+        return "pro" if str(modo).lower() in ("pro", "profesional", "avanzado") else "rapido"
 
     def _obtener_historial_podado(self):
-        """Devuelve los últimos 4 turnos recortando respuestas largas para no inflar tokens."""
-        hist_reciente = self.historial[-4:]
-        hist_podado = []
-        for h in hist_reciente:
-            c = h.get("content", "")
-            if h.get("role") == "assistant" and len(c) > 150:
-                c = c[:150].rsplit(" ", 1)[0] + "..."
-            hist_podado.append({"role": h.get("role"), "content": c})
-        return hist_podado
+        """Ventana única y coherente con respuesta_flujo y el carril activo."""
+        return cerebro_historial.ventana(self.historial, self._carril_actual())
 
     def instrucciones(self, texto_actual=None):
         es_invitado = bool(getattr(self, "turno_invitado", False))

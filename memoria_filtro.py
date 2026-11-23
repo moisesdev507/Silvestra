@@ -3,6 +3,8 @@ import re
 import unicodedata
 import math
 
+import memoria_calidad
+
 STOPWORDS = {
     "el", "la", "los", "las", "un", "una", "unos", "unas", "de", "del", "a", "al", "en", "con",
     "por", "para", "que", "se", "su", "sus", "es", "son", "fue", "y", "o", "pero", "como", "le",
@@ -136,6 +138,9 @@ def es_recuerdo_valido(hecho):
     for pat in PATRONES_META_NORMALIZADOS:
         if re.search(pat, norm):
             return False, f"patrón meta: {pat}"
+
+    if memoria_calidad.es_autorreferencia_ia(limpio):
+        return False, "autorreferencia de IA"
 
     return True, ""
 

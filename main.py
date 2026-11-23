@@ -94,6 +94,12 @@ class Silvestra:
 
     def __init__(self):
         self.memoria = Memoria()
+        try:
+            import memoria_indice_vectorial as _miv
+            _miv.obtener_backfill(self.memoria.almacen,
+                                  self.memoria.usuario_id).iniciar(retardo=2.0)
+        except Exception as e:
+            print(f"[embeddings] Backfill no iniciado: {type(e).__name__}", flush=True)
         self.integracion_cognitiva = None
         try:
             from integracion_cognitiva_fase5 import IntegracionCognitivaFase5

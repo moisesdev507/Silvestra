@@ -53,6 +53,17 @@ class AlmacenMemoriaCognitiva(TransaccionesMemoria):
             d["metadatos"] = {}
         return d
 
+    def actualizar_embedding(self, recuerdo_id, blob, usuario_id=None):
+        """Escribe el BLOB vectorial sin alterar contenido ni actualizado_en."""
+        uid = self._uid(usuario_id)
+        with self._lock:
+            cur = self.conexion.execute(
+                "UPDATE recuerdos SET embedding=? WHERE id=? AND usuario_id=?",
+                (blob, int(recuerdo_id), uid))
+            if cur.rowcount:
+                self.conexion.commit()
+        return bool(cur.rowcount)
+
     def guardar_recuerdo(self, contenido, tipo_memoria="semantica", categoria="general",
                          origen="explicito", confianza=0.8, fecha_evento=None,
                          metadatos=None, reemplaza_a_id=None, usuario_id=None):

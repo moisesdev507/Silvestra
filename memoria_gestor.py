@@ -40,9 +40,27 @@ class GestorMemoria:
         valido, _ = memoria_filtro.es_recuerdo_valido(item.contenido)
         if not valido:
             raise ValueError("El filtro de privacidad o calidad rechazó el recuerdo")
-        return self.almacen.guardar_recuerdo(item.contenido, item.tipo_memoria, item.categoria,
-            item.origen, item.confianza, item.fecha_evento, item.metadatos,
-            usuario_id=uid)
+        guardado = self.almacen.guardar_recuerdo(item.contenido, item.tipo_memoria,
+            item.categoria, item.origen, item.confianza, item.fecha_evento,
+            item.metadatos, usuario_id=uid)
+        self._asegurar_embedding(guardado, item.contenido, uid)
+        return guardado
+
+    def _asegurar_embedding(self, guardado, contenido, uid):
+        """Vector fallback inmediato y mejora diferida: cero red en el turno."""
+        try:
+            rid = guardado.get("id") if isinstance(guardado, dict) else None
+            if rid is None:
+                return
+            import memoria_embeddings as me
+            import memoria_indice_vectorial as miv
+            vector, _ = me.vector_con_tipo(me.texto_para_indice(contenido),
+                                           "documento", False)
+            if miv.guardar_embedding(self.almacen, rid, vector,
+                                     me.TIPO_FALLBACK, uid):
+                miv.obtener_backfill(self.almacen, uid).encolar(rid)
+        except Exception:
+            pass
 
     def buscar(self, consulta, limite=10, tipos=None, usuario_id=None):
         return self.almacen.buscar_texto(consulta, limite, tipos, usuario_id=self._uid(usuario_id))

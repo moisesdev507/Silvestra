@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import re
 import unicodedata
 
+import memoria_calidad
 import memoria_filtro
 from memoria_modelos import Recuerdo
 
@@ -90,6 +91,9 @@ def evaluar_candidato(contenido, usuario_id="local", fuente="recuerdo_modelo",
                 for x in RUIDO)
     if not valido or ruido:
         return {"aceptado": False, "motivo": razon or "ruido"}
+    calidad_ok, razon_calidad = memoria_calidad.evaluar(texto)
+    if not calidad_ok:
+        return {"aceptado": False, "motivo": razon_calidad}
     score, factores, temporal, estable, ambiguo = _score(texto, contexto, frecuencia, fuente, explicito)
     tipo = _tipo(texto, temporal, estable)
     if ambiguo and not explicito:

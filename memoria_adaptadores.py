@@ -1,5 +1,6 @@
 import re
 
+import memoria_calidad
 import memoria_formacion
 import memoria_filtro
 
@@ -30,8 +31,11 @@ def procesar_candidato(memoria, candidato, texto_usuario="", fuente="recuerdo_mo
     if item.tipo_memoria == "trabajo":
         memoria.gestor.agregar_trabajo("trabajo:" + str(id(item)), item.contenido, usuario_id=uid, ttl=900)
         return resultado
-    if memoria_filtro.es_duplicado(item.contenido, memoria.datos.get("hechos", [])):
+    hechos = memoria.datos.get("hechos", [])
+    if memoria_filtro.es_duplicado(item.contenido, hechos):
         return {"aceptado": False, "motivo": "duplicado", "recuerdo": item}
+    if memoria_calidad.es_duplicado_semantico(item.contenido, hechos):
+        return {"aceptado": False, "motivo": "duplicado_semantico", "recuerdo": item}
     fecha = item.fecha_evento[:10]
     if not re.match(r"^\[\d{4}-\d{2}-\d{2}\]", item.contenido):
         item.contenido = f"[{fecha}] {item.contenido}"

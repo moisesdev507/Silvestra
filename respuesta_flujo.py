@@ -215,12 +215,7 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     if directo:
         return directo
     cerebro.historial.append({"role": "user", "content": texto})
-    # Limitar historial a los 8 turnos más recientes para ahorrar tokens y latencia
-    mensajes = [{"role": "system", "content": cerebro.instrucciones(texto)}] + cerebro.historial[-8:]
-
-    tarea = pc.clasificar_dificultad(texto)
-
-    # Evaluación determinista del carril: rapido vs pro
+    # El carril se decide antes de construir la ventana (política única).
     app = getattr(cerebro, "app", None)
     modo = "normal"
     if app and hasattr(app, "modo_activo"):
@@ -235,6 +230,11 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     pro_disp = cerebro_enrutador.verificar_pro_disponible()
     carril, motivo = cerebro_enrutador.decidir_carril(texto, modo_activo=modo, pro_disponible=pro_disp)
     print(f"[enrutador] carril={carril} motivo={motivo}", flush=True)
+    from cerebro_historial import construir_ventana
+    mensajes = construir_ventana(cerebro.historial, carril=carril,
+                                 instrucciones=cerebro.instrucciones(texto))
+
+    tarea = pc.clasificar_dificultad(texto)
 
     def _on_emocion(emo):
         try:
