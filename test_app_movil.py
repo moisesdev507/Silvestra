@@ -1,4 +1,5 @@
 """Pruebas unitarias para la aplicación móvil PWA de Lyris (UI, voz bidireccional y Tailscale)."""
+import io
 import json
 import unittest
 from unittest.mock import MagicMock, patch
@@ -173,43 +174,78 @@ class TestAudioYConversacionMovil(unittest.TestCase):
         self.assertEqual(data["audio_base64"], "fake_mp3_base64")
         self.assertEqual(data["mime"], "audio/mpeg")
 
-    def test_sintetizar_respuesta_movil_filtra_tamano(self):
+    def test_sintetizar_respuesta_movil_filtra_tamano_y_normaliza_signos(self):
         try:
             ama.sintetizar_respuesta_movil._mock_audio = lambda t, e: b"pequeno"
             b64 = ama.sintetizar_respuesta_movil("hola", "neutral")
             self.assertEqual(b64, "")
 
-            ama.sintetizar_respuesta_movil._mock_audio = lambda t, e: b"A" * 600
-            b64 = ama.sintetizar_respuesta_movil("hola", "neutral")
+            capturado = []
+            def mock_captura(t, e):
+                capturado.append(t)
+                return b"A" * 600
+
+            ama.sintetizar_respuesta_movil._mock_audio = mock_captura
+            b64 = ama.sintetizar_respuesta_movil("!Hola amigo! ?Como estas?", "neutral")
             self.assertTrue(len(b64) > 10)
+            self.assertIn("¡Hola amigo!", capturado[0])
+            self.assertIn("¿Como estas?", capturado[0])
         finally:
             ama.sintetizar_respuesta_movil._mock_audio = None
 
-    def test_html_movil_contiene_captura_token_url_y_replace_state(self):
+    def test_html_movil_capacidades_completas(self):
         import app_movil_html as amh
         html = amh.PAGINA_MOVIL_HTML
+        self.assertIn("Blob", html)
+        self.assertIn("createObjectURL", html)
+        self.assertIn("revokeObjectURL", html)
+        self.assertIn("limpiarChat", html)
+        self.assertIn("🗑️ Limpiar", html)
         self.assertIn("history.replaceState", html)
         self.assertIn("URLSearchParams", html)
         self.assertIn("lyris_device_token", html)
-
-    def test_html_movil_contiene_manejo_401_y_prompt_token(self):
-        import app_movil_html as amh
-        html = amh.PAGINA_MOVIL_HTML
         self.assertIn("fetchConToken", html)
         self.assertIn("pedirTokenPrompt", html)
         self.assertIn("401", html)
         self.assertIn("Ingresa el token de dispositivo de Lyris", html)
 
+        # Verificar que playAudio no invoque initAudio internamente
+        idx_play = html.find("function playAudio(b64){")
+        self.assertTrue(idx_play > 0)
+        cuerpo_play = html[idx_play:idx_play + 350]
+        self.assertNotIn("initAudio()", cuerpo_play)
+
+    def test_manejar_http_chat_devuelve_audio_inline(self):
+        try:
+            ama.sintetizar_respuesta_movil._mock_audio = lambda t, e: b"X" * 600
+            app_mock = type("MockApp", (), {
+                "cerebro": type("MockCerebro", (), {"proveedor_activo": "Google", "modelo": "test"})(),
+                "cola": None
+            })()
+            import respuesta_flujo
+            orig_rf = respuesta_flujo.responder_flujo
+            respuesta_flujo.responder_flujo = lambda c, t, al_frase=None: ("Hola desde Silvestra", None, "alegre")
+            try:
+                body = json.dumps({"texto": "hola"}).encode("utf-8")
+                class Req:
+                    headers = {"Content-Length": str(len(body))}
+                    rfile = io.BytesIO(body)
+                code, res = ama.manejar_http_chat(Req(), app_mock)
+                self.assertEqual(code, 200)
+                self.assertTrue(res["ok"])
+                self.assertTrue(len(res["audio_base64"]) > 10)
+                self.assertEqual(res["mime"], "audio/mpeg")
+            finally:
+                respuesta_flujo.responder_flujo = orig_rf
+        finally:
+            ama.sintetizar_respuesta_movil._mock_audio = None
+
     def test_es_lan_cliente_soporta_ipv6_tailscale(self):
         import pantalla_remota_api as pra
-        self.assertTrue(pra._es_lan_cliente("127.0.0.1"))
-        self.assertTrue(pra._es_lan_cliente("::1"))
-        self.assertTrue(pra._es_lan_cliente("192.168.1.50"))
-        self.assertTrue(pra._es_lan_cliente("100.64.1.2"))
-        self.assertTrue(pra._es_lan_cliente("fd7a:115c:a1e0::1"))
-        self.assertTrue(pra._es_lan_cliente("fd7a:115c:a1e0:1234:5678:9abc:def0:1234"))
-        self.assertFalse(pra._es_lan_cliente("8.8.8.8"))
-        self.assertFalse(pra._es_lan_cliente("2001:4860:4860::8888"))
+        for ip in ("127.0.0.1", "::1", "192.168.1.50", "100.64.1.2", "fd7a:115c:a1e0::1", "fd7a:115c:a1e0:1234:5678:9abc:def0:1234"):
+            self.assertTrue(pra._es_lan_cliente(ip))
+        for ip in ("8.8.8.8", "2001:4860:4860::8888"):
+            self.assertFalse(pra._es_lan_cliente(ip))
 
     def test_autenticacion_remota_token_en_api_movil(self):
         import io
@@ -219,74 +255,50 @@ class TestAudioYConversacionMovil(unittest.TestCase):
 
         class MockHandler:
             def __init__(self, path, headers=None, body=b""):
-                self.path = path
-                self.headers = headers or {}
-                self.client_address = ("100.64.1.2", 54321)
-                self.command = "POST"
-                self.rfile = io.BytesIO(body)
-                self.wfile = io.BytesIO()
-                self.response_code = None
-                self.response_headers = {}
-                self.server = type("MockServer", (), {})()
-                self.server.tls = False
-                self.server.bus_sse = type("MockBus", (), {"permitir_peticion": lambda s, did: True})()
-                self.server.app = type("MockApp", (), {"cola": queue.Queue()})()
-                self.server.gestor = type("MockGestor", (), {})()
-                self.server.gestor.token = "token_secreto_test"
-                self.server.gestor.puente = type("MockPuente", (), {
-                    "cors": lambda s, o, host, tls: {},
-                    "autenticar": lambda s, hdrs, cookie: None,
-                    "validar_origen": lambda *a, **k: True
-                })()
-                self.server.gestor.ecosistema_gestor = type("MockEco", (), {
-                    "cookie_value": lambda s, c: None,
-                    "autenticar_token": lambda s, tok: None,
-                    "emparejar_lan": lambda s, t, sc: None,
-                    "autorizar": lambda s, ident, sc: True
+                self.path = path; self.headers = headers or {}
+                self.client_address = ("100.64.1.2", 54321); self.command = "POST"
+                self.rfile = io.BytesIO(body); self.wfile = io.BytesIO()
+                self.response_code = None; self.response_headers = {}
+                self.server = type("S", (), {
+                    "tls": False,
+                    "bus_sse": type("B", (), {"permitir_peticion": lambda s, did: True})(),
+                    "app": type("A", (), {"cola": queue.Queue()})(),
+                    "gestor": type("G", (), {
+                        "token": "token_secreto_test",
+                        "puente": type("P", (), {"cors": lambda *a: {}, "autenticar": lambda *a: None, "validar_origen": lambda *a, **k: True})(),
+                        "ecosistema_gestor": type("E", (), {"cookie_value": lambda *a: None, "autenticar_token": lambda *a: None, "emparejar_lan": lambda *a: None, "autorizar": lambda *a: True})()
+                    })()
                 })()
 
-            def send_response(self, code):
-                self.response_code = code
+            def send_response(self, code): self.response_code = code
+            def send_header(self, k, v): self.response_headers[k] = v
+            def end_headers(self): pass
 
-            def send_header(self, k, v):
-                self.response_headers[k] = v
+        # 1. Sin token -> 401
+        h_no = MockHandler("/api/movil/chat", body=b"{}")
+        pra.manejar_post(h_no, h_no.server.app, h_no.server.gestor)
+        self.assertEqual(h_no.response_code, 401)
 
-            def end_headers(self):
-                pass
+        # 2. Token incorrecto -> 401
+        h_bad = MockHandler("/api/movil/chat", headers={"X-Device-Token": "bad"}, body=b"{}")
+        pra.manejar_post(h_bad, h_bad.server.app, h_bad.server.gestor)
+        self.assertEqual(h_bad.response_code, 401)
 
-        # 1. Petición sin token -> 401
-        h_no_tok = MockHandler("/api/movil/chat", body=b"{}")
-        pra.manejar_post(h_no_tok, h_no_tok.server.app, h_no_tok.server.gestor)
-        self.assertEqual(h_no_tok.response_code, 401)
-
-        # 2. Petición con token incorrecto -> 401
-        h_bad_tok = MockHandler("/api/movil/chat", headers={"X-Device-Token": "token_erroneo"}, body=b"{}")
-        pra.manejar_post(h_bad_tok, h_bad_tok.server.app, h_bad_tok.server.gestor)
-        self.assertEqual(h_bad_tok.response_code, 401)
-
-        # 3. Petición con X-Device-Token correcto -> no da 401
-        req_body = json.dumps({"texto": "hola", "hablar": False}).encode("utf-8")
-        h_ok = MockHandler("/api/movil/chat", headers={
-            "X-Device-Token": "token_secreto_test",
-            "Content-Length": str(len(req_body)),
-            "Content-Type": "application/json"
-        }, body=req_body)
+        # 3. X-Device-Token correcto -> 200
+        req_b = json.dumps({"texto": "hola", "hablar": False}).encode("utf-8")
+        h_ok = MockHandler("/api/movil/chat", headers={"X-Device-Token": "token_secreto_test", "Content-Length": str(len(req_b)), "Content-Type": "application/json"}, body=req_b)
         pra.manejar_post(h_ok, h_ok.server.app, h_ok.server.gestor)
         self.assertEqual(h_ok.response_code, 200)
 
-        # 4. Petición con Authorization Bearer -> no da 401
-        h_bearer = MockHandler("/api/movil/chat", headers={
-            "Authorization": "Bearer token_secreto_test",
-            "Content-Length": str(len(req_body)),
-            "Content-Type": "application/json"
-        }, body=req_body)
-        pra.manejar_post(h_bearer, h_bearer.server.app, h_bearer.server.gestor)
-        self.assertEqual(h_bearer.response_code, 200)
+        # 4. Bearer correcto -> 200
+        h_br = MockHandler("/api/movil/chat", headers={"Authorization": "Bearer token_secreto_test", "Content-Length": str(len(req_b)), "Content-Type": "application/json"}, body=req_b)
+        pra.manejar_post(h_br, h_br.server.app, h_br.server.gestor)
+        self.assertEqual(h_br.response_code, 200)
 
-        # 5. Petición GET /api/sesion con X-Device-Token correcto
-        h_sesion = MockHandler("/api/sesion", headers={"X-Device-Token": "token_secreto_test"})
-        pra.responder_sesion(h_sesion, None)
-        self.assertEqual(h_sesion.response_code, 200)
+        # 5. GET /api/sesion -> 200
+        h_ses = MockHandler("/api/sesion", headers={"X-Device-Token": "token_secreto_test"})
+        pra.responder_sesion(h_ses, None)
+        self.assertEqual(h_ses.response_code, 200)
 
 
 if __name__ == "__main__":

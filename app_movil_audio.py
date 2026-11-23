@@ -91,6 +91,8 @@ def sintetizar_respuesta_movil(texto: str, emocion: str = "neutral", timeout_seg
     limpio = re.sub(r"\[.*?\]", "", str(texto)).strip()
     if not limpio:
         return ""
+    limpio = re.sub(r"(^|\s)!([A-Za-zÁÉÍÓÚáéíóúñÑ])", r"\1¡\2", limpio)
+    limpio = re.sub(r"(^|\s)\?([A-Za-zÁÉÍÓÚáéíóúñÑ])", r"\1¿\2", limpio)
     try:
         mock_fn = getattr(sintetizar_respuesta_movil, "_mock_audio", None)
         if callable(mock_fn):
@@ -218,7 +220,7 @@ def manejar_http_chat(handler: Any, app: Any) -> tuple[int, Dict[str, Any]]:
     if not texto:
         return 400, {"ok": False, "error": "Texto vacío"}
 
-    hablar = bool(data.get("hablar", False))
+    hablar = bool(data.get("hablar", True))
     try:
         res = procesar_comando_texto_movil(app, texto, sintetizar_voz=hablar)
         return 200, res

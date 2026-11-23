@@ -24,11 +24,7 @@ Asistente modular Python/Windows con avatar PySide6, voz/escucha, Context Engine
 7. **Habilidades reales, visión y RAG (`cerebro_entrenamiento.py`, `vision_pantalla.py`, `cerebro_rag.py`):** Código funcional real auditado por AST, visión en memoria Gemini REST y RAG SQLite FTS5.
 8. **Modo Mentora socrática y expresiones (`cerebro_mentor.py`, `cara_emociones.py`, `presentacion.py`):** Directiva socrática compacta, presentación dinámica viva y emociones (`concentrada`, `firme`, `orgullosa`).
 9. **App móvil PWA y Tailscale (`app_movil_*.py`, `pantalla_remota_api.py`):** Interfaz móvil en `/movil` estilo ChatGPT con avatar SVG dinámico, subred Tailscale CGNAT (`100.64.0.0/10`) y voz bidireccional.
-10. **Memoria evolutiva, chat síncrono e íconos PWA (`memoria_sueno.py`, `memoria_progreso.py`, `memoria_asociativa.py`, `app_movil_*.py`):**
-    - `memoria_sueno.py`: Deduplicación en reposo (Jaccard >= 0.82) y consolidación temática aditiva en `memoria_resumenes`.
-    - `memoria_progreso.py`: Hitos técnicos, calibración socrática en `cerebro_mentor` y reporte de evolución como programador.
-    - `memoria_asociativa.py`: Consulta unificada (resúmenes + grafo + RAG) en una sola llamada compacta (<= 600 chars).
-    - `app_movil_*.py`: Endpoint síncrono `POST /api/movil/chat` e íconos PNG (`192x192` y `512x512`) generados con Pillow en memoria.
+10. **Memoria evolutiva, chat síncrono e íconos PWA (`memoria_*.py`, `app_movil_*.py`):** Deduplicación en reposo (Jaccard >= 0.82), hitos de progreso como programador, consulta asociativa compacta, endpoint síncrono `/api/movil/chat` e íconos PNG PWA en memoria.
 11. **Audio bidireccional móvil, UX rápida y certificado CA (`app_movil_audio.py`, `app_movil_html.py`, `app_movil_ui.py`):**
     - `app_movil_audio.py`: Endpoint `POST /api/movil/tts` para síntesis desacoplada MP3 en memoria (`mime: audio/mpeg`).
     - `app_movil_html.py`: Desbloqueo de audio en primer toque Android, indicador `"Lyris está pensando..."`, botón `🔊 Voz` y replay `🔊` en cada burbuja.
@@ -36,14 +32,14 @@ Asistente modular Python/Windows con avatar PySide6, voz/escucha, Context Engine
 12. **Blindaje proactivo/flujo y robustez móvil (`cerebro_proactivo.py`, `respuesta_flujo.py`):**
     - `cerebro_proactivo.py`: Atributo `ultimo_sueno_ts = 0.0` blindado en `MotorProactivo.__init__` y `evaluar_sueno_cognitivo`.
     - `respuesta_flujo.py`: Cierre post-respuesta protegido con `try/except` aislados para garantizar entrega y voz en laptop.
-13. **Depuración de recordatorios, puerto 8765 único y audio TTS real (`recordatorios.py`, `app_movil_*.py`):**
-    - `recordatorios.py`: `verificar_arranque` filtra recordatorios <= 24h, marca completados y persiste de inmediato. Suites de test aisladas con JSON temporal; `recordatorios.json` limpio y recuerdo 153 marcado obsoleto.
-    - `app_movil_ui.py`: Eliminado puerto 8766; tráfico móvil unificado en HTTPS 8765 con barra de navegación limpia.
-    - `app_movil_audio.py` y `app_movil_html.py`: TTS con filtro > 500 B y mock para tests; micro-WAV silencioso para desbloqueo síncrono de audio en Android Chrome.
+13. **Depuración de recordatorios y audio TTS (`recordatorios.py`, `app_movil_*.py`):** Filtrado de recordatorios vencidos <= 24h al inicio con actualización inmediata; puerto 8765 unificado; micro-WAV silencioso para desbloqueo síncrono en Android Chrome.
 14. **Saludo único acorde a la hora y captura de token en móvil (`nacimiento.py`, `cerebro_proactivo.py`, `app_movil_html.py`):**
-    - `nacimiento.py` y `cerebro_proactivo.py`: Saludo único al encender según franja horaria real (mañana/tarde/noche); eliminada duplicación de briefing al arranque y cero mención a 'no tienes recordatorios'.
+    - `nacimiento.py` y `cerebro_proactivo.py`: Saludo único al encender según franja horaria real (mañana/tarde/noche); eliminada duplicación de briefing al arranque.
     - `app_movil_html.py`: Captura de `?token=...` en URL con guardado en `localStorage` y limpieza por `history.replaceState`; reintento automático con prompt de token ante HTTP 401.
 15. **Persistencia de `remota_token` y autorización directa móvil (`pantalla_remota.py`, `pantalla_remota_api.py`, `pantalla_remota_accion.py`):**
     - `pantalla_remota.py`: Sincroniza y persiste `remota_token` desde/hacia `estado.json` al inicializar el servidor HUD.
     - `pantalla_remota_api.py`: Soporte para subred Tailscale IPv6 (`fd7a:115c:a1e0::/48`); validación segura con `hmac.compare_digest` contra `remota_token` en `POST /api/movil/*` y `GET /api/sesion` sin exigir previa sesión HUD/tablet.
     - `pantalla_remota_accion.py`: Despacho modular de acciones de panel HUD (`despachar_accion_panel`) manteniendo `pantalla_remota_api.py` en 14,179 B.
+16. **Audio MP3 completo con Blob y entrega inline (`app_movil_audio.py`, `app_movil_html.py`):**
+    - `app_movil_audio.py`: Normalización de signos iniciales ASCII `!`/`?` a `¡`/`¿` en `sintetizar_respuesta_movil`; `manejar_http_chat` entrega `audio_base64` inline con `hablar=True` por defecto en silencio laptop.
+    - `app_movil_html.py`: Reproducción de MP3 mediante `Blob` y `createObjectURL` sin re-invocar `initAudio()` en respuesta; botón `🗑️ Limpiar` y función `limpiarChat()`.

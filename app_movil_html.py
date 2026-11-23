@@ -16,13 +16,11 @@ PAGINA_MOVIL_HTML = """<!DOCTYPE html>
 body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);height:100dvh;display:flex;flex-direction:column;overflow:hidden;}
 header{padding:10px 14px;background:rgba(10,13,20,0.92);border-bottom:1px solid var(--card-border);display:flex;align-items:center;justify-content:space-between;z-index:20;flex-shrink:0;}
 .brand{display:flex;align-items:center;gap:10px;}
-.avatar-box{width:42px;height:42px;position:relative;display:flex;align-items:center;justify-content:center;}
-.avatar-svg{width:38px;height:38px;}
+.avatar-box{width:42px;height:42px;position:relative;display:flex;align-items:center;justify-content:center;}.avatar-svg{width:38px;height:38px;}
 .halo{position:absolute;inset:0;border-radius:50%;border:1.5px solid var(--primary);animation:pulseHalo 3s infinite;}
 @keyframes pulseHalo{0%,100%{transform:scale(0.95);opacity:0.4;}50%{transform:scale(1.08);opacity:0.9;}}
 .brand-info h1{font-size:15px;font-weight:700;}
-.brand-info .status{font-size:11px;color:var(--accent);display:flex;align-items:center;gap:4px;}
-.status-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);}
+.brand-info .status{font-size:11px;color:var(--accent);display:flex;align-items:center;gap:4px;}.status-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);}
 .header-actions{display:flex;gap:5px;align-items:center;}
 .btn-badge{padding:6px 9px;border-radius:18px;border:1px solid var(--card-border);background:var(--card);color:var(--text-muted);font-size:11px;font-weight:600;display:flex;align-items:center;cursor:pointer;text-decoration:none;}
 .btn-badge.active-voz{background:rgba(56,189,248,0.25);border-color:var(--primary);color:#7dd3fc;}
@@ -33,21 +31,17 @@ header{padding:10px 14px;background:rgba(10,13,20,0.92);border-bottom:1px solid 
 .msg.user{align-self:flex-end;background:var(--user-bg);border-bottom-right-radius:4px;color:#fff;}
 .msg.lyris{align-self:flex-start;background:var(--card);border:1px solid var(--card-border);border-bottom-left-radius:4px;}
 .msg pre{background:#0f172a;padding:8px;border-radius:6px;overflow-x:auto;font-size:12px;color:#38bdf8;}
-.msg.thinking{font-style:italic;color:var(--text-muted);display:flex;align-items:center;gap:6px;}
-.msg-time{font-size:10px;color:var(--text-muted);margin-top:4px;text-align:right;}
+.msg.thinking{font-style:italic;color:var(--text-muted);display:flex;align-items:center;gap:6px;}.msg-time{font-size:10px;color:var(--text-muted);margin-top:4px;text-align:right;}
 .btn-tts{background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:13px;margin-left:6px;padding:2px 4px;border-radius:4px;vertical-align:middle;}
 .speaking-indicator{display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle;}
 .sound-bar{width:3px;height:10px;background:var(--primary);animation:wave 1s infinite;}
-.sound-bar:nth-child(2){animation-delay:0.2s;height:14px;}
-.sound-bar:nth-child(3){animation-delay:0.4s;height:8px;}
+.sound-bar:nth-child(2){animation-delay:.2s;height:14px;}.sound-bar:nth-child(3){animation-delay:.4s;height:8px;}
 @keyframes wave{0%,100%{transform:scaleY(0.4);}50%{transform:scaleY(1);}}
 footer{padding:10px 12px;padding-bottom:max(10px,env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--card-border);flex-shrink:0;}
 .input-bar{display:flex;align-items:center;gap:8px;}
-.input-field{flex:1;background:#1f2937;border:1px solid #374151;color:#fff;padding:12px 14px;border-radius:22px;font-size:15px;outline:none;}
-.input-field:focus{border-color:var(--primary);}
+.input-field{flex:1;background:#1f2937;border:1px solid #374151;color:#fff;padding:12px 14px;border-radius:22px;font-size:15px;outline:none;}.input-field:focus{border-color:var(--primary);}
 .btn-action{width:44px;height:44px;border-radius:50%;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;}
-.btn-mic{background:#374151;color:var(--text);}
-.btn-mic.recording{background:#ef4444;color:#fff;animation:micPulse 1.2s infinite;}
+.btn-mic{background:#374151;color:var(--text);}.btn-mic.recording{background:#ef4444;color:#fff;animation:micPulse 1.2s infinite;}
 @keyframes micPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.1);}}
 .btn-send{background:var(--primary);color:#0a0d14;}
 </style>
@@ -55,31 +49,26 @@ footer{padding:10px 12px;padding-bottom:max(10px,env(safe-area-inset-bottom));ba
 <body>
 <header>
   <div class="brand">
-    <div class="avatar-box">
-      <div class="halo" id="avatarHalo"></div>
+    <div class="avatar-box"><div class="halo" id="avatarHalo"></div>
       <svg class="avatar-svg" id="avatarFace" viewBox="0 0 100 100">
         <circle cx="50" cy="50" r="42" fill="#0f172a" stroke="#38bdf8" stroke-width="2.5" id="faceColor"/>
         <path d="M28 40 Q38 34 46 40" stroke="#38bdf8" stroke-width="3" fill="none" stroke-linecap="round" id="eyebrowL"/>
         <path d="M54 40 Q62 34 72 40" stroke="#38bdf8" stroke-width="3" fill="none" stroke-linecap="round" id="eyebrowR"/>
-        <ellipse cx="37" cy="50" rx="5" ry="7" fill="#38bdf8" id="eyeL"/>
-        <ellipse cx="63" cy="50" rx="5" ry="7" fill="#38bdf8" id="eyeR"/>
+        <ellipse cx="37" cy="50" rx="5" ry="7" fill="#38bdf8" id="eyeL"/><ellipse cx="63" cy="50" rx="5" ry="7" fill="#38bdf8" id="eyeR"/>
         <path d="M38 68 Q50 78 62 68" stroke="#38bdf8" stroke-width="3" fill="none" stroke-linecap="round" id="mouth"/>
       </svg>
     </div>
-    <div class="brand-info">
-      <h1>Lyris Mobile</h1>
-      <div class="status"><span class="status-dot"></span><span id="txtStatus">Conectada</span></div>
-    </div>
+    <div class="brand-info"><h1>Lyris Mobile</h1><div class="status"><span class="status-dot"></span><span id="txtStatus">Conectada</span></div></div>
   </div>
   <div class="header-actions">
     <button class="btn-badge active-voz" id="btnVoz" onclick="toggleVoz()" title="Voz automática">🔊 Voz</button>
     <button class="btn-badge" id="btnMentor" onclick="toggleMentor()">🎓 Mentora</button>
     <button class="btn-badge" id="btnPrivado" onclick="togglePrivado()">🔒 Privado</button>
-    <a href="/movil/cert.pem" class="btn-badge" title="Instalar Certificado CA" download>📜 Cert</a>
+    <button class="btn-badge" id="btnLimpiar" onclick="limpiarChat()" title="Limpiar conversación">🗑️ Limpiar</button>
   </div>
 </header>
 <main id="chat">
-  <div class="msg lyris">Hola, soy Lyris. Estoy conectada contigo en vivo desde tu celular. ¿En qué trabajamos hoy?<button class="btn-tts" onclick="pedirVoz(this,'Hola, soy Lyris. Estoy conectada contigo en vivo desde tu celular. ¿En qué trabajamos hoy?','alegre')" title="Escuchar">🔊</button><div class="msg-time">Ahora</div></div>
+  <div class="msg lyris">Hola, soy Lyris. ¿En qué trabajamos hoy?<button class="btn-tts" onclick="pedirVoz(this,'Hola, soy Lyris. ¿En qué trabajamos hoy?','alegre')" title="Escuchar">🔊</button><div class="msg-time">Ahora</div></div>
 </main>
 <footer>
   <div class="input-bar">
@@ -99,9 +88,13 @@ if(_uP.has('token')){
   const _nu=window.location.pathname+(_uP.toString()?'?'+_uP.toString():'');
   window.history.replaceState({},document.title,_nu);
 }
-let vozActiva=true,audioInit=false;
+let vozActiva=true,audioInit=false,_audioBlobUrl=null;
 const SILENT_WAV='data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
 function toggleVoz(){vozActiva=document.getElementById('btnVoz').classList.toggle('active-voz');}
+function limpiarChat(){
+  const c=document.getElementById('chat');
+  if(c)c.innerHTML='<div class="msg lyris">Hola, soy Lyris. ¿En qué trabajamos hoy?<button class="btn-tts" onclick="pedirVoz(this,\'Hola, soy Lyris. ¿En qué trabajamos hoy?\',\'alegre\')" title="Escuchar">🔊</button><div class="msg-time">Ahora</div></div>';
+}
 function initAudio(){
   if(audioInit)return;
   const p=document.getElementById('lyrisAudio');
@@ -128,11 +121,11 @@ async function fetchConToken(url,opt={},reintento=true){
   return r;
 }
 function actualizarCara(emocion){
-  const halo=document.getElementById('avatarHalo'),mouth=document.getElementById('mouth'),eyebrowL=document.getElementById('eyebrowL'),eyebrowR=document.getElementById('eyebrowR'),face=document.getElementById('faceColor');
-  const cols={neutral:'#38bdf8',alegre:'#10b981',concentrada:'#6366f1',orgullosa:'#eab308',firme:'#ef4444',calida:'#f472b6'};
-  const c=cols[emocion]||cols.neutral;halo.style.borderColor=c;face.setAttribute('stroke',c);
-  const cfg={alegre:['M35 66 Q50 82 65 66','M28 36 Q38 32 46 36','M54 36 Q62 32 72 36'],orgullosa:['M35 66 Q50 82 65 66','M28 36 Q38 32 46 36','M54 36 Q62 32 72 36'],concentrada:['M40 70 L60 70','M28 42 L46 41','M54 41 L72 42'],firme:['M38 72 Q50 68 62 72','M28 38 L46 44','M54 44 L72 38']}[emocion]||['M38 68 Q50 78 62 68','M28 40 Q38 34 46 40','M54 40 Q62 34 72 40'];
-  mouth.setAttribute('d',cfg[0]);eyebrowL.setAttribute('d',cfg[1]);eyebrowR.setAttribute('d',cfg[2]);
+  const c=({neutral:'#38bdf8',alegre:'#10b981',concentrada:'#6366f1',orgullosa:'#eab308',firme:'#ef4444',calida:'#f472b6'})[emocion]||'#38bdf8';
+  document.getElementById('avatarHalo').style.borderColor=c;document.getElementById('faceColor').setAttribute('stroke',c);
+  const al=['M35 66 Q50 82 65 66','M28 36 Q38 32 46 36','M54 36 Q62 32 72 36'],
+        cfg=({alegre:al,orgullosa:al,concentrada:['M40 70 L60 70','M28 42 L46 41','M54 41 L72 42'],firme:['M38 72 Q50 68 62 72','M28 38 L46 44','M54 44 L72 38']})[emocion]||['M38 68 Q50 78 62 68','M28 40 Q38 34 46 40','M54 40 Q62 34 72 40'];
+  document.getElementById('mouth').setAttribute('d',cfg[0]);document.getElementById('eyebrowL').setAttribute('d',cfg[1]);document.getElementById('eyebrowR').setAttribute('d',cfg[2]);
 }
 function mostrarPensando(){
   quitarPensando();
@@ -156,10 +149,19 @@ function agregarMensaje(txt,rem,emo='neutral',b64=''){
   m.appendChild(t);c.appendChild(m);c.scrollTop=c.scrollHeight;
 }
 function playAudio(b64){
-  if(!b64)return;initAudio();
+  if(!b64)return;
   const p=document.getElementById('lyrisAudio');
-  p.src='data:audio/mp3;base64,'+b64;
-  p.play().catch(()=>{});
+  if(!p)return;
+  p.pause();
+  if(_audioBlobUrl){try{URL.revokeObjectURL(_audioBlobUrl);}catch(e){}_audioBlobUrl=null;}
+  try{
+    const bs=atob(b64),ab=new Uint8Array(bs.length);
+    for(let i=0;i<bs.length;i++)ab[i]=bs.charCodeAt(i);
+    const blob=new Blob([ab],{type:'audio/mpeg'});
+    _audioBlobUrl=URL.createObjectURL(blob);
+    p.src=_audioBlobUrl;
+    p.play().catch(()=>{});
+  }catch(err){}
 }
 async function pedirVoz(b,txt,emo){
   initAudio();
@@ -177,16 +179,12 @@ async function enviarTexto(){
   const inp=document.getElementById('txtInput'),txt=inp.value.trim();
   if(!txt)return;inp.value='';agregarMensaje(txt,'user');mostrarPensando();
   try{
-    const r=await fetchConToken('/api/movil/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:txt,hablar:false})});
+    const r=await fetchConToken('/api/movil/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:txt,hablar:vozActiva})});
     const d=await r.json();
     quitarPensando();
     if(d.ok){
       actualizarCara(d.emocion);agregarMensaje(d.respuesta,'lyris',d.emocion,d.audio_base64||'');
-      if(d.audio_base64){playAudio(d.audio_base64);}
-      else if(vozActiva&&d.respuesta){
-        fetchConToken('/api/movil/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:d.respuesta,emocion:d.emocion})})
-        .then(res=>res.json()).then(td=>{if(td.ok&&td.audio_base64)playAudio(td.audio_base64);}).catch(()=>{});
-      }
+      if(vozActiva&&d.audio_base64){playAudio(d.audio_base64);}
     }else{agregarMensaje(d.error||'Error procesando consulta.','lyris');}
   }catch(e){quitarPensando();agregarMensaje('Sin conexión con Lyris central.','lyris');}
 }
@@ -212,7 +210,7 @@ async function iniciarGrabacion(){
         if(d.ok){
           if(d.texto_usuario)agregarMensaje(d.texto_usuario,'user');
           actualizarCara(d.emocion);agregarMensaje(d.respuesta,'lyris',d.emocion,d.audio_base64||'');
-          if(d.audio_base64)playAudio(d.audio_base64);
+          if(vozActiva&&d.audio_base64)playAudio(d.audio_base64);
         }else{agregarMensaje(d.error||'No se capturó audio.','lyris');}
       }catch(err){quitarPensando();agregarMensaje('Fallo enviando nota de voz a Lyris.','lyris');}
     };
@@ -223,8 +221,8 @@ function detenerGrabacion(){if(mediaRecorder&&mediaRecorder.state==='recording')
 btnMic.addEventListener('mousedown',iniciarGrabacion);btnMic.addEventListener('mouseup',detenerGrabacion);
 btnMic.addEventListener('touchstart',(e)=>{e.preventDefault();iniciarGrabacion();});
 btnMic.addEventListener('touchend',(e)=>{e.preventDefault();detenerGrabacion();});
-async function toggleMentor(){const btn=document.getElementById('btnMentor'),activo=btn.classList.toggle('active-mentor');document.getElementById('txtInput').value=activo?'activa modo mentora':'desactiva modo mentora';enviarTexto();}
-async function togglePrivado(){const btn=document.getElementById('btnPrivado'),activo=btn.classList.toggle('active-privado');document.getElementById('txtInput').value=activo?'activa modo privado':'desactiva modo privado';enviarTexto();}
+async function toggleMentor(){const a=document.getElementById('btnMentor').classList.toggle('active-mentor');document.getElementById('txtInput').value=a?'activa modo mentora':'desactiva modo mentora';enviarTexto();}
+async function togglePrivado(){const a=document.getElementById('btnPrivado').classList.toggle('active-privado');document.getElementById('txtInput').value=a?'activa modo privado':'desactiva modo privado';enviarTexto();}
 if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{});}
 </script>
 </body>
