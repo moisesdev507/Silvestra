@@ -36,6 +36,11 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         _reg_turno(cerebro, texto_orig, resp, al_frase)
         return resp, "minimizar_todo", "alegre"
 
+    app_local = acciones.extraer_app_abrir(texto)
+    if app_local:
+        _reg_turno(cerebro, texto_orig, (resp := f"Abriendo {app_local}."), al_frase)
+        return resp, f"abrir_app_local | {app_local}", "alegre"
+
     # 0. Intercepción local instantánea (< 50 ms) para escritura y lectura real de archivos
     import os
     import re

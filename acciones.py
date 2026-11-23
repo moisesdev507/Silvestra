@@ -36,6 +36,22 @@ def _activar_hud(arg=None):
     return pantalla_remota_accion.activar_hud(arg)
 
 
+def _abrir_app_local(nombre):
+    """Reutiliza control_laptop.abrir_app sin repetir la confirmación hablada."""
+    import control_laptop
+
+    class _ColaMuda:
+        @staticmethod
+        def put(_evento):
+            pass
+
+    class _AppMuda:
+        cola = _ColaMuda()
+
+    control_laptop.abrir_app(_AppMuda(), nombre)
+    return True, ""
+
+
 def _escribir_archivo(arg=None):
     import habilidades_archivos
     return habilidades_archivos.escribir_archivo(arg)
@@ -70,6 +86,7 @@ ACCIONES = {
     "abrir_calculadora": (_programa("calc.exe"), False, "abre la calculadora"),
     "abrir_bloc_de_notas": (_programa("notepad.exe"), False, "abre el bloc de notas"),
     "abrir_explorador": (_programa("explorer.exe"), False, "abre el explorador de archivos"),
+    "abrir_app_local": (_abrir_app_local, True, "abre una app permitida ya resuelta en local"),
     "buscar": (_buscar, True, "busca en Google lo que se le indique (lleva texto)"),
     "buscar_youtube": (_youtube_buscar, True, "busca videos en YouTube (lleva texto)"),
     "subir_volumen": (_tecla(175), False, "sube el volumen"),
@@ -117,6 +134,82 @@ def es_minimizar(texto):
         return False
     return bool(re.search("minim(?:i|ali)za", norm)
                 and re.search("ventana|escritorio|pantalla|todo", norm))
+
+
+# Variantes típicas de Whisper -> clave real de apps_permitidas.json (más largas primero).
+_VARIANTES_APPS = tuple(sorted((
+    ("visual estilo code", "visual studio code"),
+    ("visual studio code", "visual studio code"),
+    ("explorador de archivos", "explorador"),
+    ("microsoft edge", "edge"),
+    ("google chrome", "chrome"),
+    ("studio code", "visual studio code"),
+    ("visual code", "visual studio code"),
+    ("bloc de notas", "bloc de notas"),
+    ("vs code", "visual studio code"),
+    ("calculadora", "calculadora"),
+    ("explorador", "explorador"),
+    ("spotify", "spotify"),
+    ("notepad", "notepad"),
+    ("vscode", "visual studio code"),
+    ("chrome", "chrome"),
+    ("edge", "edge"),
+    ("notas", "notas"),
+    ("calc", "calc"),
+    ("powerpoint", "powerpoint"),
+    ("excel", "excel"),
+    ("word", "word"),
+    ("code", "code"),
+), key=lambda v: -len(v[0])))
+
+_ABRIR_VERBOS = ("abre", "abrir", "abras", "abra", "abreme", "inicia", "iniciar",
+                 "ejecuta", "ejecutar", "lanza", "lanzar", "arranca", "arrancar")
+
+_CHARLA_APPS = (
+    r"\bcomo\s+(?:abro|abre|abrir|uso|usar|se\s+usa|funciona|configuro|configurar|instalo|instalar|hago)\b",
+    r"\bque\s+es\b", r"\bpara\s+que\s+(?:sirve|vale)\b", r"\bayudame\s+con\b",
+    r"\bdime\s+(?:como|que|si)\b", r"\bexplicame\b", r"\bse\s+puede\s+abrir\b",
+)
+
+
+def extraer_app_abrir(texto):
+    """Devuelve la app permitida si es una orden directa de abrirla; si no, None."""
+    import re
+    import unicodedata
+    norm = "".join(c for c in unicodedata.normalize("NFD", str(texto or "").lower())
+                   if unicodedata.category(c) != "Mn")
+    if any(re.search(pat, norm) for pat in _CHARLA_APPS):
+        return None
+    verbo = None
+    for pat in _ABRIR_VERBOS:
+        m = re.search(r"\b" + pat + r"\b", norm)
+        if m and (verbo is None or m.start() < verbo.start()):
+            verbo = m
+    if verbo is None or re.search(r"\bno\b", norm[:verbo.start()]):
+        return None
+
+    hallazgos = []
+    for variante, canonico in _VARIANTES_APPS:
+        for m in re.finditer(r"\b" + re.escape(variante) + r"\b", norm):
+            hallazgos.append((m.start(), m.end(), canonico))
+    if not hallazgos:
+        return None
+    utiles = []
+    for ini, fin, canonico in hallazgos:
+        if not any(ini >= oi and fin <= of and (of - oi) > (fin - ini)
+                   for oi, of, _ in hallazgos):
+            utiles.append(canonico)
+    if len(set(utiles)) != 1:
+        return None
+
+    try:
+        import control_laptop
+        apps = control_laptop.cargar_apps()
+        normalizar = control_laptop.normalizar
+    except Exception:
+        return None
+    objetivo = normalizar(utiles[0])
+    return next((k for k in apps if normalizar(k) == objetivo), None)
 
 
 def interpretar(linea):
