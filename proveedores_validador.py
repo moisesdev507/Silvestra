@@ -7,6 +7,8 @@ import urllib.request
 import config
 
 _modelos_desactivados = set()
+_proveedores_desactivados = set()
+_bloqueo_estado = threading.RLock()
 
 
 def extraer_motivo(resp, codigo):
@@ -23,16 +25,29 @@ def extraer_motivo(resp, codigo):
 
 
 def esta_desactivado(nombre, modelo):
-    """Devuelve True si el modelo fue marcado como inexistente en el proveedor."""
-    return f"{nombre}::{modelo}" in _modelos_desactivados
+    """Devuelve True si el modelo o el proveedor están fuera de rotación."""
+    with _bloqueo_estado:
+        return (nombre in _proveedores_desactivados
+                or f"{nombre}::{modelo}" in _modelos_desactivados)
 
 
 def desactivar_modelo(nombre, modelo):
-    """Registra y desactiva un modelo inexistente."""
+    """Registra y desactiva un modelo inexistente o retirado."""
     clave = f"{nombre}::{modelo}"
-    if clave not in _modelos_desactivados:
+    with _bloqueo_estado:
+        if clave in _modelos_desactivados:
+            return
         _modelos_desactivados.add(clave)
-        print(f"[proveedores] modelo inexistente={modelo} desactivado", flush=True)
+    print(f"[proveedores] modelo inexistente={modelo} desactivado", flush=True)
+
+
+def desactivar_proveedor(nombre):
+    """Saca un proveedor de rotación por credencial rechazada, sin exponer claves."""
+    with _bloqueo_estado:
+        if nombre in _proveedores_desactivados:
+            return
+        _proveedores_desactivados.add(nombre)
+    print(f"[proveedores] proveedor={nombre} desactivado: credencial rechazada", flush=True)
 
 
 def validar_proveedor(prov):

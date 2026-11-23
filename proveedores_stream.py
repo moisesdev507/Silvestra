@@ -9,7 +9,7 @@ from cerebro_parser import _cortar, _respuesta_parcial, separar, extraer_emocion
 import calidad_respuesta as cr
 import proveedores_cadenas as pc
 from sesion_http import obtener_sesion
-from proveedores_validador import extraer_motivo, desactivar_modelo, esta_desactivado
+from proveedores_validador import extraer_motivo, desactivar_modelo, desactivar_proveedor, esta_desactivado
 
 
 def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_cancelar, cola_salida, marcar_enfriamiento_fn, registrar_fn):
@@ -39,11 +39,16 @@ def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_ca
                 marcar_enfriamiento_fn(nombre, modelo, r.headers, motivo=mot)
                 registrar_fn(f"cerebro 429 en {nombre} ({modelo}), pasando al siguiente modelo de la misma cuenta...")
                 continue
-            if r.status_code == 404:
-                mot = extraer_motivo(r, 404)
+            if r.status_code == 401:
+                desactivar_proveedor(nombre)
+                registrar_fn(f"cerebro HTTP 401 en {nombre}: credencial rechazada, proveedor fuera de rotación")
+                break
+            if r.status_code in (404, 410):
+                mot = extraer_motivo(r, r.status_code)
                 marcar_enfriamiento_fn(nombre, modelo, r.headers, motivo=mot)
                 desactivar_modelo(nombre, modelo)
-                registrar_fn(f"cerebro HTTP 404 en {nombre} ({modelo}): {mot} (desactivado)")
+                estado = "retirado y desactivado" if r.status_code == 410 else "desactivado"
+                registrar_fn(f"cerebro HTTP {r.status_code} en {nombre} ({modelo}): {mot} ({estado})")
                 continue
             if r.status_code != 200:
                 registrar_fn(f"cerebro HTTP {r.status_code} en {nombre} ({modelo})")
