@@ -172,6 +172,15 @@ class Voz:
         if en_cache:
             return en_cache
 
+        try:
+            import voz_local
+            audio_local = voz_local.sintetizar_wav(frase, emocion)
+            if audio_local:
+                print("[voz] motor=kokoro_local", flush=True)
+                return audio_local
+        except Exception:
+            pass
+
         import edge_tts
 
         emo = normalizar_emocion(emocion)
@@ -180,7 +189,7 @@ class Voz:
         pitch = ajustes.get("pitch", "+0Hz")
         volume = ajustes.get("volume", "+0%")
 
-        print(f"[voz] emocion={emo} rate={rate} pitch={pitch}", flush=True)
+        print(f"[voz] motor=edge_tts emocion={emo} rate={rate} pitch={pitch}", flush=True)
 
         async def crear():
             datos = bytearray()

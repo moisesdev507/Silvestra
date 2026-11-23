@@ -1,3 +1,4 @@
+import os
 import re
 import time
 import threading
@@ -23,6 +24,34 @@ from oido_vad import DetectorVozSilero
 
 # Solo nombres propios neutros: las listas de comandos/preguntas inducen bucles.
 PROMPT_WHISPER = "Lyris, Visual Studio Code."
+
+
+def _barge_in_habilitado():
+    """Permite activarlo por config o por entorno sin tocar config.py."""
+    return bool(getattr(config, "BARGE_IN_ACTIVO", False)
+                or os.environ.get("LYRIS_BARGE_IN") == "1")
+
+
+def _barge_in(app, datos, comandos_corte, rec_vosk):
+    """Interrumpe solo ante una orden clara; ignora ruido y parciales vacíos."""
+    if rec_vosk is None or not (app and hasattr(app, "voz") and app.voz.ocupada()):
+        return False
+    try:
+        rec_vosk.AcceptWaveform(datos.tobytes())
+        m = re.search(r'"partial"\s*:\s*"([^"]+)"', rec_vosk.PartialResult())
+        if not m:
+            return False
+        limpio = re.sub(r"[^a-záéíóúñü\s]", " ", m.group(1).strip().lower())
+        palabras = limpio.split()
+        if len("".join(palabras)) < 2 or not any(c in palabras for c in comandos_corte):
+            return False
+        if hasattr(app.voz, "detener"):
+            app.voz.detener()
+        if hasattr(app, "cola"):
+            app.cola.put(("interrupcion", "comando"))
+        return True
+    except Exception:
+        return False
 
 
 def _es_eco_prompt(texto, prompt):
@@ -208,11 +237,10 @@ class Oido:
                     continue
 
                 # Barge-in rápido con Vosk si la voz suena en paralelo
-                barge_in_habilitado = getattr(config, "BARGE_IN_ACTIVO", False)
                 hablando_ella = bool(app and hasattr(app, "voz") and app.voz.ocupada())
 
                 if hablando_ella:
-                    if not barge_in_habilitado:
+                    if not _barge_in_habilitado():
                         time.sleep(0.01)
                         continue
                     if rec_vosk is None:
@@ -221,20 +249,8 @@ class Oido:
                             rec_vosk.Reset()
                         except Exception:
                             rec_vosk = None
-                    if rec_vosk is not None:
-                        try:
-                            rec_vosk.AcceptWaveform(datos.tobytes())
-                            parcial_raw = rec_vosk.PartialResult()
-                            m = re.search(r'"partial"\s*:\s*"([^"]+)"', parcial_raw)
-                            if m:
-                                palabras = m.group(1).strip().lower()
-                                if palabras and any(c in palabras.split() for c in comandos_corte):
-                                    if hasattr(app.voz, "detener"):
-                                        app.voz.detener()
-                                    if hasattr(app, "cola"):
-                                        app.cola.put(("interrupcion", "comando"))
-                        except Exception:
-                            pass
+                    if _barge_in(app, datos, comandos_corte, rec_vosk):
+                        continue
 
                 # Alimentar bloques int16 al VAD neuronal
                 self._vad.alimentar(datos)
