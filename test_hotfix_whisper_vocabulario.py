@@ -1,8 +1,8 @@
-"""Regresión: prompt compacto de Whisper y filtros anti-alucinaciones.
+"""Regresión: prompt mínimo de Whisper y filtros anti-bucles.
 
-Verifica que la petición a Groq incluya el vocabulario esperado, que la
-transcripción normal siga funcionando y que los ecos del propio prompt o las
-repeticiones en silencio se descarten igual que las alucinaciones clásicas.
+Verifica que la petición a Groq no incluya listas de comandos ni preguntas,
+que la transcripción normal siga funcionando y que los ecos, repeticiones y
+bucles de alucinación se descarten como en el log real.
 """
 import sys
 import unittest
@@ -14,10 +14,8 @@ import numpy as np
 import oido as oido_mod
 from oido import Oido, PROMPT_WHISPER
 
-TERMINOS = (
-    "Lyris", "Visual Studio Code", "VS Code", "Chrome", "Edge", "Spotify",
-    "WhatsApp", "YouTube", "minimiza", "maximiza", "volumen", "¿qué hora es?",
-)
+TERMINOS = ("Lyris", "Visual Studio Code")
+BUCLE_REAL = "¿qué hora es?, ¿qué hora es?, ¿cuándo es?, ¿cuándo es?, ¿cuándo es?"
 
 
 class ClienteFalso:
@@ -107,15 +105,17 @@ class TestWhisperVocabulario(unittest.TestCase):
         prompt = cliente.kwargs["prompt"]
         for termino in TERMINOS:
             self.assertIn(termino, prompt)
-        self.assertGreaterEqual(len(prompt), 150)
-        self.assertLessEqual(len(prompt), 220)
+        for prohibido in ("¿qué hora es?", "minimiza", "Spotify", "Chrome", "volumen"):
+            self.assertNotIn(prohibido, prompt)
+        self.assertNotIn("¿", prompt)
+        self.assertLessEqual(len(prompt), 60)
 
     def test_nombres_de_memoria_no_rompen_el_limite(self):
         oido, cliente = self._oido("Abre Chrome.", vocab="Moisés, Lyris, Proyecto, Silvestra, Moisés")
         oido.escuchar()
         prompt = cliente.kwargs["prompt"]
         self.assertIn("Proyecto", prompt)
-        self.assertLessEqual(len(prompt), 220)
+        self.assertLessEqual(len(prompt), 90)
 
     def test_transcripcion_normal_no_se_rompe(self):
         oido, _cliente = self._oido("Lyris, maximiza el volumen.")
@@ -128,10 +128,16 @@ class TestWhisperVocabulario(unittest.TestCase):
 
     def test_repeticiones_y_bucle_se_descartan(self):
         for texto in ("Chrome, chrome, chrome, chrome, chrome, chrome.",
-                      "abre abre abre la ventana por favor"):
+                      "abre abre abre la ventana por favor", BUCLE_REAL):
             with self.subTest(texto=texto):
                 oido, _cliente = self._oido(texto)
                 self.assertIsNone(oido.escuchar())
+
+    def test_bucle_del_log_se_descarta_como_alucinacion(self):
+        self.assertTrue(oido_mod.es_bucle_alucinacion(BUCLE_REAL))
+        for texto in ("Gracias, muchas gracias.", "Lyris, ¿qué hora es?",
+                      "Hola, hola, ¿cómo estás?"):
+            self.assertFalse(oido_mod.es_bucle_alucinacion(texto), texto)
 
     def test_filtro_de_silencio_existente_sigue_activo(self):
         segmentos = [{"no_speech_prob": 0.93, "avg_logprob": -0.4}]

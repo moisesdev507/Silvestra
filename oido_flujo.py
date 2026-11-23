@@ -46,6 +46,22 @@ def cortesia_descartada(texto, rms, r=None):
     return (not valida) or es_transcripcion_dudosa(r)
 
 
+def es_bucle_alucinacion(texto):
+    """Detecta fragmentos de 2-4 palabras repetidos dos veces en la misma frase."""
+    tik = re.findall(r"\w+", " ".join(str(texto or "").lower().split()), re.UNICODE)
+    if len(tik) < 4:
+        return False
+    for n in (4, 3, 2):
+        vistos = set()
+        for i in range(len(tik) - n + 1):
+            frag = tuple(tik[i:i + n])
+            if frag in vistos:
+                return True
+            vistos.add(frag)
+    repetidas = [w for w in set(tik) if len(w) >= 2 and tik.count(w) >= 2]
+    return len(repetidas) >= 2 and len(tik) <= 24
+
+
 def es_transcripcion_dudosa(r):
     """True si Whisper no está seguro de que haya voz (ruido que inventa palabras)."""
     try:

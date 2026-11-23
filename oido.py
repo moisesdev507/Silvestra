@@ -11,6 +11,7 @@ from oido_flujo import (
     FlujoMicrofono,
     cortesia_descartada,
     crear_buffer_wav,
+    es_bucle_alucinacion,
     es_cortesia_corta,
     es_transcripcion_dudosa,
     preparar_audio_int16,
@@ -19,12 +20,8 @@ from oido_flujo import (
 from oido_vad import DetectorVozSilero
 
 
-# Vocabulario compacto para Whisper. Sin instrucciones largas: inducen alucinaciones en silencio.
-PROMPT_WHISPER = (
-    "Silvestra, Moisés, Lyris. Visual Studio Code, VS Code, Chrome, Edge, "
-    "Spotify, WhatsApp, YouTube, minimiza, maximiza, volumen, ¿qué hora es?, "
-    "bloc de notas, calculadora."
-)
+# Solo nombres propios neutros: las listas de comandos/preguntas inducen bucles.
+PROMPT_WHISPER = "Lyris, Visual Studio Code."
 
 
 def _es_eco_prompt(texto, prompt):
@@ -33,7 +30,10 @@ def _es_eco_prompt(texto, prompt):
     p = " ".join(str(prompt or "").lower().split())
     if not t:
         return True
-    if p and (t == p or (len(t) >= 40 and (p.startswith(t) or t in p))):
+    if es_bucle_alucinacion(t):
+        return True
+    if p and (t == p or (len(t) >= 10 and p.startswith(t))
+              or (len(t) >= 40 and (p.startswith(t) or t in p))):
         return True
     tokens = re.findall(r"\w+", t, flags=re.UNICODE)
     if len(tokens) >= 6:
