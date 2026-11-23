@@ -66,16 +66,16 @@ class TestActivarHudYCascada(unittest.TestCase):
         ok_alias, _ = acciones.ejecutar("abrir_hud")
         self.assertTrue(ok_alias)
 
-    def test_groq_prioriza_modelos_rapidos(self):
+    def test_groq_no_inyecta_modelos_no_configurados(self):
         prov = {
             "nombre": "Groq",
             "modelos": ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"],
             "modelos_charla": ["qwen/qwen3.8-27b", "openai/gpt-oss-20b", "openai/gpt-oss-120b"],
         }
         mods = pc.obtener_modelos_tarea(prov, "charla")
-        self.assertEqual(mods[0], "llama-3.1-8b-instant")
-        self.assertEqual(mods[1], "llama-3.3-70b-versatile")
-        self.assertNotIn("qwen/qwen3.8-27b", mods)
+        self.assertEqual(mods, prov["modelos_charla"])
+        self.assertNotIn("llama-3.1-8b-instant", mods)
+        self.assertNotIn("llama-3.3-70b-versatile", mods)
 
 
 if __name__ == "__main__":

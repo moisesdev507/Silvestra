@@ -50,6 +50,32 @@ def desactivar_proveedor(nombre):
     print(f"[proveedores] proveedor={nombre} desactivado: credencial rechazada", flush=True)
 
 
+TAREAS_VALIDADAS = ("charla", "razonamiento", "vision")
+
+
+def _modelos_a_validar(prov):
+    """Une la lista efectiva por tarea con la configuración, sin duplicados."""
+    try:
+        import proveedores_cadenas as pc
+    except Exception:
+        return []
+    resultado = []
+
+    def _anadir(modelos):
+        for m in modelos or []:
+            if m not in resultado:
+                resultado.append(m)
+
+    for tarea in TAREAS_VALIDADAS:
+        try:
+            _anadir(pc.obtener_modelos_tarea(prov, tarea))
+        except Exception:
+            pass
+    for clave in ("modelos", "modelos_charla", "modelos_razonamiento", "modelos_vision"):
+        _anadir(prov.get(clave, []))
+    return resultado
+
+
 def validar_proveedor(prov):
     """Consulta GET /models para un proveedor específico si tiene clave."""
     nombre = prov.get("nombre", "")
@@ -86,13 +112,8 @@ def validar_proveedor(prov):
             if not ids:
                 return
 
-            todos_configurados = (
-                set(prov.get("modelos", []))
-                | set(prov.get("modelos_charla", []))
-                | set(prov.get("modelos_razonamiento", []))
-                | set(prov.get("modelos_vision", []))
-            )
-            for m in todos_configurados:
+            # Incluye la lista efectiva (la que realmente se va a intentar), no solo config.
+            for m in _modelos_a_validar(prov):
                 if m not in ids:
                     desactivar_modelo(nombre, m)
     except Exception:

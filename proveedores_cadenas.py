@@ -227,25 +227,41 @@ MODELOS_RAPIDOS_GROQ = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"]
 MODELOS_RAPIDOS_GOOGLE = ["gemini-flash-lite-latest", "gemini-flash-latest"]
 
 
-def obtener_modelos_tarea(prov_dict, tarea):
-    """Devuelve la lista de modelos priorizados para una tarea específica."""
-    nombre = prov_dict.get("nombre", "")
-    clave_tarea = f"modelos_{tarea}"
-    modelos = prov_dict.get(clave_tarea)
+def _modelos_configurados(prov_dict, tarea):
+    """Modelos declarados por el proveedor para la tarea, sin duplicados."""
+    modelos = prov_dict.get(f"modelos_{tarea}")
     if modelos is None:
         modelos = prov_dict.get("modelos", [])
-    modelos = list(modelos)
+    vistos = set()
+    resultado = []
+    for m in modelos or []:
+        if m not in vistos:
+            vistos.add(m)
+            resultado.append(m)
+    return resultado
+
+
+def _tiene_modelos_configurados(prov_dict):
+    """True si el proveedor declara modelos en cualquier campo de configuración."""
+    if prov_dict.get("modelos"):
+        return True
+    return any(v for k, v in prov_dict.items() if k.startswith("modelos_"))
+
+
+def obtener_modelos_tarea(prov_dict, tarea):
+    """Prioriza modelos rápidos solo si están configurados; nunca inventa IDs."""
+    modelos = _modelos_configurados(prov_dict, tarea)
+    nombre = prov_dict.get("nombre", "")
     if nombre == "Groq":
-        restantes = [
-            m for m in modelos
-            if m not in MODELOS_RAPIDOS_GROQ
-            and "qwen" not in m.lower()
-            and "gpt-oss" not in m.lower()
-        ]
-        modelos = list(MODELOS_RAPIDOS_GROQ) + restantes
-    elif nombre == "Google":
-        restantes = [m for m in modelos if m not in MODELOS_RAPIDOS_GOOGLE]
-        modelos = [m for m in MODELOS_RAPIDOS_GOOGLE if m in modelos] + restantes
+        # Respaldo de emergencia solo si el proveedor no tiene ningún modelo declarado.
+        if not modelos and not _tiene_modelos_configurados(prov_dict):
+            return list(MODELOS_RAPIDOS_GROQ)
+        rapidos = [m for m in MODELOS_RAPIDOS_GROQ if m in modelos]
+        return rapidos + [m for m in modelos if m not in rapidos]
+    if nombre == "Google":
+        rapidos = [m for m in MODELOS_RAPIDOS_GOOGLE if m in modelos]
+        if rapidos:
+            return rapidos + [m for m in modelos if m not in rapidos]
     return modelos
 
 
