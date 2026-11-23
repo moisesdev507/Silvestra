@@ -103,7 +103,14 @@ def _es_lan_cliente(client_ip):
 
 def _respuesta(h, code, body, cookie=None):
     cookie = cookie or getattr(h, "_lan_cookie", None)
-    raw = serializar_seguro(body).encode("utf-8")
+    if isinstance(body, dict) and "audio_base64" in body:
+        import json
+        sin_audio = {k: v for k, v in body.items() if k != "audio_base64"}
+        seguro = json.loads(serializar_seguro(sin_audio))
+        seguro["audio_base64"] = body["audio_base64"]
+        raw = json.dumps(seguro, ensure_ascii=False).encode("utf-8")
+    else:
+        raw = serializar_seguro(body).encode("utf-8")
     h.send_response(code)
     for k, v in h.server.gestor.puente.cors(h.headers.get("Origin", ""),
             h.headers.get("Host", ""), h.server.tls).items(): h.send_header(k, v)

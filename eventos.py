@@ -360,6 +360,8 @@ def atender_evento(app, tipo, texto):
     elif tipo in ("ecosistema_observacion", "ecosistema_mostrar_qr"):
         import ecosistema_eventos
         ecosistema_eventos.procesar(app, tipo, texto)
+    elif tipo == "subtitulo":
+        app.decir(str(texto), 5000, con_voz=False)
 
     elif tipo == "fallo":
         remoto = getattr(app, "_ecosistema_origen", None)
