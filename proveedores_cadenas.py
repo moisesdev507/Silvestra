@@ -121,7 +121,7 @@ def marcar_enfriamiento(enfriamientos, nombre, modelo=None, headers=None, motivo
         print(f"[tiempo] enfriamiento proveedor={nombre} tipo={tipo_limite} duracion={duracion:.0f}s{tag_motivo}", flush=True)
 
 
-def proveedores_disponibles(tarea, enfriamientos, claves_anteriores):
+def proveedores_disponibles(tarea, enfriamientos, claves_anteriores, carril="rapido"):
     """Devuelve la lista de candidatos disponibles reseteando enfriamientos al cambiar claves."""
     global _avisados_clave_vacia
     ahora = time.time()
@@ -170,7 +170,7 @@ def proveedores_disponibles(tarea, enfriamientos, claves_anteriores):
             restan = int(enfriamientos[n] - ahora)
             print(f"[tiempo] cerebro saltando proveedor={n} motivo=en_enfriamiento_por_cuota_faltan_{restan}s", flush=True)
 
-    return obtener_candidatos_tarea(tarea, enfriamientos)
+    return obtener_candidatos_tarea(tarea, enfriamientos, carril)
 
 
 def refrescar_clave_proveedor(prov_dict):
@@ -234,7 +234,7 @@ def obtener_modelos_tarea(prov_dict, tarea):
     return preferidos + [m for m in modelos if m not in preferidos]
 
 
-def obtener_candidatos_tarea(tarea, enfriamientos):
+def obtener_candidatos_tarea(tarea, enfriamientos, carril="rapido"):
     """Devuelve la lista ordenada de proveedores aptos con sus modelos disponibles (no enfriados)."""
     ahora = time.time()
     orden_nombres = CADENAS_ORDEN.get(tarea, CADENAS_ORDEN["charla"])
@@ -306,7 +306,8 @@ def obtener_candidatos_tarea(tarea, enfriamientos):
         else:
             candidatos.extend(extras_cands)
 
-    return candidatos
+    import proveedores_cadenas_dinamicas as pcd
+    return pcd.reordenar(candidatos, tarea=tarea, carril=carril)
 
 
 def reporte_estado_proveedores(enfriamientos):

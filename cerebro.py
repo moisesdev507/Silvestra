@@ -95,8 +95,8 @@ class Cerebro:
         solicitud_plan = es_solicitud_explicita(texto_actual)
         if (len(pregunta) >= 18 or solicitud_plan) and not es_invitado and hasattr(self.memoria, "razonar"):
             try:
-                import contexto_motor
-                contexto_engine = contexto_motor.obtener_motor_contexto(app).obtener_contexto()
+                import cerebro_contexto_cache
+                contexto_engine = cerebro_contexto_cache.obtener_contexto(app)
                 resultado = self.memoria.razonar(texto_actual, contexto_engine=contexto_engine,
                     multimodal=datos_multimodales or None)
                 paquete_memoria = resultado.get("recuperacion")

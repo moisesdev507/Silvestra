@@ -93,42 +93,9 @@ def recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5, contexto="", pa
 
 
 def describir_acciones_compactas(texto_actual=None):
-    """Genera lista compacta de sólo las acciones relevantes al mensaje actual."""
-    import unicodedata
-    todas = {}
-    for n, (_, _, d) in acciones.ACCIONES.items():
-        todas[n] = d
-    for n, d in acciones.ESPECIALES.items():
-        todas[n] = d
-    for n, (_, d) in acciones.VIVAS.items():
-        todas[n] = d
-
-    texto_norm = "".join(c for c in unicodedata.normalize("NFD", (texto_actual or "").lower()) if unicodedata.category(c) != "Mn")
-    elegidas = set(ACCIONES_BASE)
-
-    palabras = set(re.findall(r"[a-z0-9]+", texto_norm))
-    for _, (kw, act_names) in CATEGORIAS_ACCIONES.items():
-        coincide = False
-        for k in kw:
-            if " " in k:
-                if k in texto_norm:
-                    coincide = True
-                    break
-            else:
-                if k in palabras:
-                    coincide = True
-                    break
-        if coincide:
-            elegidas.update(act_names)
-
-    lineas = []
-    for n in sorted(elegidas):
-        if n in todas:
-            desc = todas[n].split("(")[0].strip()
-            desc = desc.split(".")[0].strip()[:35]
-            lineas.append(f"- {n}: {desc}")
-
-    return "\n".join(lineas)
+    """Catálogo condicional: acciones reales solo si hay intención operativa."""
+    import cerebro_prompt_compacto
+    return cerebro_prompt_compacto.catalogo_condicional(texto_actual, acciones)
 
 
 def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_invitado=False,

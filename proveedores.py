@@ -38,9 +38,9 @@ def marcar_enfriamiento(nombre, modelo=None, headers=None, motivo=None):
     pc.marcar_enfriamiento(_enfriamientos, nombre, modelo, headers, motivo=motivo)
 
 
-def proveedores_disponibles(tarea="charla"):
+def proveedores_disponibles(tarea="charla", carril="rapido"):
     """Devuelve la lista de proveedores configurados y disponibles para la tarea."""
-    return pc.proveedores_disponibles(tarea, _enfriamientos, _claves_anteriores)
+    return pc.proveedores_disponibles(tarea, _enfriamientos, _claves_anteriores, carril)
 
 
 def _lanzar_reintento(tarea):
@@ -49,7 +49,7 @@ def _lanzar_reintento(tarea):
 
 def completar(mensajes, tarea="charla", timeout=20, max_tokens=None, carril="rapido"):
     global _aviso_respaldo_pendiente, _ultimo_proveedor
-    candidatos = proveedores_disponibles(tarea)
+    candidatos = proveedores_disponibles(tarea, carril=carril)
     if not candidatos:
         _registrar("cerebro sin proveedores disponibles: modo emergencia local")
         _lanzar_reintento(tarea)
@@ -130,7 +130,7 @@ def completar(mensajes, tarea="charla", timeout=20, max_tokens=None, carril="rap
 
 def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=1.2, on_primer_token=None, on_emocion=None, carril="rapido", max_tokens=None):
     """Interfaz unificada para streaming con conmutación limpia y control de calidad."""
-    candidatos = proveedores_disponibles(tarea)
+    candidatos = proveedores_disponibles(tarea, carril=carril)
     if max_tokens is None:
         max_tokens = pc.resolver_max_tokens(tarea, carril)
     texto, prov_g, mod_g = ps.completar_flujo(
