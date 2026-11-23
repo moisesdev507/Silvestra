@@ -23,6 +23,7 @@ from voz_dueno_banco import (
 BASE = os.path.dirname(os.path.abspath(__file__))
 ARCHIVO_VOZ = os.path.join(BASE, "voz_dueno.npy")
 MODELO_ONNX = os.path.join(BASE, "modelos", "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx")
+GRACIA_DUENO_SEG = 90.0  # ventana de gracia tras verificación biométrica positiva
 
 _extractor = None
 _lock_extractor = threading.Lock()
@@ -95,6 +96,7 @@ class VozDueno:
         self.umbral = 0.35
         self.modo_solo_dueno = False
         self.ultima_verificacion = {"es_dueno": True, "similitud": 1.0, "motivo": "inicial"}
+        self._dueno_verificado_ts = 0.0  # último positivo biométrico (monotónico)
         self._cargar_configuracion()
         self._cargar_vector()
 
@@ -123,6 +125,11 @@ class VozDueno:
         self._cargar_vector()
         self._cargar_configuracion()
 
+    def _gracia_dueno_reciente(self):
+        """True solo si hubo verificación biométrica positiva dentro de la ventana."""
+        ts = float(getattr(self, "_dueno_verificado_ts", 0.0) or 0.0)
+        return bool(ts and (time.monotonic() - ts) <= GRACIA_DUENO_SEG)
+
     def evaluar_entrada_voz(self, texto):
         """Evalúa la identidad del hablante al recibir un audio del micrófono."""
         if not self.activa or self.banco_dueno is None:
@@ -140,16 +147,23 @@ class VozDueno:
             and self.app.camara.permite()
         )
 
-        # Audios muy cortos (< 1 segundo): decide la cámara; si no hay cámara, no permite acciones
+        # Audios muy cortos (< 1 segundo): decide la cámara o la gracia del dueño
+        # verificado hace poco; sin ambas, sigue siendo invitado.
         if audio is None or duracion < 1.0:
-            es_dueno = camara_ok
+            gracia = self._gracia_dueno_reciente()
+            es_dueno = camara_ok or gracia
+            if not es_dueno:
+                self._dueno_verificado_ts = 0.0
+            motivo = ("audio_corto_camara_ok" if camara_ok else
+                      ("audio_corto_gracia_dueno" if gracia else "audio_corto_sin_camara"))
             self.ultima_verificacion = {
                 "es_dueno": es_dueno,
                 "similitud": 0.0,
                 "camara": camara_ok,
-                "motivo": "audio_corto_camara_ok" if camara_ok else "audio_corto_sin_camara",
+                "gracia_dueno_reciente": gracia,
+                "motivo": motivo,
             }
-            print(f"[voz_dueno] audio_corto={duracion:.2f}s camara_ok={camara_ok} permitido={es_dueno}", flush=True)
+            print(f"[voz_dueno] audio_corto={duracion:.2f}s camara_ok={camara_ok} gracia_dueno_reciente={gracia} permitido={es_dueno}", flush=True)
             return
 
         try:
@@ -168,6 +182,8 @@ class VozDueno:
 
             # Doble factor: si la cámara ve al dueño, es válido aunque el puntaje de voz sea bajo
             es_dueno = (score >= umbral_efectivo) or camara_ok
+            # Solo la biometría positiva abre la gracia; un rechazo la cancela.
+            self._dueno_verificado_ts = time.monotonic() if score >= umbral_efectivo else 0.0
             self.ultima_verificacion = {
                 "es_dueno": es_dueno,
                 "similitud": score,
