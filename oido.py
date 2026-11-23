@@ -4,6 +4,7 @@ import threading
 import numpy as np
 
 import config
+import oido_deepgram
 from config import MODELO_VOZ
 from oido_flujo import (
     CORTESIAS_AMBIGUAS,
@@ -312,28 +313,32 @@ class Oido:
 
         r = None
         t0 = time.time()
-        try:
-            r = self.cliente.audio.transcriptions.create(
-                file=("voz.wav", buffer.getvalue()),
-                model=MODELO_VOZ,
-                language="es",
-                response_format="verbose_json",
-                temperature=0.0,
-                prompt=prompt_whisper,
-                timeout=10.0,
-            )
-            print(f"[tiempo] whisper={time.time() - t0:.2f}s", flush=True)
-        except Exception as e:
-            print(f"[oido] Whisper falló ({str(e)[:80]}). Conmutando a Vosk...", flush=True)
-            texto_vosk = self._transcribir_vosk(audio.tobytes())
-            if texto_vosk is not None:
-                self.t_texto = time.time()
-                print(f"[oido] transcrito='{texto_vosk}'", flush=True)
-                return texto_vosk
-            raise RuntimeError("No pude entender el audio: " + str(e)[:120])
+        dg = oido_deepgram.transcribir(buffer.getvalue())
+        if dg:
+            texto = dg[0]
+        else:
+            try:
+                r = self.cliente.audio.transcriptions.create(
+                    file=("voz.wav", buffer.getvalue()),
+                    model=MODELO_VOZ,
+                    language="es",
+                    response_format="verbose_json",
+                    temperature=0.0,
+                    prompt=prompt_whisper,
+                    timeout=10.0,
+                )
+                print(f"[tiempo] whisper={time.time() - t0:.2f}s", flush=True)
+            except Exception as e:
+                print(f"[oido] Whisper falló ({str(e)[:80]}). Conmutando a Vosk...", flush=True)
+                texto_vosk = self._transcribir_vosk(audio.tobytes())
+                if texto_vosk is not None:
+                    self.t_texto = time.time()
+                    print(f"[oido] transcrito='{texto_vosk}'", flush=True)
+                    return texto_vosk
+                raise RuntimeError("No pude entender el audio: " + str(e)[:120])
+            texto = (r.text or "").strip()
 
         self.t_texto = time.time()
-        texto = (r.text or "").strip()
         if len(texto) < 3:
             print(f"[oido] transcripcion='{texto}' descartada motivo=demasiado_corta", flush=True)
             return None
