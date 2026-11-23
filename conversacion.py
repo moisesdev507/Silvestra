@@ -24,8 +24,13 @@ def es_eco(app, texto):
     if not a or not b:
         return False
     if len(a) >= 12 and a in b:
+        print(f"[oido] Descartado como eco (repetición): '{texto[:40]}'", flush=True)
         return True
-    return difflib.SequenceMatcher(None, a, b).ratio() > 0.6
+    ratio = difflib.SequenceMatcher(None, a, b).ratio()
+    if ratio > 0.85:
+        print(f"[oido] Descartado como eco (ratio={ratio:.2f}): '{texto[:40]}'", flush=True)
+        return True
+    return False
 
 
 def dejar_de_escuchar(app):
@@ -69,8 +74,10 @@ def grabar(app, generacion=None):
         app.cola.put(("fallo", str(e)))
         return
     if (generacion is not None and generacion != getattr(app, "_generacion_escucha", generacion)):
+        print("[oido] Descartado: sesión de escucha reiniciada", flush=True)
         return
     if not getattr(app, "conversacion", False) and not getattr(app, "escuchando", False):
+        print("[oido] Descartado: conversación detenida", flush=True)
         return
     app.cola.put(("silencio", None) if texto is None else ("oido", texto))
 
