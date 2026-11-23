@@ -1,10 +1,45 @@
 """Ciclo de vida, nacimiento, saludo inicial y renacer de Silvestra."""
+import random
 import threading
 import time
 
-from cerebro import ahora_texto
 import estado
-import hilos
+
+# Banco local: el saludo de arranque no debe depender de la red.
+SALUDOS = {
+    "manana": (
+        "Buenos días, {creador}. Soy {nombre}. Lista para empezar el día contigo.",
+        "Buenos días, {creador}. Aquí estoy, despierta y lista para ayudarte.",
+        "Buenos días, {creador}. Arrancamos suave: dime por dónde quieres empezar.",
+    ),
+    "tarde": (
+        "Buenas tardes, {creador}. Soy {nombre}. Sigo aquí para lo que necesites.",
+        "Buenas tardes, {creador}. Lista para continuar donde lo dejamos.",
+        "Buenas tardes, {creador}. ¿Seguimos con lo pendiente o cambiamos de rumbo?",
+    ),
+    "noche": (
+        "Buenas noches, {creador}. Estoy aquí si quieres cerrar el día en calma.",
+        "Buenas noches, {creador}. Lista para acompañarte un rato antes de descansar.",
+    ),
+}
+
+
+def franja_actual():
+    """Devuelve la franja horaria y la emoción asociada al saludo."""
+    hora = time.localtime().tm_hour
+    if 5 <= hora < 12:
+        return "manana", "alegre"
+    if 12 <= hora < 19:
+        return "tarde", "calida"
+    return "noche", "calida"
+
+
+def elegir_saludo(franja, creador, nombre, ultimo_saludo=""):
+    """Elige una frase del banco local sin repetir el último saludo guardado."""
+    banco = SALUDOS.get(franja) or SALUDOS["tarde"]
+    opciones = [frase.format(creador=creador, nombre=nombre) for frase in banco]
+    diferentes = [frase for frase in opciones if frase != ultimo_saludo]
+    return random.choice(diferentes or opciones)
 
 
 def nacer(app):
@@ -39,69 +74,31 @@ def preguntar_proposito(app):
 
 
 def saludar(app):
-    """Lanza la generación del saludo inicial contextual en un hilo secundario."""
+    """Encola el saludo inicial de inmediato, sin bloquear el hilo de la GUI."""
     threading.Thread(target=generar_saludo, args=(app,), daemon=True).start()
 
 
 def generar_saludo(app):
-    """Genera un saludo dinámico y cálido con Groq según la hora, el tiempo pasado y pendientes."""
+    """Genera un saludo local e instantáneo según la hora y el último saludo usado."""
     est = estado.cargar()
-    ultima_vez = est.get("ultima_vez")
-    ultimo_saludo = est.get("ultimo_saludo", "")
-    tiempo_txt = estado.tiempo_transcurrido_texto(ultima_vez)
-    hora_actual = time.localtime().tm_hour
-    if 5 <= hora_actual < 12:
-        saludo_hora = "Buenos días"
-        emocion_saludo = "alegre"
-    elif 12 <= hora_actual < 19:
-        saludo_hora = "Buenas tardes"
-        emocion_saludo = "calida"
-    else:
-        saludo_hora = "Buenas noches"
-        emocion_saludo = "calida"
+    franja, emocion = franja_actual()
     creador = getattr(getattr(app, "memoria", None), "creador", "Moisés") or "Moisés"
     nombre = getattr(getattr(app, "memoria", None), "nombre", "Lyris") or "Lyris"
-    frase_fija = f"{saludo_hora}, {creador}. Soy {nombre}. Lista para lo que necesites."
+    saludo = elegir_saludo(franja, creador, nombre, est.get("ultimo_saludo", ""))
+
+    est["ultima_vez"] = time.time()
+    est["ultimo_saludo"] = saludo
+    estado.guardar(est)
+    app.cola.put(("saludo_inicial", (saludo, emocion)))
+
     try:
-        sistema = (
-            f"Eres {nombre}, asistente de {creador}.\n"
-            f"Momento actual: {ahora_texto()}.\n"
-            f"Tiempo transcurrido desde la última vez que hablaron: {tiempo_txt}.\n"
-            f"Saludo anterior (OBLIGATORIO: NO repitas este saludo ni su estructura):\n{ultimo_saludo or 'Ninguno'}\n"
-            f"Hilos y temas pendientes: {hilos.resumen()}.\n\n"
-            "Genera un saludo inicial cálido, natural y cercano en español panameño (sin exagerar modismos).\n"
-            "Reglas OBLIGATORIAS:\n"
-            f"1. Saludo según la hora: Si mencionas la hora o franja, debe ser '{saludo_hora}' (NUNCA digas 'buenos días' si es tarde o noche).\n"
-            "2. De 1 a 2 frases cortas (máximo 25 palabras), aptas para decir en voz alta.\n"
-            "3. Solo menciona recordatorios si realmente hay alguno pendiente o recién vencido en tus notas.\n"
-            "4. Sin asteriscos, sin listas, sin comillas, sin emojis.\n"
-            "Responde ÚNICAMENTE con el saludo que dirás en voz alta."
-        )
-        saludo = app.cerebro._pedir([
-            {"role": "system", "content": sistema},
-            {"role": "user", "content": "Saluda a tu creador."},
-        ])
-        limpio = saludo.replace("*", "").replace("\n", " ").strip("\"' ")
-        if not limpio:
-            raise ValueError("Saludo vacío")
-        est["ultima_vez"] = time.time()
-        est["ultimo_saludo"] = limpio
-        estado.guardar(est)
-        app.cola.put(("saludo_inicial", (limpio, emocion_saludo)))
+        import datetime
+        import cerebro_proactivo
+        m = cerebro_proactivo.obtener_motor_proactivo()
+        m.ultimo_aviso = time.time()
+        m.ultimo_briefing_fecha = datetime.date.today().isoformat()
     except Exception:
-        est["ultima_vez"] = time.time()
-        est["ultimo_saludo"] = frase_fija
-        estado.guardar(est)
-        app.cola.put(("saludo_inicial", (frase_fija, emocion_saludo)))
-    finally:
-        try:
-            import cerebro_proactivo
-            m = cerebro_proactivo.obtener_motor_proactivo()
-            m.ultimo_aviso = time.time()
-            import datetime
-            m.ultimo_briefing_fecha = datetime.date.today().isoformat()
-        except Exception:
-            pass
+        pass
 
 
 def renacer(app):
