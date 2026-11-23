@@ -12,6 +12,9 @@ VERBOS_OPERATIVOS = {
     "cerrar", "guardar", "anotar", "eliminar", "borrar", "activar", "desactivar",
     "mostrar", "ocultar", "indexar", "leer", "escribir", "descansar", "avisar",
     "recordatorio", "recordatorios", "pendiente", "pendientes", "presentacion",
+    "pon", "ponme", "pone", "reproduce", "reproducir", "toca", "coloca",
+    "minimiza", "minimaliza", "minimizar", "maximiza", "maximizar", "sube",
+    "baja", "pausa", "pausar", "quita", "quitar", "hazlo",
 }
 VERBOS_EJECUCION = {
     "abrir", "enviar", "crear", "ejecutar", "guardar", "borrar", "eliminar",
@@ -24,21 +27,60 @@ MARCADORES_TEORIA = (
 )
 BLOQUE_MINIMO = "- ninguna (charla: no ejecutar acciones)"
 
+# Erratas típicas de Whisper: las canonicalizamos antes de comparar keywords.
+_ERRATAS = (
+    (r"\bminimaliz(?:a|ar|e|o|ame)\b", "minimizar"),
+    (r"\bminimic(?:e|ame|aste)\b", "minimizar"),
+    (r"\bminimiza(?:r|s)?\b", "minimizar"),
+    (r"\bventanas\b", "ventana"),
+)
+AFIRMACIONES = {"si", "claro", "dale", "vale", "adelante", "hazlo", "ok", "supuesto"}
+OFERTAS_ACCION = (
+    "te pongo", "te preparo", "te reproduzco", "te abro", "te cierro",
+    "te escribo", "te envio", "te hago", "quieres que", "te gustaria",
+)
+
 
 def _normalizar(texto):
-    return "".join(
+    norm = "".join(
         c for c in unicodedata.normalize("NFD", (texto or "").lower())
         if unicodedata.category(c) != "Mn"
     )
+    for patron, sustituto in _ERRATAS:
+        norm = re.sub(patron, sustituto, norm)
+    return norm
 
 
-def tiene_intencion_operativa(texto):
+def oferta_accionable(historial_reciente):
+    """Texto de la última oferta accionable de Lyris, si la hay."""
+    for mensaje in reversed(list(historial_reciente or [])):
+        if not isinstance(mensaje, dict):
+            continue
+        if mensaje.get("role") not in ("assistant", "lyris"):
+            continue
+        contenido = _normalizar(mensaje.get("content", ""))
+        if any(m in contenido for m in OFERTAS_ACCION):
+            return contenido
+    return ""
+
+
+def es_afirmacion_breve(texto, oferta):
+    """True si el usuario acepta una oferta previa con un sí/dale corto."""
+    if not oferta:
+        return False
+    palabras = re.findall(r"[a-z0-9]+", _normalizar(texto))
+    return bool(palabras) and palabras[0] in AFIRMACIONES and len(palabras) <= 10
+
+
+def tiene_intencion_operativa(texto, historial_reciente=None):
     """True solo si el mensaje pide una acción real, no charla o teoría."""
     norm = _normalizar(texto)
     palabras = set(re.findall(r"[a-z0-9]+", norm))
     if any(m in norm for m in MARCADORES_TEORIA) and not (palabras & VERBOS_EJECUCION):
         return False
     if palabras & VERBOS_OPERATIVOS:
+        return True
+    if es_afirmacion_breve(texto, oferta_accionable(historial_reciente)):
         return True
     for keywords, _ in CATEGORIAS_ACCIONES.values():
         for k in keywords:
@@ -47,9 +89,10 @@ def tiene_intencion_operativa(texto):
     return False
 
 
-def catalogo_condicional(texto=None, modulo_acciones=None, incluir_base=True):
+def catalogo_condicional(texto=None, modulo_acciones=None, incluir_base=True,
+                         historial_reciente=None):
     """Catálogo completo ante intención operativa; bloque mínimo en charla/teoría."""
-    if not tiene_intencion_operativa(texto):
+    if not tiene_intencion_operativa(texto, historial_reciente):
         return BLOQUE_MINIMO
     if modulo_acciones is None:
         return BLOQUE_MINIMO
@@ -62,7 +105,9 @@ def catalogo_condicional(texto=None, modulo_acciones=None, incluir_base=True):
     for n, (_, desc) in getattr(modulo_acciones, "VIVAS", {}).items():
         todas[n] = desc
 
-    norm = _normalizar(texto)
+    oferta = oferta_accionable(historial_reciente)
+    efectivo = f"{oferta} {texto or ''}" if oferta else texto
+    norm = _normalizar(efectivo)
     elegidas = set(ACCIONES_BASE) if incluir_base else set()
     palabras = set(re.findall(r"[a-z0-9]+", norm))
     for _, (keywords, nombres) in CATEGORIAS_ACCIONES.items():

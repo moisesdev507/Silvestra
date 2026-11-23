@@ -18,6 +18,71 @@ def _reg_turno(cerebro, u_txt, a_txt, al_frase=None):
         pass
 
 
+def _norm_orden(texto):
+    """Texto sin tildes ni prefijo de llamada, para comparar órdenes habladas."""
+    import re
+    import unicodedata
+    norm = "".join(
+        c for c in unicodedata.normalize("NFD", str(texto or "").lower())
+        if unicodedata.category(c) != "Mn"
+    )
+    norm = re.sub(r"^(?:lyris|silvestra|silvestre|oye|hola)\b[\s,.:;-]*", "", norm)
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", norm)).strip()
+
+
+def es_minimizar(texto):
+    """Detecta 'minimiza/minimaliza la ventana' pese a erratas de Whisper."""
+    import re
+    norm = _norm_orden(texto)
+    verbo = any(x in norm for x in ("minimiz", "minimaliz", "minimic"))
+    objetivo = any(x in norm for x in ("ventana", "escritorio", "pantalla", "todo", "todas"))
+    if re.search(r"\bno\s+(?:minimi|minimaliz|minimic)", norm):
+        return False
+    return verbo and objetivo
+
+
+def accion_determinista(texto, historial=None):
+    """Mapea la intención a una acción registrada, sin depender del LLM."""
+    import cerebro_prompt_compacto as cpc
+    if es_minimizar(texto):
+        return "minimizar_todo", None
+    oferta = cpc.oferta_accionable(historial)
+    if oferta and cpc.es_afirmacion_breve(texto, oferta):
+        if any(x in oferta for x in ("musica", "cancion", "lofi", "youtube", "tema", "pista")):
+            return "musica_youtube", "lofi" if "lofi" in oferta else "musica"
+    return None, None
+
+
+def sanear_intencion_operativa(texto, respuesta, accion, historial=None):
+    """Corrige promesas de acción no ejecutada."""
+    import acciones
+    import cerebro_prompt_compacto as cpc
+    nombre, _arg = acciones.interpretar(accion)
+    validas = (
+        set(getattr(acciones, "ACCIONES", {}))
+        | set(getattr(acciones, "VIVAS", {}))
+        | set(getattr(acciones, "ESPECIALES", {}))
+    )
+    if nombre in validas:
+        return respuesta, accion, False
+
+    det, arg = accion_determinista(texto, historial)
+    if det and det in validas:
+        nueva = f"{det} | {arg}" if arg else det
+        return "Listo, lo hago.", nueva, True
+
+    if not cpc.tiene_intencion_operativa(texto, historial):
+        return respuesta, accion, False
+    plano = str(respuesta or "").lower()
+    promesas = (
+        "ya te puse", "ya puse", "ya minimice", "ya minimicé", "ya lo hice",
+        "ya hice", "listo, ya", "ya te he",
+    )
+    if any(p in plano for p in promesas):
+        return "No he podido hacerlo todavía; no quiero decirte que ya está.", None, True
+    return respuesta, accion, False
+
+
 def atender(cerebro, texto_orig, texto, al_frase, app=None):
     """Atiende en local los comandos interceptados; devuelve None si no aplica."""
     if app is None:
@@ -60,6 +125,12 @@ def atender(cerebro, texto_orig, texto, al_frase, app=None):
                 return resp, None, "alegre"
         except Exception as e:
             print(f"[archivo_local] Error lectura: {e}", flush=True)
+
+    # 0b. Minimizar ventana: errata Whisper tolerada sin depender del LLM.
+    if es_minimizar(texto) or es_minimizar(texto_orig):
+        resp = "Minimizando la ventana."
+        _reg_turno(cerebro, texto_orig, resp, al_frase)
+        return resp, "minimizar_todo", "alegre"
 
     import vision_pantalla
     if vision_pantalla.detectar_peticion_vision(texto):

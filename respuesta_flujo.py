@@ -30,6 +30,24 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         return local
 
     cerebro.historial.append({"role": "user", "content": texto})
+
+    # En turnos operativos el TTS se difiere hasta validar la ACCION: así un
+    # proveedor que no respeta el formato no puede sintetizar una acción falsa.
+    try:
+        import cerebro_prompt as _cp
+        historial_operativo = cerebro._obtener_historial_podado()
+        _catalogo = _cp.describir_acciones_compactas(texto, historial_operativo)
+        operativo = "no ejecutar acciones" not in _catalogo
+    except Exception:
+        historial_operativo, operativo = None, False
+    frases_diferidas = [] if operativo else None
+
+    def _al_frase(fragmento):
+        if frases_diferidas is None:
+            al_frase(fragmento)
+        else:
+            frases_diferidas.append(fragmento)
+
     # El carril se decide antes de construir la ventana (política única).
     app = getattr(cerebro, "app", None)
     modo = "normal"
@@ -65,7 +83,7 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     if carril == "pro":
         try:
             crudo = cerebro_enrutador.completar_pro_flujo(
-                mensajes, al_frase=al_frase, on_primer_token=on_primer_token, on_emocion=_on_emocion
+                mensajes, al_frase=_al_frase, on_primer_token=on_primer_token, on_emocion=_on_emocion
             )
         except Exception as e:
             print(f"[enrutador] fallback_pro->rapido motivo={e}", flush=True)
@@ -74,13 +92,13 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     if crudo is None:
         try:
             crudo = proveedores.completar_flujo(
-                mensajes, al_frase, tarea=tarea, on_primer_token=on_primer_token,
+                mensajes, _al_frase, tarea=tarea, on_primer_token=on_primer_token,
                 on_emocion=_on_emocion, carril=carril
             )
         except Exception as e:
             print(f"[respuesta_flujo] Excepción en streaming: {e}. Usando respuesta local.", flush=True)
             try:
-                al_frase(pc.FRASE_EMERGENCIA_LOCAL)
+                _al_frase(pc.FRASE_EMERGENCIA_LOCAL)
             except Exception:
                 pass
             crudo = pc.respuesta_emergencia_local()
@@ -98,6 +116,25 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
             _on_emocion("concentrada")
     except Exception:
         pass
+
+    corregido = False
+    try:
+        respuesta, accion, corregido = respuesta_flujo_acciones.sanear_intencion_operativa(
+            texto_orig, respuesta, accion, historial=historial_operativo
+        )
+    except Exception as e:
+        print(f"[respuesta_flujo] Guard operativo no disponible: {e}", flush=True)
+
+    if frases_diferidas is not None:
+        try:
+            if corregido:
+                if str(respuesta or "").strip():
+                    al_frase(respuesta)
+            else:
+                for _frag in frases_diferidas:
+                    al_frase(_frag)
+        except Exception:
+            pass
 
     if recuerdo and not getattr(cerebro, "turno_invitado", False):
         try:

@@ -92,10 +92,12 @@ def recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5, contexto="", pa
     return "\n".join(f"- {h}" for h in formateados), n_rec
 
 
-def describir_acciones_compactas(texto_actual=None):
+def describir_acciones_compactas(texto_actual=None, historial_reciente=None):
     """Catálogo condicional: acciones reales solo si hay intención operativa."""
     import cerebro_prompt_compacto
-    return cerebro_prompt_compacto.catalogo_condicional(texto_actual, acciones)
+    return cerebro_prompt_compacto.catalogo_condicional(
+        texto_actual, acciones, historial_reciente=historial_reciente
+    )
 
 
 def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_invitado=False,
@@ -187,7 +189,7 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
 
     tok_contexto = max(0, int(len(ctx_texto) / 3.6))
 
-    desc_acciones = describir_acciones_compactas(texto_actual)
+    desc_acciones = describir_acciones_compactas(texto_actual, historial_reciente)
     aviso_invitado = ""
     if es_invitado:
         aviso_invitado = (
@@ -210,7 +212,9 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         "PROHIBIDO terminar con preguntas de relleno ('¿en qué te ayudo?', '¿algo más?'); solo pregunta si falta un dato indispensable.\n"
         f"FECHA Y HORA LOCAL REAL: {hora_local}. 12:xx a. m. es medianoche; 12:xx p. m., mediodía. Usa exactamente este dato.\n\n"
         "ACCIONES DISPONIBLES en la laptop (SOLO estas; no inventes que algo ya está hecho):\n"
-        f"{desc_acciones}\n\n"
+        f"{desc_acciones}\n"
+        "NUNCA digas 'ya lo hice/puse/minimicé': afirma una acción SOLO si terminas con "
+        "ACCION: <nombre de esta lista>; si no la emites, no digas que la ejecutaste.\n\n"
         "Regla anti-invención: jamás inventes vivencias ni datos falsos. "
         f"Si {m.creador} no te lo ha contado, di que no lo recuerdas. Captura y cámara solo cuando lo pidan; jamás repitas claves ni contraseñas.\n"
         "Los recuerdos de memoria a largo plazo son históricos: NUNCA representan lo abierto ahora. "
