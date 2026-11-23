@@ -1,16 +1,21 @@
 """Pruebas del Bloque 0: gracia de voz, filtro de calidad y respuesta hablada."""
+import io
+import json
 import time
 import unittest
+from contextlib import redirect_stdout
 from unittest.mock import patch
 
 import numpy as np
 
 import calidad_respuesta
+import cerebro_enrutador_pro
 import eventos
 import eventos_dialogo
 import proveedores_cadenas as pc
 import voz_dueno
 import voz_gracia
+from voz import dividir_frases
 
 
 class _Oido:
@@ -177,6 +182,89 @@ class TestRespuestaHablada(unittest.TestCase):
         app.conversacion = False
         eventos_dialogo.atender_resto(app, "fallo", "No pude conectar", lambda _t: False)
         self.assertEqual(app.dicho[-1], ("No pude conectar", False))
+
+
+class _RespuestaSSE:
+    status_code = 200
+
+    def __init__(self, trozos):
+        self._trozos = trozos
+
+    def iter_lines(self, decode_unicode=False):
+        for trozo in self._trozos:
+            evento = {"choices": [{"delta": {"content": trozo}}]}
+            yield ("data: " + json.dumps(evento)).encode("utf-8")
+        yield b"data: [DONE]"
+
+
+class _SesionSSE:
+    def __init__(self, respuesta):
+        self.respuesta = respuesta
+
+    def post(self, *args, **kwargs):
+        return self.respuesta
+
+
+class TestCarrilProRespuestaCompleta(unittest.TestCase):
+    def test_lista_markdown_se_habla_completa_tras_emocion_intermedia(self):
+        trozos = [
+            "RESPUESTA: Te explico los 5 cuellos de botella clásicos y cómo atacar "
+            "cada uno en el diseño de la BD:\n\n",
+            "EMOCION: neutral\n",
+            "1. **Consultas sin índices.** Escanean toda la tabla.\n",
+            "2. **N+1 queries.** Cada fila dispara otra consulta.\n",
+            "3. **Sin paginación.** Se traen todas las filas.\n",
+            "4. **JOINs mal diseñados.** Multiplican filas.\n",
+            "5. **Sin caché.** Repiten el mismo trabajo.\n",
+        ]
+        entrada = {
+            "proveedor": "NVIDIA",
+            "base_url": "https://example.invalid/v1",
+            "modelo": "modelo-pro",
+            "clave_attr": "CLAVE_NVIDIA",
+            "env": ("NVIDIA_API_KEY",),
+            "stream": True,
+        }
+        capturadas = []
+
+        def al_frase(item):
+            capturadas.append(item[0] if isinstance(item, tuple) else item)
+
+        salida = io.StringIO()
+        with patch("sesion_http.obtener_sesion",
+                   return_value=_SesionSSE(_RespuestaSSE(trozos))), \
+             patch("cerebro_enrutador_pro._headers", return_value={}), \
+             redirect_stdout(salida):
+            crudo = cerebro_enrutador_pro._flujo_entrada(
+                entrada, [], al_frase, None, None, 1.0, 100,
+            )
+
+        self.assertIn("5 cuellos de botella", crudo)
+        hablado = []
+        for frase in capturadas:
+            hablado.extend(dividir_frases(frase))
+        texto = " ".join(hablado)
+        esperados = (
+            "Te explico los 5 cuellos de botella clásicos y cómo atacar cada uno "
+            "en el diseño de la BD:",
+            "Punto 1: Consultas sin índices. Escanean toda la tabla.",
+            "Punto 2: N+1 queries. Cada fila dispara otra consulta.",
+            "Punto 3: Sin paginación. Se traen todas las filas.",
+            "Punto 4: JOINs mal diseñados. Multiplican filas.",
+            "Punto 5: Sin caché. Repiten el mismo trabajo.",
+        )
+        for esperado in esperados:
+            self.assertIn(esperado, texto)
+        self.assertEqual(texto.count("Punto "), 5)
+        for artefacto in ("**", "EMOCION:", "RESPUESTA:", "`"):
+            self.assertNotIn(artefacto, texto)
+
+        registro = salida.getvalue()
+        for esperado in (
+            "[tiempo] cerebro", "ganador=NVIDIA", "proveedor=NVIDIA",
+            "modelo=modelo-pro", "carril=pro", "primer_token=",
+        ):
+            self.assertIn(esperado, registro)
 
 
 class TestCadenasGoogle(unittest.TestCase):

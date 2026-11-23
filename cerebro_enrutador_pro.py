@@ -6,8 +6,10 @@ sin saldo. El orden prioriza calidad de razonamiento y luego velocidad.
 """
 import json
 import os
+import time
 
 import config
+import pro_respuesta as pr
 
 MAX_TOKENS_PRO = 1500
 TIMEOUT_PRO = 20.0
@@ -174,7 +176,7 @@ def completar_pro(mensajes, tarea="charla", timeout=TIMEOUT_PRO, max_tokens=None
 
 def _flujo_entrada(entrada, mensajes, al_frase, on_primer_token, on_emocion, timeout, max_tokens):
     from sesion_http import obtener_sesion
-    from cerebro_parser import _cortar, _respuesta_parcial, extraer_emocion_parcial
+    from cerebro_parser import extraer_emocion_parcial
 
     payload = {
         "model": entrada["modelo"],
@@ -183,6 +185,7 @@ def _flujo_entrada(entrada, mensajes, al_frase, on_primer_token, on_emocion, tim
         "max_tokens": max_tokens,
         "stream": True,
     }
+    t_inicio = time.monotonic()
     resp = obtener_sesion().post(
         _url(entrada),
         headers=_headers(entrada),
@@ -194,9 +197,21 @@ def _flujo_entrada(entrada, mensajes, al_frase, on_primer_token, on_emocion, tim
         raise RuntimeError(f"HTTP {resp.status_code}")
 
     crudo = ""
-    emitido = 0
+    emitidas = 0
     primer_token = False
     emocion = None
+
+    def enviar_pendientes(final=False):
+        nonlocal emitidas
+        if not callable(al_frase):
+            return
+        for frase in pr.frases(crudo, final=final)[emitidas:]:
+            limpia = frase.strip()
+            if not limpia:
+                continue
+            al_frase((limpia, emocion) if emocion else limpia)
+            emitidas += 1
+
     try:
         for linea_raw in resp.iter_lines(decode_unicode=False):
             if not linea_raw:
@@ -219,6 +234,13 @@ def _flujo_entrada(entrada, mensajes, al_frase, on_primer_token, on_emocion, tim
                 continue
             if not primer_token:
                 primer_token = True
+                transcurrido = time.monotonic() - t_inicio
+                proveedor = entrada["proveedor"]
+                print(
+                    f"[tiempo] cerebro ganador={proveedor} proveedor={proveedor} "
+                    f"modelo={entrada['modelo']} carril=pro primer_token={transcurrido:.2f}s",
+                    flush=True,
+                )
                 if callable(on_primer_token):
                     on_primer_token()
             crudo += delta
@@ -226,12 +248,7 @@ def _flujo_entrada(entrada, mensajes, al_frase, on_primer_token, on_emocion, tim
                 emocion = extraer_emocion_parcial(crudo)
                 if emocion and callable(on_emocion):
                     on_emocion(emocion)
-            parcial = _respuesta_parcial(crudo)
-            if parcial is not None and callable(al_frase):
-                frases, emitido = _cortar(parcial, emitido)
-                for frase in frases:
-                    if frase.strip():
-                        al_frase((frase.strip(), emocion) if emocion else frase.strip())
+            enviar_pendientes()
     except Exception:
         if not crudo:
             raise
@@ -239,12 +256,7 @@ def _flujo_entrada(entrada, mensajes, al_frase, on_primer_token, on_emocion, tim
     if not crudo.strip():
         raise RuntimeError("stream sin contenido")
 
-    if callable(al_frase):
-        parcial = _respuesta_parcial(crudo)
-        if parcial is not None and len(parcial) > emitido:
-            resto = parcial[emitido:].strip()
-            if resto:
-                al_frase(resto)
+    enviar_pendientes(final=True)
     return crudo
 
 
