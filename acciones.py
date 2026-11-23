@@ -126,6 +126,46 @@ def telemetria_local(texto):
         return None
 
 
+def atajo_archivos_locales(texto):
+    """Atajos de archivo ya existentes: (respuesta, accion, emocion) o None."""
+    import os
+    import re
+    texto = str(texto)
+    if texto.startswith("escribir_archivo "):
+        try:
+            import habilidades_archivos as ha
+            arg = texto[len("escribir_archivo "):].strip()
+            ok, msg = ha.escribir_archivo(arg)
+            nom = os.path.basename(arg.split("|")[0].strip())
+            resp = f"Listo, guardé los cambios en {nom}." if ok else msg
+            return resp, None, "alegre"
+        except Exception as e:
+            print(f"[archivo_local] Error escritura: {e}", flush=True)
+
+    m_leer = re.search(r"^(?:por\s+favor\s+)?(?:lee(?:lo|la)?|léelo|léela|lee\s+(?:el\s+)?(?:archivo|documento)?\s*([a-zA-Z0-9_\-\.]+)?)(?:\s+por\s+favor)?[\.\?!]?$", texto.strip(), re.I)
+    if m_leer:
+        try:
+            import cerebro_trabajo
+            import habilidades_archivos as ha
+            nom_obj = m_leer.group(1)
+            if not nom_obj or nom_obj.lower() in ("el", "archivo", "documento", "lo", "la"):
+                nom_obj = cerebro_trabajo.obtener_memoria_trabajo().get("ultimo_archivo")
+            if nom_obj:
+                nom_limpio = os.path.basename(str(nom_obj).strip())
+                ok, res_leer = ha.leer_archivo(nom_limpio)
+                if ok:
+                    c_texto = res_leer.split("\n", 1)[1].strip() if "\n" in res_leer else res_leer
+                    palabras = c_texto.split()
+                    resumen = c_texto if len(palabras) <= 45 else (" ".join(palabras[:40]) + "... Contenido truncado en voz.")
+                    resp = f"El archivo {nom_limpio} dice: {resumen}"
+                else:
+                    resp = res_leer
+                return resp, None, "alegre"
+        except Exception as e:
+            print(f"[archivo_local] Error lectura: {e}", flush=True)
+    return None
+
+
 def describir():
     lineas = [f"- {n}: {d}" for n, (_, _, d) in ACCIONES.items()]
     lineas += [f"- {n}: {d}" for n, d in ESPECIALES.items()]
