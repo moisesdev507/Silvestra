@@ -1,6 +1,8 @@
 """Cola de eventos: Qt ejecuta los cambios de UI."""
 import time
 
+import eventos_voz
+
 
 def es_confirmacion_rutinaria(texto):
     if not texto:
@@ -54,24 +56,7 @@ def atender_evento(app, tipo, texto):
                 pass
         if hasattr(app, "escenario") and app.escenario and app.escenario.isVisible():
             app.escenario.actualizar_subtitulo(frase_txt)
-        if app.flujo is None:
-            app.texto_flujo = ""
-            t_fin = getattr(app, "t_fin_habla", None)
-            if t_fin and (time.time() - t_fin > 30.0 or getattr(app, "_ecosistema_origen", None)):
-                t_fin, app.t_fin_habla, app.metricas_turno = None, None, None
-            metricas = getattr(app, "metricas_turno", None)
-            t_in_txt = getattr(app, "t_inicio_texto", None)
-            app.flujo = app.voz.flujo(
-                lambda: app.cola.put(("fin_voz", None)),
-                emocion=frase_emo or "neutral",
-                t_fin_habla=t_fin,
-                metricas=metricas,
-                t_inicio_texto=t_in_txt,
-            )
-            app.t_inicio_texto = None
-        app.texto_flujo = (app.texto_flujo + " " + frase_txt).strip()
-        app.flujo.agregar(frase_txt, emocion=frase_emo)
-        app.cara.decir(app.texto_flujo, None, emocion=frase_emo)
+        eventos_voz.frase(app, frase_txt, frase_emo)
 
     elif tipo == "escenario_subtitulo":
         if hasattr(app, "escenario") and app.escenario:
@@ -110,6 +95,7 @@ def atender_evento(app, tipo, texto):
             app.cara.poner_escuchando(True)
 
     elif tipo == "respuesta":
+        app._flujo_cerrado = True
         remoto = getattr(app, "_ecosistema_origen", None)
         if remoto and getattr(app, "pantalla_remota", None):
             app.pantalla_remota.puente.reservar_turno(remoto, cerrar=True)
@@ -257,7 +243,7 @@ def atender_evento(app, tipo, texto):
                     print(f"[eventos] Omitiendo voz duplicada en hablar_registro: '{voz_txt}'", flush=True)
                     return
             app.ultimo_dicho = voz_txt
-            app.voz.hablar(voz_txt)
+            eventos_voz.suelta(app, voz_txt)
 
     elif tipo == "copiar_portapapeles":
         copiado = False
@@ -299,6 +285,7 @@ def atender_evento(app, tipo, texto):
 
     elif tipo == "oido":
         app._t_accion_llm = 0
+        app._flujo_cerrado = False
         if hasattr(app, "iniciativa"):
             app.iniciativa.interaccion()
         app._dejar_de_escuchar()
@@ -351,6 +338,7 @@ def atender_evento(app, tipo, texto):
             app.dispositivo_entrada_actual = (texto.get("device_id"), texto.get("tipo_dispositivo"))
             texto = texto.get("texto", "")
         app._t_accion_llm = 0
+        app._flujo_cerrado = False
         app.origen_entrada_actual = "chat"
         app.t_fin_habla, app.t_inicio_texto = None, time.time()
         if hasattr(app, "iniciativa"):
