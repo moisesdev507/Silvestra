@@ -40,6 +40,7 @@ Asistente modular Python/Windows con avatar PySide6, voz/escucha, Context Engine
     - `pantalla_remota.py`: Sincroniza y persiste `remota_token` desde/hacia `estado.json` al inicializar el servidor HUD.
     - `pantalla_remota_api.py`: Soporte para subred Tailscale IPv6 (`fd7a:115c:a1e0::/48`); validación segura con `hmac.compare_digest` contra `remota_token` en `POST /api/movil/*` y `GET /api/sesion` sin exigir previa sesión HUD/tablet.
     - `pantalla_remota_accion.py`: Despacho modular de acciones de panel HUD (`despachar_accion_panel`) manteniendo `pantalla_remota_api.py` en 14,179 B.
-16. **Audio MP3 completo con Blob y entrega inline (`app_movil_audio.py`, `app_movil_html.py`):**
-    - `app_movil_audio.py`: Normalización de signos iniciales ASCII `!`/`?` a `¡`/`¿` en `sintetizar_respuesta_movil`; `manejar_http_chat` entrega `audio_base64` inline con `hablar=True` por defecto en silencio laptop.
-    - `app_movil_html.py`: Reproducción de MP3 mediante `Blob` y `createObjectURL` sin re-invocar `initAudio()` en respuesta; botón `🗑️ Limpiar` y función `limpiarChat()`.
+16. **Audio MP3 completo con Blob y entrega inline (`app_movil_audio.py`, `app_movil_html.py`):** Normalización de signos ASCII `!`/`?` a `¡`/`¿` en `sintetizar_respuesta_movil`; `manejar_http_chat` entrega `audio_base64` inline con `hablar=True` por defecto en silencio laptop.
+17. **Modularización JS y persistencia de historial móvil (`app_movil_js.py`, `app_movil_html.py`):**
+    - `app_movil_js.py`: Script JS limpio y modular validado con `node --check`; persistencia de hasta 50 mensajes en `localStorage['lyris_chat_hist']` con restauración automática al iniciar y reseteo DOM en `limpiarChat()`.
+    - `app_movil_html.py`: Plantilla desacoplada en 7,069 B que importa e inyecta `SCRIPT_MOVIL_JS` sin strings con comillas anidadas.

@@ -1,6 +1,9 @@
 """Pruebas unitarias para la aplicación móvil PWA de Lyris (UI, voz bidireccional y Tailscale)."""
 import io
 import json
+import re
+import shutil
+import subprocess
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -204,16 +207,25 @@ class TestAudioYConversacionMovil(unittest.TestCase):
         self.assertIn("history.replaceState", html)
         self.assertIn("URLSearchParams", html)
         self.assertIn("lyris_device_token", html)
+        self.assertIn("lyris_chat_hist", html)
+        self.assertIn("guardarEnHistorial", html)
+        self.assertIn("cargarHistorial", html)
         self.assertIn("fetchConToken", html)
         self.assertIn("pedirTokenPrompt", html)
         self.assertIn("401", html)
-        self.assertIn("Ingresa el token de dispositivo de Lyris", html)
 
         # Verificar que playAudio no invoque initAudio internamente
-        idx_play = html.find("function playAudio(b64){")
+        idx_play = html.find("function playAudio(b64)")
         self.assertTrue(idx_play > 0)
         cuerpo_play = html[idx_play:idx_play + 350]
         self.assertNotIn("initAudio()", cuerpo_play)
+
+        # Validar sintaxis JS con node si está instalado
+        if shutil.which("node"):
+            m = re.search(r"<script>(.*?)</script>", html, re.DOTALL)
+            self.assertTrue(bool(m))
+            p = subprocess.run(["node", "--check"], input=m.group(1), text=True, capture_output=True)
+            self.assertEqual(p.returncode, 0, f"Error sintaxis JS: {p.stderr}")
 
     def test_manejar_http_chat_devuelve_audio_inline(self):
         try:

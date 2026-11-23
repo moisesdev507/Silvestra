@@ -1,6 +1,7 @@
-"""Plantilla HTML5, CSS y JavaScript para la aplicación web PWA móvil de Lyris."""
+"""Plantilla HTML5 y CSS para la aplicación web PWA móvil de Lyris."""
+from app_movil_js import SCRIPT_MOVIL_JS
 
-PAGINA_MOVIL_HTML = """<!DOCTYPE html>
+_HTML_ESTRUCTURA = """<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
@@ -79,152 +80,10 @@ footer{padding:10px 12px;padding-bottom:max(10px,env(safe-area-inset-bottom));ba
 </footer>
 <audio id="lyrisAudio" preload="auto" playsinline></audio>
 <script>
-let token=localStorage.getItem('lyris_device_token')||'';
-const _uP=new URLSearchParams(window.location.search);
-if(_uP.has('token')){
-  token=_uP.get('token')||'';
-  if(token)localStorage.setItem('lyris_device_token',token);
-  _uP.delete('token');
-  const _nu=window.location.pathname+(_uP.toString()?'?'+_uP.toString():'');
-  window.history.replaceState({},document.title,_nu);
-}
-let vozActiva=true,audioInit=false,_audioBlobUrl=null;
-const SILENT_WAV='data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
-function toggleVoz(){vozActiva=document.getElementById('btnVoz').classList.toggle('active-voz');}
-function limpiarChat(){
-  const c=document.getElementById('chat');
-  if(c)c.innerHTML='<div class="msg lyris">Hola, soy Lyris. ¿En qué trabajamos hoy?<button class="btn-tts" onclick="pedirVoz(this,\'Hola, soy Lyris. ¿En qué trabajamos hoy?\',\'alegre\')" title="Escuchar">🔊</button><div class="msg-time">Ahora</div></div>';
-}
-function initAudio(){
-  if(audioInit)return;
-  const p=document.getElementById('lyrisAudio');
-  if(!p)return;p.src=SILENT_WAV;p.play().then(()=>{audioInit=true;}).catch(()=>{});
-}
-document.addEventListener('click',initAudio,{once:true});
-document.addEventListener('touchstart',initAudio,{once:true});
-async function asegurarSesion(){
-  if(!token){try{const r=await fetch('/api/sesion'),d=await r.json();if(d.ok&&d.token){token=d.token;localStorage.setItem('lyris_device_token',token);}}catch(e){}}
-}
-asegurarSesion();
-function pedirTokenPrompt(){
-  const t=prompt('Ingresa el token de dispositivo de Lyris:');
-  if(t&&t.trim()){token=t.trim();localStorage.setItem('lyris_device_token',token);return true;}
-  return false;
-}
-async function fetchConToken(url,opt={},reintento=true){
-  opt.headers=opt.headers||{};
-  if(token)opt.headers['X-Device-Token']=token;
-  const r=await fetch(url,opt);
-  if(r.status===401&&reintento){
-    if(pedirTokenPrompt())return fetchConToken(url,opt,false);
-  }
-  return r;
-}
-function actualizarCara(emocion){
-  const c=({neutral:'#38bdf8',alegre:'#10b981',concentrada:'#6366f1',orgullosa:'#eab308',firme:'#ef4444',calida:'#f472b6'})[emocion]||'#38bdf8';
-  document.getElementById('avatarHalo').style.borderColor=c;document.getElementById('faceColor').setAttribute('stroke',c);
-  const al=['M35 66 Q50 82 65 66','M28 36 Q38 32 46 36','M54 36 Q62 32 72 36'],
-        cfg=({alegre:al,orgullosa:al,concentrada:['M40 70 L60 70','M28 42 L46 41','M54 41 L72 42'],firme:['M38 72 Q50 68 62 72','M28 38 L46 44','M54 44 L72 38']})[emocion]||['M38 68 Q50 78 62 68','M28 40 Q38 34 46 40','M54 40 Q62 34 72 40'];
-  document.getElementById('mouth').setAttribute('d',cfg[0]);document.getElementById('eyebrowL').setAttribute('d',cfg[1]);document.getElementById('eyebrowR').setAttribute('d',cfg[2]);
-}
-function mostrarPensando(){
-  quitarPensando();
-  const c=document.getElementById('chat'),m=document.createElement('div');
-  m.id='msgThinking';m.className='msg lyris thinking';
-  m.innerHTML='<span>Lyris está pensando...</span><span class="speaking-indicator"><span class="sound-bar"></span><span class="sound-bar"></span><span class="sound-bar"></span></span>';
-  c.appendChild(m);c.scrollTop=c.scrollHeight;
-}
-function quitarPensando(){const el=document.getElementById('msgThinking');if(el)el.remove();}
-function agregarMensaje(txt,rem,emo='neutral',b64=''){
-  quitarPensando();
-  const c=document.getElementById('chat'),m=document.createElement('div');
-  m.className='msg '+rem;m.innerHTML=txt.replace(/`([^`]+)`/g,'<code>$1</code>');
-  if(rem==='lyris'){
-    const b=document.createElement('button');b.className='btn-tts';b.title='Escuchar';b.textContent='🔊';
-    if(b64)b.dataset.b64=b64;
-    b.onclick=()=>pedirVoz(b,txt,emo);
-    m.appendChild(b);
-  }
-  const t=document.createElement('div');t.className='msg-time';t.textContent=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-  m.appendChild(t);c.appendChild(m);c.scrollTop=c.scrollHeight;
-}
-function playAudio(b64){
-  if(!b64)return;
-  const p=document.getElementById('lyrisAudio');
-  if(!p)return;
-  p.pause();
-  if(_audioBlobUrl){try{URL.revokeObjectURL(_audioBlobUrl);}catch(e){}_audioBlobUrl=null;}
-  try{
-    const bs=atob(b64),ab=new Uint8Array(bs.length);
-    for(let i=0;i<bs.length;i++)ab[i]=bs.charCodeAt(i);
-    const blob=new Blob([ab],{type:'audio/mpeg'});
-    _audioBlobUrl=URL.createObjectURL(blob);
-    p.src=_audioBlobUrl;
-    p.play().catch(()=>{});
-  }catch(err){}
-}
-async function pedirVoz(b,txt,emo){
-  initAudio();
-  if(b.dataset.b64){playAudio(b.dataset.b64);return;}
-  b.textContent='⏳';
-  try{
-    const r=await fetchConToken('/api/movil/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:txt,emocion:emo})});
-    const d=await r.json();
-    if(d.ok&&d.audio_base64){b.dataset.b64=d.audio_base64;b.textContent='🔊';playAudio(d.audio_base64);}
-    else{b.textContent='⚠️';setTimeout(()=>{b.textContent='🔊';},2000);}
-  }catch(e){b.textContent='⚠️';setTimeout(()=>{b.textContent='🔊';},2000);}
-}
-async function enviarTexto(){
-  initAudio();
-  const inp=document.getElementById('txtInput'),txt=inp.value.trim();
-  if(!txt)return;inp.value='';agregarMensaje(txt,'user');mostrarPensando();
-  try{
-    const r=await fetchConToken('/api/movil/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({texto:txt,hablar:vozActiva})});
-    const d=await r.json();
-    quitarPensando();
-    if(d.ok){
-      actualizarCara(d.emocion);agregarMensaje(d.respuesta,'lyris',d.emocion,d.audio_base64||'');
-      if(vozActiva&&d.audio_base64){playAudio(d.audio_base64);}
-    }else{agregarMensaje(d.error||'Error procesando consulta.','lyris');}
-  }catch(e){quitarPensando();agregarMensaje('Sin conexión con Lyris central.','lyris');}
-}
-document.getElementById('btnSend').onclick=enviarTexto;
-document.getElementById('txtInput').addEventListener('keydown',(e)=>{if(e.key==='Enter')enviarTexto();});
-let mediaRecorder=null,audioChunks=[],btnMic=document.getElementById('btnMic');
-async function iniciarGrabacion(){
-  initAudio();
-  try{
-    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-    audioChunks=[];mediaRecorder=new MediaRecorder(stream);
-    mediaRecorder.ondataavailable=(e)=>{if(e.data.size>0)audioChunks.push(e.data);};
-    mediaRecorder.onstop=async()=>{
-      btnMic.classList.remove('recording');
-      const blob=new Blob(audioChunks,{type:'audio/webm'});
-      if(blob.size<500)return;
-      mostrarPensando();
-      const fd=new FormData();fd.append('audio',blob,'nota.webm');
-      try{
-        const r=await fetchConToken('/api/movil/voz',{method:'POST',body:fd});
-        const d=await r.json();
-        quitarPensando();
-        if(d.ok){
-          if(d.texto_usuario)agregarMensaje(d.texto_usuario,'user');
-          actualizarCara(d.emocion);agregarMensaje(d.respuesta,'lyris',d.emocion,d.audio_base64||'');
-          if(vozActiva&&d.audio_base64)playAudio(d.audio_base64);
-        }else{agregarMensaje(d.error||'No se capturó audio.','lyris');}
-      }catch(err){quitarPensando();agregarMensaje('Fallo enviando nota de voz a Lyris.','lyris');}
-    };
-    mediaRecorder.start();btnMic.classList.add('recording');
-  }catch(e){alert('Permiso de micrófono requerido.');}
-}
-function detenerGrabacion(){if(mediaRecorder&&mediaRecorder.state==='recording')mediaRecorder.stop();}
-btnMic.addEventListener('mousedown',iniciarGrabacion);btnMic.addEventListener('mouseup',detenerGrabacion);
-btnMic.addEventListener('touchstart',(e)=>{e.preventDefault();iniciarGrabacion();});
-btnMic.addEventListener('touchend',(e)=>{e.preventDefault();detenerGrabacion();});
-async function toggleMentor(){const a=document.getElementById('btnMentor').classList.toggle('active-mentor');document.getElementById('txtInput').value=a?'activa modo mentora':'desactiva modo mentora';enviarTexto();}
-async function togglePrivado(){const a=document.getElementById('btnPrivado').classList.toggle('active-privado');document.getElementById('txtInput').value=a?'activa modo privado':'desactiva modo privado';enviarTexto();}
-if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{});}
+""" + SCRIPT_MOVIL_JS + """
 </script>
 </body>
 </html>
 """
+
+PAGINA_MOVIL_HTML = _HTML_ESTRUCTURA
