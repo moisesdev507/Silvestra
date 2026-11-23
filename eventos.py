@@ -2,6 +2,7 @@
 import time
 
 import eventos_voz
+import sonidos_ui
 
 
 def es_confirmacion_rutinaria(texto):
@@ -144,6 +145,7 @@ def atender_evento(app, tipo, texto):
         if accion:
             if respuesta and str(respuesta).strip():
                 app._t_accion_llm = time.time()
+            sonidos_ui.reproducir("accion")
             app.ejecutar(accion)
         if remoto:
             app._ecosistema_origen = None
@@ -218,6 +220,7 @@ def atender_evento(app, tipo, texto):
 
     elif tipo == "ejecutar_accion":
         app._t_accion_llm = 0
+        sonidos_ui.reproducir("accion")
         app.ejecutar(texto)
 
     elif tipo == "hablar":
@@ -315,6 +318,7 @@ def atender_evento(app, tipo, texto):
                         print(f"[oido] Audio ignorado durante música (no verificado como dueño CAM++): '{texto[:40]}'", flush=True)
                         app.escuchar()
                         return
+                sonidos_ui.reproducir("captado")
                 app.enviar(texto)
 
     elif tipo == "silencio":

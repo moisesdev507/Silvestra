@@ -41,47 +41,34 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         _reg_turno(cerebro, texto_orig, (resp := f"Abriendo {app_local}."), al_frase)
         return resp, f"abrir_app_local | {app_local}", "alegre"
 
-    # 0. Intercepción local instantánea (< 50 ms) para escritura y lectura real de archivos
-    import os
-    import re
-    if str(texto).startswith("escribir_archivo "):
-        try:
-            import habilidades_archivos as ha
-            arg = str(texto)[len("escribir_archivo "):].strip()
-            ok, msg = ha.escribir_archivo(arg)
-            nom = os.path.basename(arg.split("|")[0].strip())
-            resp = f"Listo, guardé los cambios en {nom}." if ok else msg
-            _reg_turno(cerebro, texto_orig, resp, al_frase)
-            return resp, None, "alegre"
-        except Exception as e:
-            print(f"[archivo_local] Error escritura: {e}", flush=True)
+    # Modos y rutinas compuestas: se resuelven en local, sin llamar al LLM
+    resp_modo = acciones.modo_local(texto, getattr(cerebro, "app", None))
+    if resp_modo:
+        _reg_turno(cerebro, texto_orig, resp_modo, al_frase)
+        return resp_modo, None, "atenta"
 
-    m_leer = re.search(r"^(?:por\s+favor\s+)?(?:lee(?:lo|la)?|léelo|léela|lee\s+(?:el\s+)?(?:archivo|documento)?\s*([a-zA-Z0-9_\-\.]+)?)(?:\s+por\s+favor)?[\.\?!]?$", str(texto).strip(), re.I)
-    if m_leer:
-        try:
-            import habilidades_archivos as ha
-            nom_obj = m_leer.group(1)
-            if not nom_obj or nom_obj.lower() in ("el", "archivo", "documento", "lo", "la"):
-                import cerebro_trabajo
-                nom_obj = cerebro_trabajo.obtener_memoria_trabajo().get("ultimo_archivo")
-            if nom_obj:
-                nom_limpio = os.path.basename(str(nom_obj).strip())
-                ok, res_leer = ha.leer_archivo(nom_limpio)
-                if ok:
-                    c_texto = res_leer.split("\n", 1)[1].strip() if "\n" in res_leer else res_leer
-                    palabras = c_texto.split()
-                    resumen = c_texto if len(palabras) <= 45 else (" ".join(palabras[:40]) + "... Contenido truncado en voz.")
-                    resp = f"El archivo {nom_limpio} dice: {resumen}"
-                else:
-                    resp = res_leer
-                _reg_turno(cerebro, texto_orig, resp, al_frase)
-                return resp, None, "alegre"
-        except Exception as e:
-            print(f"[archivo_local] Error lectura: {e}", flush=True)
+    tele = acciones.telemetria_local(texto)
+    if tele:
+        _reg_turno(cerebro, texto_orig, tele, al_frase)
+        return tele, None, "atenta"
+
+    # 0. Atajos locales ya existentes (escritura/lectura de archivos)
+    atajo = acciones.atajo_archivos_locales(texto)
+    if atajo:
+        resp, accion_atajo, emo_atajo = atajo
+        _reg_turno(cerebro, texto_orig, resp, al_frase)
+        return resp, accion_atajo, emo_atajo
+
+    # Copiloto de portapapeles: solo se activa si el usuario lo pide explícitamente
+    import portapapeles as pp
+    ctx_pp = pp.construir_contexto_portapapeles(texto)
+    if ctx_pp == pp.SIN_TEXTO:
+        _reg_turno(cerebro, texto_orig, ctx_pp, al_frase)
+        return ctx_pp, None, "atenta"
 
     app = getattr(cerebro, "app", None)
     import vision_pantalla
-    if vision_pantalla.detectar_peticion_vision(texto):
+    if not ctx_pp and vision_pantalla.detectar_peticion_vision(texto):
         ok_v, resp_v = vision_pantalla.capturar_y_analizar_pantalla(texto, app=app)
         _reg_turno(cerebro, texto_orig, resp_v, al_frase)
         return resp_v, None, "atenta"
@@ -227,7 +214,21 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         return directo
     cerebro.historial.append({"role": "user", "content": texto})
     # Limitar historial a los 8 turnos más recientes para ahorrar tokens y latencia
-    mensajes = [{"role": "system", "content": cerebro.instrucciones(texto)}] + cerebro.historial[-8:]
+    mensajes = [{"role": "system", "content": cerebro.instrucciones(texto)}]
+    if ctx_pp:
+        mensajes.append({"role": "system", "content": ctx_pp})
+    mensajes += cerebro.historial[-8:]
+
+    # 6. Charla en vivo (Gemini Live): solo si está activo y sin enfriamiento por 429.
+    try:
+        import gemini_live
+        vivo = gemini_live.turno_live(mensajes, texto=texto_orig, al_frase=al_frase)
+        if vivo and vivo[0]:
+            if isinstance(getattr(cerebro, "historial", None), list):
+                cerebro.historial.append({"role": "assistant", "content": vivo[0]})
+            return vivo
+    except Exception as e:
+        print(f"[gemini_live] fallback: {str(e)[:80]}", flush=True)
 
     tarea = pc.clasificar_dificultad(texto)
 

@@ -1,14 +1,20 @@
+import os
 import re
 import time
 import threading
 import numpy as np
 
 import config
+import oido_deepgram
 from config import MODELO_VOZ
 from oido_flujo import (
+    CORTESIAS_AMBIGUAS,
     FALSAS,
     FlujoMicrofono,
+    cortesia_descartada,
     crear_buffer_wav,
+    es_bucle_alucinacion,
+    es_cortesia_corta,
     es_transcripcion_dudosa,
     preparar_audio_int16,
     validar_calidad_whisper,
@@ -16,12 +22,36 @@ from oido_flujo import (
 from oido_vad import DetectorVozSilero
 
 
-# Vocabulario compacto para Whisper. Sin instrucciones largas: inducen alucinaciones en silencio.
-PROMPT_WHISPER = (
-    "Silvestra, Moisés, Lyris. Visual Studio Code, VS Code, Chrome, Edge, "
-    "Spotify, WhatsApp, YouTube, minimiza, maximiza, volumen, ¿qué hora es?, "
-    "bloc de notas, calculadora."
-)
+# Solo nombres propios neutros: las listas de comandos/preguntas inducen bucles.
+PROMPT_WHISPER = "Lyris, Visual Studio Code."
+
+
+def _barge_in_habilitado():
+    """Permite activarlo por config o por entorno sin tocar config.py."""
+    return bool(getattr(config, "BARGE_IN_ACTIVO", False)
+                or os.environ.get("LYRIS_BARGE_IN") == "1")
+
+
+def _barge_in(app, datos, comandos_corte, rec_vosk):
+    """Interrumpe solo ante una orden clara; ignora ruido y parciales vacíos."""
+    if rec_vosk is None or not (app and hasattr(app, "voz") and app.voz.ocupada()):
+        return False
+    try:
+        rec_vosk.AcceptWaveform(datos.tobytes())
+        m = re.search(r'"partial"\s*:\s*"([^"]+)"', rec_vosk.PartialResult())
+        if not m:
+            return False
+        limpio = re.sub(r"[^a-záéíóúñü\s]", " ", m.group(1).strip().lower())
+        palabras = limpio.split()
+        if len("".join(palabras)) < 2 or not any(c in palabras for c in comandos_corte):
+            return False
+        if hasattr(app.voz, "detener"):
+            app.voz.detener()
+        if hasattr(app, "cola"):
+            app.cola.put(("interrupcion", "comando"))
+        return True
+    except Exception:
+        return False
 
 
 def _es_eco_prompt(texto, prompt):
@@ -30,7 +60,10 @@ def _es_eco_prompt(texto, prompt):
     p = " ".join(str(prompt or "").lower().split())
     if not t:
         return True
-    if p and (t == p or (len(t) >= 40 and (p.startswith(t) or t in p))):
+    if es_bucle_alucinacion(t):
+        return True
+    if p and (t == p or (len(t) >= 10 and p.startswith(t))
+              or (len(t) >= 40 and (p.startswith(t) or t in p))):
         return True
     tokens = re.findall(r"\w+", t, flags=re.UNICODE)
     if len(tokens) >= 6:
@@ -39,6 +72,19 @@ def _es_eco_prompt(texto, prompt):
         if len(tokens) <= 14 and any(tokens.count(w) >= 4 for w in set(tokens) if len(w) >= 4):
             return True
     return False
+
+
+def motivo_descarte_transcripcion(texto, rms, r=None):
+    """Devuelve el motivo de descarte o None si la transcripción es válida."""
+    t_low = " ".join(str(texto or "").lower().split())
+    if es_cortesia_corta(texto):
+        if cortesia_descartada(texto, rms, r):
+            return f"cortesia_sin_voz_clara(rms={float(rms or 0.0):.1f})"
+        return None
+    for f in FALSAS + CORTESIAS_AMBIGUAS:
+        if f in t_low:
+            return f"alucinacion_whisper('{f}')"
+    return None
 
 
 class Oido:
@@ -191,11 +237,10 @@ class Oido:
                     continue
 
                 # Barge-in rápido con Vosk si la voz suena en paralelo
-                barge_in_habilitado = getattr(config, "BARGE_IN_ACTIVO", False)
                 hablando_ella = bool(app and hasattr(app, "voz") and app.voz.ocupada())
 
                 if hablando_ella:
-                    if not barge_in_habilitado:
+                    if not _barge_in_habilitado():
                         time.sleep(0.01)
                         continue
                     if rec_vosk is None:
@@ -204,20 +249,8 @@ class Oido:
                             rec_vosk.Reset()
                         except Exception:
                             rec_vosk = None
-                    if rec_vosk is not None:
-                        try:
-                            rec_vosk.AcceptWaveform(datos.tobytes())
-                            parcial_raw = rec_vosk.PartialResult()
-                            m = re.search(r'"partial"\s*:\s*"([^"]+)"', parcial_raw)
-                            if m:
-                                palabras = m.group(1).strip().lower()
-                                if palabras and any(c in palabras.split() for c in comandos_corte):
-                                    if hasattr(app.voz, "detener"):
-                                        app.voz.detener()
-                                    if hasattr(app, "cola"):
-                                        app.cola.put(("interrupcion", "comando"))
-                        except Exception:
-                            pass
+                    if _barge_in(app, datos, comandos_corte, rec_vosk):
+                        continue
 
                 # Alimentar bloques int16 al VAD neuronal
                 self._vad.alimentar(datos)
@@ -296,36 +329,39 @@ class Oido:
 
         r = None
         t0 = time.time()
-        try:
-            r = self.cliente.audio.transcriptions.create(
-                file=("voz.wav", buffer.getvalue()),
-                model=MODELO_VOZ,
-                language="es",
-                response_format="verbose_json",
-                temperature=0.0,
-                prompt=prompt_whisper,
-                timeout=10.0,
-            )
-            print(f"[tiempo] whisper={time.time() - t0:.2f}s", flush=True)
-        except Exception as e:
-            print(f"[oido] Whisper falló ({str(e)[:80]}). Conmutando a Vosk...", flush=True)
-            texto_vosk = self._transcribir_vosk(audio.tobytes())
-            if texto_vosk is not None:
-                self.t_texto = time.time()
-                print(f"[oido] transcrito='{texto_vosk}'", flush=True)
-                return texto_vosk
-            raise RuntimeError("No pude entender el audio: " + str(e)[:120])
+        dg = oido_deepgram.transcribir(buffer.getvalue())
+        if dg:
+            texto = dg[0]
+        else:
+            try:
+                r = self.cliente.audio.transcriptions.create(
+                    file=("voz.wav", buffer.getvalue()),
+                    model=MODELO_VOZ,
+                    language="es",
+                    response_format="verbose_json",
+                    temperature=0.0,
+                    prompt=prompt_whisper,
+                    timeout=10.0,
+                )
+                print(f"[tiempo] whisper={time.time() - t0:.2f}s", flush=True)
+            except Exception as e:
+                print(f"[oido] Whisper falló ({str(e)[:80]}). Conmutando a Vosk...", flush=True)
+                texto_vosk = self._transcribir_vosk(audio.tobytes())
+                if texto_vosk is not None:
+                    self.t_texto = time.time()
+                    print(f"[oido] transcrito='{texto_vosk}'", flush=True)
+                    return texto_vosk
+                raise RuntimeError("No pude entender el audio: " + str(e)[:120])
+            texto = (r.text or "").strip()
 
         self.t_texto = time.time()
-        texto = (r.text or "").strip()
         if len(texto) < 3:
             print(f"[oido] transcripcion='{texto}' descartada motivo=demasiado_corta", flush=True)
             return None
-        t_low = texto.lower()
-        for f in FALSAS:
-            if f in t_low:
-                print(f"[oido] transcripcion='{texto}' descartada motivo=alucinacion_whisper('{f}')", flush=True)
-                return None
+        motivo = motivo_descarte_transcripcion(texto, rms, r)
+        if motivo:
+            print(f"[oido] transcripcion='{texto}' descartada motivo={motivo}", flush=True)
+            return None
         if _es_eco_prompt(texto, prompt_whisper):
             print(f"[oido] transcripcion='{texto}' descartada motivo=eco_prompt_o_repeticion", flush=True)
             return None

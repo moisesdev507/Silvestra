@@ -126,14 +126,20 @@ def marcar_enfriamiento(enfriamientos, nombre, modelo=None, headers=None, motivo
     if seg_parsed and seg_parsed > 300:
         es_tpd = True
 
-    tipo_limite = "TPD" if es_tpd else "TPM"
-
-    if es_tpd:
-        # Límite diario: enfriamiento de varias horas o hasta el reseteo
-        duracion = seg_parsed if seg_parsed else 14400.0  # 4 horas por defecto
+    sobrecarga = ("http 503" in motivo_lower or "fallo_total" in motivo_lower
+                  or "todos los modelos" in motivo_lower)
+    if sobrecarga:
+        # 503 / fallo total: pausa breve de 75s, nunca un TPD de 4 horas.
+        tipo_limite = "503" if "http 503" in motivo_lower else "FALLO"
+        duracion = 75.0
     else:
-        # Límite por minuto: enfriamiento habitual de 60s
-        duracion = min(120.0, max(5.0, seg_parsed)) if seg_parsed else 60.0
+        tipo_limite = "TPD" if es_tpd else "TPM"
+        if es_tpd:
+            # Límite diario: enfriamiento de varias horas o hasta el reseteo
+            duracion = seg_parsed if seg_parsed else 14400.0  # 4 horas por defecto
+        else:
+            # Límite por minuto: enfriamiento habitual de 60s
+            duracion = min(120.0, max(5.0, seg_parsed)) if seg_parsed else 60.0
 
     ahora = time.time()
     tag_motivo = f" motivo='{motivo}'" if motivo else ""

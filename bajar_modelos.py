@@ -2,6 +2,8 @@ r"""Descarga los modelos de la cámara y de voz a la carpeta 'modelos'. Se ejecu
     .venv\Scripts\python.exe bajar_modelos.py
 """
 import os
+import sys
+import tarfile
 import urllib.request
 import zipfile
 
@@ -45,6 +47,36 @@ def bajar(nombre, urls):
     return False
 
 
+KOKORO_URLS = (
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/"
+    "kokoro-int8-multi-lang-v1_0.tar.bz2",
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/"
+    "kokoro-multi-lang-v1_0.tar.bz2",
+)
+
+
+def bajar_kokoro():
+    """Descarga opcional del TTS local Kokoro. No altera los modelos existentes."""
+    archivo = os.path.join(CARPETA, "kokoro-int8-multi-lang-v1_0.tar.bz2")
+    for url in KOKORO_URLS:
+        try:
+            if not os.path.exists(archivo) or os.path.getsize(archivo) < 1_000_000:
+                print("Bajando modelo Kokoro (TTS local)...")
+                urllib.request.urlretrieve(url, archivo)
+            with tarfile.open(archivo, "r:bz2") as tar:
+                try:
+                    tar.extractall(CARPETA, filter="data")
+                except TypeError:
+                    tar.extractall(CARPETA)
+            print("  listo modelo Kokoro")
+            if os.path.exists(archivo):
+                os.remove(archivo)
+            return True
+        except Exception as e:
+            print(f"  falló Kokoro: {str(e)[:100]}")
+    return False
+
+
 def bajar_vosk():
     nombre_carpeta = "vosk-model-small-es-0.42"
     destino_carpeta = os.path.join(CARPETA, nombre_carpeta)
@@ -75,4 +107,7 @@ def bajar_vosk():
 if __name__ == "__main__":
     os.makedirs(CARPETA, exist_ok=True)
     todo = all([bajar(n, u) for n, u in MODELOS.items()]) and bajar_vosk()
+    if "--kokoro" in sys.argv or os.environ.get("LYRIS_TTS_LOCAL") == "1":
+        if not bajar_kokoro():
+            print("Kokoro opcional no disponible: se seguirá usando edge-tts.")
     print("\nTodo listo." if todo else "\nFaltó algún archivo. Mándame lo que salió arriba.")

@@ -6,19 +6,60 @@ para filtrado de eco, evaluación de calidad de clips y control anti-alucinacion
 """
 import atexit
 import queue
+import re
 import threading
 import time
 import numpy as np
 
-# Frases que Whisper inventa a veces cuando solo hay ruido o cola de eco.
+# Alucinaciones puras de YouTube/cola de eco: SIEMPRE se descartan.
 FALSAS = (
     "conversacion informal", "conversación informal", "gracias por ver",
     "subtítulos", "subtitulos", "suscríbete", "suscribete", "amara.org",
     "haha", "jaja", "okay, okay", "ok, ok", "ya entendí", "ya entendi",
     "reproducción automática", "descarga gratuita", "todos los derechos",
-    "muchas gracias", "hasta la próxima", "transcripción por",
+    "hasta la próxima", "transcripción por",
     "subtítulos realizados por", "subtitulos realizados por",
 )
+
+# Cortesías reales que Whisper también inventa en silencio: solo se descartan
+# si la señal es débil o la confianza es baja.
+CORTESIAS_AMBIGUAS = ("muchas gracias",)
+_CORTESIA_RE = re.compile(
+    r"^(?:(?:muchas\s+gracias|gracias)(?:[\s,]+(?:baby|beb[eé]|mucho|por\s+todo|liris|lyris|silvestra))?"
+    r")(?:[\s,]+(?:muchas\s+gracias|gracias))*\s*[.!?]*$",
+    re.I,
+)
+RMS_CORTESIA_MIN = 120.0
+
+
+def es_cortesia_corta(texto):
+    """True si el texto es solo una cortesía breve ('Muchas gracias.', etc.)."""
+    t = " ".join(str(texto or "").lower().replace("é", "e").split())
+    return bool(_CORTESIA_RE.match(t))
+
+
+def cortesia_descartada(texto, rms, r=None):
+    """True si una cortesía parece ruido/alucinación por señal o confianza."""
+    if float(rms or 0.0) < RMS_CORTESIA_MIN:
+        return True
+    valida, _motivo = validar_calidad_whisper(r, texto)
+    return (not valida) or es_transcripcion_dudosa(r)
+
+
+def es_bucle_alucinacion(texto):
+    """Detecta fragmentos de 2-4 palabras repetidos dos veces en la misma frase."""
+    tik = re.findall(r"\w+", " ".join(str(texto or "").lower().split()), re.UNICODE)
+    if len(tik) < 4:
+        return False
+    for n in (4, 3, 2):
+        vistos = set()
+        for i in range(len(tik) - n + 1):
+            frag = tuple(tik[i:i + n])
+            if frag in vistos:
+                return True
+            vistos.add(frag)
+    repetidas = [w for w in set(tik) if len(w) >= 2 and tik.count(w) >= 2]
+    return len(repetidas) >= 2 and len(tik) <= 24
 
 
 def es_transcripcion_dudosa(r):
