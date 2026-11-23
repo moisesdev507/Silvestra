@@ -257,7 +257,8 @@ def multimedia(app, orden):
             time.sleep(0.05)
             u.keybd_event(0x44, 0, 2, 0)
             u.keybd_event(0x5B, 0, 2, 0)
-            app.cola.put(("frase", "Minimizando todas las ventanas."))
+            # Una sola voz: la confirmación ya la dijo respuesta_flujo.
+            app.cola.put(("fin_voz", None))
             control_seguridad.registrar_log("LIBRE", "minimizar_todo", "app", "EXITO")
         elif "bloquear" in o:
             ctypes.windll.user32.LockWorkStation()
