@@ -13,8 +13,8 @@ UMBRAL_AUDIO_CORTO = 1.2
 CONFIRMACIONES_BREVES = frozenset({
     "si", "sí", "sip", "no", "nop", "nel", "dale", "listo", "ya", "vale",
     "ok", "okey", "claro", "cierto", "exacto", "afirmativo", "negativo",
-    "sigue", "adelante", "aceptar", "confirmar", "bueno", "de acuerdo",
-    "por supuesto", "supuesto", "eso es",
+    "sigue", "adelante", "aceptar", "confirmar", "confirmo", "afirmo",
+    "bueno", "de acuerdo", "por supuesto", "supuesto", "eso es",
 })
 
 

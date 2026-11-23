@@ -99,7 +99,22 @@ def atender(cerebro, texto_orig, texto, al_frase, app=None):
     if memoria_progreso.detectar_orden_progreso(texto):
         r_p = memoria_progreso.consultar_mi_progreso(); _reg_turno(cerebro, texto_orig, r_p, al_frase); return r_p, None, "orgullosa"
 
-    # 1. Planificador cognitivo multi-paso (prioritario ante órdenes compuestas)
+    # 1. Núcleo agéntico real (voz/chat); sin al_frase propio para no duplicar voz.
+    try:
+        import agente_conector
+        interactivo = callable(al_frase) or bool(getattr(app, "_agente_interactivo", False))
+        atendido_ag = agente_conector.atender(
+            cerebro, texto, al_frase=None, app=app,
+            canal=getattr(app, "origen_entrada_actual", None),
+            interactivo=interactivo,
+        )
+        if atendido_ag is not None:
+            _reg_turno(cerebro, texto_orig, atendido_ag[0], al_frase)
+            return atendido_ag[0], atendido_ag[1], atendido_ag[2] or "alegre"
+    except Exception as e:
+        print(f"[agente_conector] Error: {e}", flush=True)
+
+    # 2. Fallback retrocompatible con el planificador histórico.
     try:
         import cerebro_planificador
         if cerebro_planificador.detectar_intencion_multipaso(texto):
@@ -109,7 +124,7 @@ def atender(cerebro, texto_orig, texto, al_frase, app=None):
     except Exception as e:
         print(f"[planificador] Error: {e}", flush=True)
 
-    # 2. Atajo de recordatorio simple (retorna None en accion para evitar re-ejecucion doble en eventos.py)
+    # 3. Atajo de recordatorio simple (retorna None en accion para evitar re-ejecucion doble en eventos.py)
     import recordatorios
     if recordatorios.es_recordatorio_temporal(texto):
         rec_mgr = getattr(app, "recordatorios", None)

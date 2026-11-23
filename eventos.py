@@ -140,6 +140,9 @@ def atender_evento(app, tipo, texto):
         else:
             respuesta, accion, emocion = str(texto), None, "neutral"
 
+        if respuesta is None or not str(respuesta).strip():
+            return
+
         if accion and remoto:
             import ecosistema_eventos
             if not ecosistema_eventos.accion_autorizada_remota(app, remoto, accion):

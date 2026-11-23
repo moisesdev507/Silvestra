@@ -114,6 +114,18 @@ def atender_resto(app, tipo, texto, es_confirmacion_rutinaria):
                         print(f"[oido] Audio ignorado durante música (no verificado como dueño CAM++): '{texto[:40]}'", flush=True)
                         app.escuchar()
                         return
+                try:
+                    import agente_confirmacion as ac
+                    if ac.hay_pendiente(app):
+                        if ac.resolver(app, texto):
+                            return
+                        ac.cancelar(app)
+                        import agente_conector
+                        agente_conector.cancelar(app)
+                        app.decir("Cancelé la acción pendiente. No la ejecuté.", 3000)
+                        return
+                except Exception:
+                    pass
                 app.enviar(texto)
 
     elif tipo == "silencio":

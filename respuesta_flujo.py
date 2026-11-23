@@ -10,6 +10,13 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     """Genera la respuesta con streaming y conmutación automática de proveedores si hay fallos."""
     texto_orig = str(texto)
     try:
+        import agente_confirmacion as ac
+        if ac.resolver(getattr(cerebro, "app", None), texto) in ("aprobado", "rechazado"):
+            # El hilo del bucle ya tiene el evento: su respuesta final se hablará una sola vez.
+            return "", None, "neutral"
+    except Exception:
+        pass
+    try:
         import cerebro_trabajo
         texto = cerebro_trabajo.resolver_referencias(texto)
     except Exception:
