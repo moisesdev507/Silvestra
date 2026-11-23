@@ -259,7 +259,8 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     if crudo is None:
         try:
             crudo = proveedores.completar_flujo(
-                mensajes, al_frase, tarea=tarea, on_primer_token=on_primer_token, on_emocion=_on_emocion
+                mensajes, al_frase, tarea=tarea, on_primer_token=on_primer_token,
+                on_emocion=_on_emocion, carril=carril
             )
         except Exception as e:
             print(f"[respuesta_flujo] Excepción en streaming: {e}. Usando respuesta local.", flush=True)

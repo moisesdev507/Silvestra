@@ -47,13 +47,16 @@ def _lanzar_reintento(tarea):
     pc.lanzar_reintento_segundo_plano(proveedores_disponibles, tarea)
 
 
-def completar(mensajes, tarea="charla", timeout=20):
+def completar(mensajes, tarea="charla", timeout=20, max_tokens=None, carril="rapido"):
     global _aviso_respaldo_pendiente, _ultimo_proveedor
     candidatos = proveedores_disponibles(tarea)
     if not candidatos:
         _registrar("cerebro sin proveedores disponibles: modo emergencia local")
         _lanzar_reintento(tarea)
         return pc.respuesta_emergencia_local()
+
+    if max_tokens is None:
+        max_tokens = pc.resolver_max_tokens(tarea, carril)
 
     for prov in candidatos:
         nombre = prov["nombre"]
@@ -69,7 +72,7 @@ def completar(mensajes, tarea="charla", timeout=20):
                 r = sesion.post(
                     url,
                     headers=headers,
-                    json={"model": modelo, "messages": mensajes, "max_tokens": 500},
+                    json={"model": modelo, "messages": mensajes, "max_tokens": max_tokens},
                     timeout=timeout,
                 )
                 r.encoding = "utf-8"
@@ -125,9 +128,11 @@ def completar(mensajes, tarea="charla", timeout=20):
     return pc.respuesta_emergencia_local()
 
 
-def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=2.5, on_primer_token=None, on_emocion=None):
+def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=1.2, on_primer_token=None, on_emocion=None, carril="rapido", max_tokens=None):
     """Interfaz unificada para streaming con conmutación limpia y control de calidad."""
     candidatos = proveedores_disponibles(tarea)
+    if max_tokens is None:
+        max_tokens = pc.resolver_max_tokens(tarea, carril)
     texto, prov_g, mod_g = ps.completar_flujo(
         mensajes,
         al_frase,
@@ -140,6 +145,8 @@ def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=2.5, on
         timeout_espera=timeout_paralelo,
         on_primer_token=on_primer_token,
         on_emocion=on_emocion,
+        carril=carril,
+        max_tokens=max_tokens,
     )
     global _ultimo_proveedor
     _ultimo_proveedor = prov_g

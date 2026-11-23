@@ -56,35 +56,10 @@ def lanzar_reintento_segundo_plano(obtener_cands_fn, tarea):
     threading.Thread(target=_reintento, daemon=True).start()
 
 
-_PATRON_RAZONAMIENTO = re.compile(
-    r"\b(piensa|piensa bien|razona|analiza|reflexiona|detalla|explica a fondo|paso a paso|"
-    r"por qu[eé]|diferencia entre|compara|resuelve|calcula|algoritmo|complejidad|optimiza)\b",
-    re.I,
-)
-
-_PATRON_CODIGO = re.compile(
-    r"(\bdef\b|\bclass\b|\bimport\b|\bfunction\b|\bconst\b|\bvar\b|\blet\b|\bselect\b|\bfrom\b|"
-    r"\bwhere\b|```|<html>|<\?php|==|!=|=>|->|\.py\b|\.js\b|\.html\b|\.json\b|\berror\b|"
-    r"\btraceback\b|\bexcepci[oó]n\b|\bexception\b|\bbug\b)",
-    re.I,
-)
-
-_PATRON_ENLACE = re.compile(r"https?://", re.I)
-
-
 def clasificar_dificultad(texto):
-    """Clasifica localmente el mensaje en 'charla' o 'razonamiento' sin llamadas de red."""
-    if not texto or not isinstance(texto, str):
-        return "charla"
-
-    t = texto.strip()
-    if not t:
-        return "charla"
-
-    if _PATRON_ENLACE.search(t) or _PATRON_CODIGO.search(t) or _PATRON_RAZONAMIENTO.search(t) or len(t) > 140:
-        return "razonamiento"
-
-    return "charla"
+    """Clasifica en 'charla' o 'razonamiento' delegando en la fuente única."""
+    from cerebro_dificultad import clasificar_dificultad as _clasificar
+    return _clasificar(texto)
 
 
 def _parsear_tiempo_segundos(cadena):
@@ -217,30 +192,46 @@ def refrescar_clave_proveedor(prov_dict):
     return prov_dict
 
 
-MODELOS_RAPIDOS_GROQ = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"]
+MODELOS_PREFERIDOS_GROQ = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
 MODELOS_RAPIDOS_GOOGLE = ["gemini-flash-lite-latest", "gemini-flash-latest"]
+
+MAX_TOKENS_RAPIDO = 500
+MAX_TOKENS_PRO = 1500
+MAX_TOKENS_FONDO = 800
+
+
+def resolver_max_tokens(tarea="charla", carril="rapido"):
+    """Presupuesto de salida según carril y tarea (charla ágil vs razonamiento)."""
+    if carril == "pro" or tarea == "razonamiento":
+        return MAX_TOKENS_PRO
+    if tarea == "fondo":
+        return MAX_TOKENS_FONDO
+    return MAX_TOKENS_RAPIDO
+
+
+def modelo_vivo(nombre, modelo):
+    """True si el validador no ha marcado el modelo como inexistente."""
+    import proveedores_validador as pv
+    return not pv.esta_desactivado(nombre, modelo)
 
 
 def obtener_modelos_tarea(prov_dict, tarea):
-    """Devuelve la lista de modelos priorizados para una tarea específica."""
+    """Devuelve los modelos priorizados de la tarea, sin IDs muertos ni desactivados."""
     nombre = prov_dict.get("nombre", "")
     clave_tarea = f"modelos_{tarea}"
     modelos = prov_dict.get(clave_tarea)
     if modelos is None:
         modelos = prov_dict.get("modelos", [])
-    modelos = list(modelos)
+    modelos = [m for m in dict.fromkeys(modelos or []) if modelo_vivo(nombre, m)]
+
     if nombre == "Groq":
-        restantes = [
-            m for m in modelos
-            if m not in MODELOS_RAPIDOS_GROQ
-            and "qwen" not in m.lower()
-            and "gpt-oss" not in m.lower()
-        ]
-        modelos = list(MODELOS_RAPIDOS_GROQ) + restantes
+        preferidos = [m for m in MODELOS_PREFERIDOS_GROQ if m in modelos]
     elif nombre == "Google":
-        restantes = [m for m in modelos if m not in MODELOS_RAPIDOS_GOOGLE]
-        modelos = [m for m in MODELOS_RAPIDOS_GOOGLE if m in modelos] + restantes
-    return modelos
+        preferidos = [m for m in MODELOS_RAPIDOS_GOOGLE if m in modelos]
+    else:
+        preferidos = []
+
+    return preferidos + [m for m in modelos if m not in preferidos]
 
 
 def obtener_candidatos_tarea(tarea, enfriamientos):

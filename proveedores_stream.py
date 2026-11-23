@@ -11,8 +11,13 @@ import proveedores_cadenas as pc
 from sesion_http import obtener_sesion
 from proveedores_validador import extraer_motivo, desactivar_modelo, esta_desactivado
 
+LIMITE_RAPIDO = 1.2
+TECHO_RAPIDO = 2.5
+LIMITE_PRO = 4.0
+TECHO_ESPERA = 5.0
 
-def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_cancelar, cola_salida, marcar_enfriamiento_fn, registrar_fn):
+
+def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_cancelar, cola_salida, marcar_enfriamiento_fn, registrar_fn, max_tokens=500):
     nombre = prov["nombre"]
     url = f"{prov['base_url'].rstrip('/')}/chat/completions"
     headers = {"Authorization": f"Bearer {prov['clave']}", "Content-Type": "application/json"}
@@ -29,7 +34,7 @@ def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_ca
             r = sesion.post(
                 url,
                 headers=headers,
-                json={"model": modelo, "messages": mensajes, "stream": True, "max_tokens": 500},
+                json={"model": modelo, "messages": mensajes, "stream": True, "max_tokens": max_tokens},
                 stream=True,
                 timeout=(timeout_token, 7.0),
             )
@@ -105,8 +110,46 @@ def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_ca
     cola_salida.put(("error", nombre, RuntimeError(f"Todos los modelos de {nombre} fallaron")))
 
 
-def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marcar_enfriamiento_fn, registrar_fn, lanzar_reintento_fn, timeout_espera=2.5, on_primer_token=None, on_emocion=None):
-    """Ejecuta el streaming asegurando 1 sola llamada principal, sin carreras descontroladas y con control de calidad."""
+def _lanzar(prov, modelos, mensajes, limite, cola, marcar_fn, registrar_fn, max_tokens):
+    """Arranca el intento de un proveedor y devuelve su evento de cancelación."""
+    cancelar = threading.Event()
+    threading.Thread(
+        target=_intentar_stream_proveedor,
+        args=(prov, modelos, mensajes, limite, cancelar, cola, marcar_fn, registrar_fn, max_tokens),
+        daemon=True,
+    ).start()
+    return cancelar
+
+
+def _esperar_ganador(cola, nombres, limite, on_primer_token, registrar_fn):
+    """Espera el primer token de cualquiera de los proveedores del lote (hedging)."""
+    t_inicio = time.time()
+    while time.time() - t_inicio < limite:
+        try:
+            msg = cola.get(timeout=0.2)
+        except queue.Empty:
+            continue
+        tipo, prov_nom = msg[0], msg[1]
+        if prov_nom not in nombres:
+            continue
+        if tipo == "primer_token":
+            if callable(on_primer_token):
+                try:
+                    on_primer_token()
+                except Exception:
+                    pass
+            registrar_fn(f"cerebro ganador={prov_nom} modelo={msg[2]} primer_token={msg[3]:.2f}s")
+            return prov_nom, msg[2]
+        if tipo == "error":
+            registrar_fn(f"cerebro {prov_nom} falló: {msg[2]}")
+            nombres.discard(prov_nom)
+            if not nombres:
+                return None, None
+    return None, None
+
+
+def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marcar_enfriamiento_fn, registrar_fn, lanzar_reintento_fn, timeout_espera=1.2, on_primer_token=None, on_emocion=None, carril="rapido", max_tokens=500):
+    """Streaming con hedging top-2, control de calidad y fallback secuencial."""
     if not candidatos:
         registrar_fn("cerebro sin proveedores para streaming: modo emergencia con voz")
         if callable(al_frase):
@@ -114,62 +157,50 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
         lanzar_reintento_fn(tarea)
         return pc.respuesta_emergencia_local(), "Local", "emergencia"
 
+    limite_espera = LIMITE_PRO if carril == "pro" else min(float(timeout_espera), TECHO_RAPIDO)
+    limite_espera = min(limite_espera, TECHO_ESPERA)
+
     idx = 0
     tiempo_perdido_fallos = 0.0
     while idx < len(candidatos):
-        p = candidatos[idx]
-        nombre_p = p["nombre"]
-        m_list = p.get("modelos_activos") or p.get("modelos", [])
+        # Hedging: los dos primeros proveedores compiten en paralelo.
+        if idx == 0 and len(candidatos) > 1:
+            lote = candidatos[idx:idx + 2]
+        else:
+            lote = candidatos[idx:idx + 1]
 
         cola = queue.Queue()
-        cancelar = threading.Event()
+        cancelaciones = []
+        nombres = []
+        for p in lote:
+            m_list = p.get("modelos_activos") or p.get("modelos", [])
+            cancelaciones.append(
+                _lanzar(p, m_list, mensajes, limite_espera, cola, marcar_enfriamiento_fn, registrar_fn, max_tokens)
+            )
+            nombres.append(p["nombre"])
+        if len(lote) > 1:
+            registrar_fn(f"cerebro hedge top-2: {', '.join(nombres)}")
 
-        limite_espera = min(float(timeout_espera), 3.5)
-        hilo = threading.Thread(
-            target=_intentar_stream_proveedor,
-            args=(p, m_list, mensajes, limite_espera, cancelar, cola, marcar_enfriamiento_fn, registrar_fn),
-            daemon=True,
-        )
-        hilo.start()
-
-        # Esperar al primer token del proveedor actual
         t_inicio = time.time()
-        mod_activo = m_list[0] if m_list else "default"
-        primer_token_recibido = False
+        nombre_p, mod_activo = _esperar_ganador(
+            cola, set(nombres), limite_espera, on_primer_token, registrar_fn
+        )
 
-        while time.time() - t_inicio < limite_espera:
-            try:
-                msg = cola.get(timeout=0.2)
-                tipo, prov_nom = msg[0], msg[1]
-                if prov_nom != nombre_p:
-                    continue
-                if tipo == "primer_token":
-                    mod_activo = msg[2]
-                    t_tok = msg[3]
-                    primer_token_recibido = True
-                    if callable(on_primer_token):
-                        try:
-                            on_primer_token()
-                        except Exception:
-                            pass
-                    registrar_fn(f"cerebro ganador={nombre_p} modelo={mod_activo} primer_token={t_tok:.2f}s")
-                    break
-                elif tipo == "error":
-                    registrar_fn(f"cerebro {nombre_p} falló: {msg[2]}")
-                    break
-            except queue.Empty:
-                continue
-
-        if not primer_token_recibido:
-            # Si el proveedor superó el tiempo de espera sin tokens, cancelar y pasar al siguiente
-            cancelar.set()
+        if nombre_p is None:
+            for cancelar in cancelaciones:
+                cancelar.set()
             dt_perdido = time.time() - t_inicio
             tiempo_perdido_fallos += dt_perdido
-            registrar_fn(f"cerebro {nombre_p} superó tiempo de espera ({limite_espera:.1f}s) sin responder, pasando al siguiente")
-            idx += 1
+            registrar_fn(f"cerebro lote {nombres} superó tiempo de espera ({limite_espera:.1f}s) sin responder")
+            idx += len(lote)
             continue
 
-        # Consumir el stream del proveedor y aplicar control de calidad
+        # Cancelar al perdedor del hedge en cuanto hay ganador.
+        for cancelar, nombre in zip(cancelaciones, nombres):
+            if nombre != nombre_p:
+                cancelar.set()
+
+        # Consumir el stream del proveedor ganador y aplicar control de calidad
         crudo, emitido = "", 0
         frases_emitidas = 0
         descartado_por_calidad = False
@@ -220,7 +251,7 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
                 break
 
         if descartado_por_calidad:
-            idx += 1
+            idx += len(lote)
             continue
 
         # Emitir fragmentos finales pendientes
@@ -236,7 +267,7 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
                     frases_emitidas += 1
                 elif not ok_txt:
                     registrar_fn(f"filtro_calidad texto final rechazado en {nombre_p} ({mod_activo}): '{txt}' motivo={mot_txt}")
-                    idx += 1
+                    idx += len(lote)
                     continue
         else:
             frases, emitido = _cortar(parcial, emitido, final=True)
@@ -256,21 +287,21 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
                 frases_emitidas += 1
 
         if descartado_por_calidad:
-            idx += 1
+            idx += len(lote)
             continue
 
         texto_limpio = forzar_utf8_fn(crudo)
         resp_final, _, _, _ = separar(texto_limpio)
         if not resp_final.strip():
             registrar_fn(f"cerebro {nombre_p} terminó con respuesta vacía")
-            idx += 1
+            idx += len(lote)
             continue
 
         # Validación de la respuesta completa
         ok_resp, mot_resp = cr.analizar_calidad_texto(resp_final, contexto_windows=mensajes)
         if not ok_resp:
             registrar_fn(f"filtro_calidad respuesta completa rechazada en {nombre_p} ({mod_activo}): '{resp_final[:60]}' motivo={mot_resp}")
-            idx += 1
+            idx += len(lote)
             continue
 
         # Registro explícito del proveedor y modelo final
