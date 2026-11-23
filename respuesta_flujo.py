@@ -219,6 +219,17 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         mensajes.append({"role": "system", "content": ctx_pp})
     mensajes += cerebro.historial[-8:]
 
+    # 6. Charla en vivo (Gemini Live): solo si está activo y sin enfriamiento por 429.
+    try:
+        import gemini_live
+        vivo = gemini_live.turno_live(mensajes, texto=texto_orig, al_frase=al_frase)
+        if vivo and vivo[0]:
+            if isinstance(getattr(cerebro, "historial", None), list):
+                cerebro.historial.append({"role": "assistant", "content": vivo[0]})
+            return vivo
+    except Exception as e:
+        print(f"[gemini_live] fallback: {str(e)[:80]}", flush=True)
+
     tarea = pc.clasificar_dificultad(texto)
 
     # Evaluación determinista del carril: rapido vs pro
