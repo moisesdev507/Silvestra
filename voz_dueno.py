@@ -11,6 +11,7 @@ import numpy as np
 
 import acciones
 import estado
+import voz_gracia as vg
 from voz_dueno_banco import (
     filtrar_voz_activa,
     preparar_audio_biometria,
@@ -95,8 +96,14 @@ class VozDueno:
         self.umbral = 0.35
         self.modo_solo_dueno = False
         self.ultima_verificacion = {"es_dueno": True, "similitud": 1.0, "motivo": "inicial"}
+        self._ultima_verificacion_ok_ts = 0.0
+        self._ultima_pregunta_ts = 0.0
         self._cargar_configuracion()
         self._cargar_vector()
+
+    def registrar_pregunta(self):
+        """Marca una pregunta reciente de Silvestra para la gracia de confirmación."""
+        self._ultima_pregunta_ts = time.time()
 
     def _cargar_configuracion(self):
         try:
@@ -140,6 +147,22 @@ class VozDueno:
             and self.app.camara.permite()
         )
 
+        # Gracia de sesión: confirmaciones breves tras verificación reciente del dueño
+        # o tras una pregunta de Silvestra. Nunca se aplica a audios largos ni a
+        # frases que no sean confirmaciones explícitas.
+        motivo_gracia = vg.conceder(
+            getattr(self, "_ultima_verificacion_ok_ts", 0.0),
+            getattr(self, "_ultima_pregunta_ts", 0.0),
+            texto, duracion,
+        )
+        if motivo_gracia:
+            self.ultima_verificacion = {
+                "es_dueno": True, "similitud": 0.0, "camara": camara_ok,
+                "motivo": motivo_gracia,
+            }
+            print(f"[voz_dueno] gracia={motivo_gracia} audio_corto={duracion:.2f}s", flush=True)
+            return
+
         # Audios muy cortos (< 1 segundo): decide la cámara; si no hay cámara, no permite acciones
         if audio is None or duracion < 1.0:
             es_dueno = camara_ok
@@ -168,6 +191,8 @@ class VozDueno:
 
             # Doble factor: si la cámara ve al dueño, es válido aunque el puntaje de voz sea bajo
             es_dueno = (score >= umbral_efectivo) or camara_ok
+            if es_dueno:
+                self._ultima_verificacion_ok_ts = time.time()
             self.ultima_verificacion = {
                 "es_dueno": es_dueno,
                 "similitud": score,
@@ -177,6 +202,7 @@ class VozDueno:
         except Exception as e:
             # Política fail-open: nunca dejar fuera al dueño ante fallos técnicos
             print(f"[voz_dueno] Error al verificar voz (fail-open activado): {e}", flush=True)
+            self._ultima_verificacion_ok_ts = time.time()
             self.ultima_verificacion = {"es_dueno": True, "similitud": 1.0, "motivo": "error_tolerado"}
 
     def autorizar_accion(self, accion):

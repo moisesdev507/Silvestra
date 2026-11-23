@@ -194,6 +194,38 @@ def refrescar_clave_proveedor(prov_dict):
 
 MODELOS_PREFERIDOS_GROQ = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
 MODELOS_RAPIDOS_GOOGLE = ["gemini-flash-lite-latest", "gemini-flash-latest"]
+# Modelos con 404/429/503 crónicos: no deben encadenarse en el carril rápido.
+MODELOS_GOOGLE_BLOQUEADOS_RAPIDO = frozenset({
+    "gemini-pro-latest", "gemini-2.5-flash", "gemini-2.0-flash",
+    "gemini-1.5-pro", "gemini-1.5-flash",
+})
+
+
+def modelos_google_rapidos(modelos, carril="rapido", tarea="charla"):
+    """Un solo modelo Google sano para el carril rápido; evita cascadas 429/503."""
+    permitidos = [m for m in modelos
+                  if m in MODELOS_RAPIDOS_GOOGLE and m not in MODELOS_GOOGLE_BLOQUEADOS_RAPIDO]
+    if not permitidos:
+        permitidos = [m for m in modelos if m not in MODELOS_GOOGLE_BLOQUEADOS_RAPIDO][:1]
+    if carril != "rapido" or tarea == "razonamiento" or len(permitidos) < 2:
+        return permitidos
+    try:
+        import proveedores_salud as ps
+
+        def costo(modelo):
+            salud = ps.obtener_salud("Google", modelo)
+            reciente = 0.0
+            ts = salud.get("ts_fallo") or 0.0
+            if ts:
+                reciente = max(0.0, 60.0 - (time.time() - float(ts))) / 60.0
+            ttft = salud.get("ewma_ttft") or 99.0
+            return (float(salud.get("tasa_error", 0.0)) + reciente, float(ttft))
+
+        permitidos.sort(key=costo)
+    except Exception:
+        pass
+    return permitidos[:1]
+
 
 MAX_TOKENS_RAPIDO = 500
 MAX_TOKENS_PRO = 1500
@@ -215,7 +247,7 @@ def modelo_vivo(nombre, modelo):
     return not pv.esta_desactivado(nombre, modelo)
 
 
-def obtener_modelos_tarea(prov_dict, tarea):
+def obtener_modelos_tarea(prov_dict, tarea, carril="rapido"):
     """Devuelve los modelos priorizados de la tarea, sin IDs muertos ni desactivados."""
     nombre = prov_dict.get("nombre", "")
     clave_tarea = f"modelos_{tarea}"
@@ -227,7 +259,9 @@ def obtener_modelos_tarea(prov_dict, tarea):
     if nombre == "Groq":
         preferidos = [m for m in MODELOS_PREFERIDOS_GROQ if m in modelos]
     elif nombre == "Google":
-        preferidos = [m for m in MODELOS_RAPIDOS_GOOGLE if m in modelos]
+        preferidos = modelos_google_rapidos(modelos, carril=carril, tarea=tarea)
+        if carril == "rapido" and tarea != "razonamiento":
+            return preferidos
     else:
         preferidos = []
 
@@ -258,7 +292,7 @@ def obtener_candidatos_tarea(tarea, enfriamientos, carril="rapido"):
         if ahora < enfriamientos.get(nombre, 0):
             continue
 
-        modelos = obtener_modelos_tarea(p, tarea)
+        modelos = obtener_modelos_tarea(p, tarea, carril=carril)
         if not modelos:
             continue
 

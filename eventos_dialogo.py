@@ -6,6 +6,14 @@ eventos.py conserva la fachada y la cadena de estabilidad Qt.
 import time
 
 
+def _hablar_en_conversacion(app):
+    """True si el evento ocurre durante una conversación por micrófono."""
+    return bool(
+        getattr(app, "conversacion", False)
+        and getattr(app, "origen_entrada_actual", "") in ("microfono", "voz")
+    )
+
+
 def atender_resto(app, tipo, texto, es_confirmacion_rutinaria):
     """Atiende los eventos que no pasan por la verificación Qt de eventos.py."""
     if tipo == "ejecutar_accion":
@@ -139,13 +147,15 @@ def atender_resto(app, tipo, texto, es_confirmacion_rutinaria):
             app.pantalla_remota.puente.reservar_turno(remoto, cerrar=True)
             app._ecosistema_origen = None
         app._dejar_de_escuchar()
+        hablar = _hablar_en_conversacion(app)
         app.conversacion = False
-        app.decir(texto, 5000, con_voz=False)
+        app.decir(texto, 5000, con_voz=hablar)
 
     else:
         if app.flujo is not None:
             app.flujo.cerrar()
             app.flujo = None
-        app.decir(f"Tuve un problema para pensar: {texto}", 5000, con_voz=False)
+        hablar = _hablar_en_conversacion(app)
+        app.decir(f"Tuve un problema para pensar: {texto}", 5000, con_voz=hablar)
         if app.conversacion and not app.escuchando:
             app.cara.root.after(5000, app.escuchar)

@@ -2,6 +2,11 @@
 import time
 
 
+def respuesta_requiere_hablar(app, n_frases):
+    """True si el flujo activo no emitió frases y la respuesta debe hablarse."""
+    return getattr(app, "flujo", None) is not None and not n_frases
+
+
 def es_confirmacion_rutinaria(texto):
     if not texto:
         return True
@@ -56,6 +61,7 @@ def atender_evento(app, tipo, texto):
             app.escenario.actualizar_subtitulo(frase_txt)
         if app.flujo is None:
             app.texto_flujo = ""
+            app._frases_flujo_emitidas = 0
             t_fin = getattr(app, "t_fin_habla", None)
             if t_fin and (time.time() - t_fin > 30.0 or getattr(app, "_ecosistema_origen", None)):
                 t_fin, app.t_fin_habla, app.metricas_turno = None, None, None
@@ -71,6 +77,13 @@ def atender_evento(app, tipo, texto):
             app.t_inicio_texto = None
         app.texto_flujo = (app.texto_flujo + " " + frase_txt).strip()
         app.flujo.agregar(frase_txt, emocion=frase_emo)
+        app._frases_flujo_emitidas = getattr(app, "_frases_flujo_emitidas", 0) + 1
+        if "?" in frase_txt or "¿" in frase_txt:
+            try:
+                import voz_gracia
+                voz_gracia.registrar_pregunta(app)
+            except Exception:
+                pass
         app.cara.decir(app.texto_flujo, None, emocion=frase_emo)
 
     elif tipo == "escenario_subtitulo":
@@ -105,6 +118,7 @@ def atender_evento(app, tipo, texto):
             except Exception:
                 pass
             app.flujo = None
+            app._frases_flujo_emitidas = 0
         app.ultimo_dicho = ""
         if hasattr(app, "cara") and app.cara:
             app.cara.poner_escuchando(True)
@@ -144,7 +158,15 @@ def atender_evento(app, tipo, texto):
                 app.decir(frase_negativa, emocion="calida")
                 return
 
-        if app.flujo is not None:
+        n_frases = getattr(app, "_frases_flujo_emitidas", 0)
+        if respuesta_requiere_hablar(app, n_frases):
+            # El streaming creó un flujo pero no sintetizó ninguna frase: hablar aquí
+            # evita que la respuesta quede solo en pantalla.
+            app.flujo.cerrar()
+            app.flujo = None
+            app._frases_flujo_emitidas = 0
+            app.decir(respuesta, emocion=emocion)
+        elif app.flujo is not None:
             app.flujo.cerrar()
             app.ultimo_dicho = respuesta
             if hasattr(app, "cara") and app.cara:

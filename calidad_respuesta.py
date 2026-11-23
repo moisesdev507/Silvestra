@@ -19,11 +19,29 @@ PALABRAS_ESENCIALES_ESPANOL = {
     "clave", "contrasena", "password", "segura", "caracteres", "archivo", "texto", "linea",
 }
 
+# Identificadores técnicos que no tienen por qué contener vocales.
+TOKENS_TECNICOS_PERMITIDOS = frozenset({
+    "str", "int", "float", "bool", "list", "dict", "tuple", "set", "none",
+    "true", "false", "json", "yaml", "http", "https", "url", "uri", "api",
+    "txt", "pdf", "csv", "xml", "html", "css", "sql", "js", "py", "git",
+    "npx", "npm", "cli", "cpu", "ram", "usb", "utf", "crlf", "llm", "tts",
+    "stt", "sse", "os", "db", "ip", "id", "sh", "ps",
+})
+
+# Español válido con grupos de cuatro consonantes (no son tokens corruptos).
+PALABRAS_CONSONANTES_VALIDAS = frozenset({
+    "instrucciones", "instruccion", "construccion",
+    "construcciones", "construir", "instrumento", "instrumentos",
+    "instructivo", "instructiva", "transcribir", "transcripcion",
+    "transparente", "transparencia", "subscribir", "suscribir",
+    "extranjero", "extranjera", "obstaculo", "obstaculos",
+})
+
 _PATRONES_CORRUPTOS = (
     re.compile(r"q[^ueei]", re.I),
     re.compile(r"mpun$", re.I),
     re.compile(r"ncoy$", re.I),
-    re.compile(r"[bcdfghjklmnpqrstvwxz]{4,}", re.I),
+    re.compile(r"[bcdfghjklmnpqrstvwxz]{5,}", re.I),
 )
 
 _CONECTORES_COLGANTES = {
@@ -48,11 +66,14 @@ def es_token_corrupto(token):
     # Tokens alfanuméricos que mezclan letras y dígitos (contraseñas, hashes, IDs) no son palabras corruptas
     if any(c.isdigit() for c in norm) and any(c.isalpha() for c in norm):
         return False
-    if norm in PALABRAS_ESENCIALES_ESPANOL:
+    if (norm in PALABRAS_ESENCIALES_ESPANOL
+            or norm in TOKENS_TECNICOS_PERMITIDOS
+            or norm in PALABRAS_CONSONANTES_VALIDAS):
         return False
-    # Una palabra puramente alfabética de más de 2 letras en español debe contener al menos una vocal
+    # Los tokens cortos sin vocales suelen ser identificadores técnicos válidos
+    # ('str', 'txt'...). Solo se considera corrupta una secuencia larga sin vocales.
     if not any(c in "aeiouy" for c in norm):
-        return True
+        return len(norm) >= 4
     for pat in _PATRONES_CORRUPTOS:
         if pat.search(norm):
             return True
