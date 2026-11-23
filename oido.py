@@ -6,9 +6,12 @@ import numpy as np
 import config
 from config import MODELO_VOZ
 from oido_flujo import (
+    CORTESIAS_AMBIGUAS,
     FALSAS,
     FlujoMicrofono,
+    cortesia_descartada,
     crear_buffer_wav,
+    es_cortesia_corta,
     es_transcripcion_dudosa,
     preparar_audio_int16,
     validar_calidad_whisper,
@@ -39,6 +42,19 @@ def _es_eco_prompt(texto, prompt):
         if len(tokens) <= 14 and any(tokens.count(w) >= 4 for w in set(tokens) if len(w) >= 4):
             return True
     return False
+
+
+def motivo_descarte_transcripcion(texto, rms, r=None):
+    """Devuelve el motivo de descarte o None si la transcripción es válida."""
+    t_low = " ".join(str(texto or "").lower().split())
+    if es_cortesia_corta(texto):
+        if cortesia_descartada(texto, rms, r):
+            return f"cortesia_sin_voz_clara(rms={float(rms or 0.0):.1f})"
+        return None
+    for f in FALSAS + CORTESIAS_AMBIGUAS:
+        if f in t_low:
+            return f"alucinacion_whisper('{f}')"
+    return None
 
 
 class Oido:
@@ -321,11 +337,10 @@ class Oido:
         if len(texto) < 3:
             print(f"[oido] transcripcion='{texto}' descartada motivo=demasiado_corta", flush=True)
             return None
-        t_low = texto.lower()
-        for f in FALSAS:
-            if f in t_low:
-                print(f"[oido] transcripcion='{texto}' descartada motivo=alucinacion_whisper('{f}')", flush=True)
-                return None
+        motivo = motivo_descarte_transcripcion(texto, rms, r)
+        if motivo:
+            print(f"[oido] transcripcion='{texto}' descartada motivo={motivo}", flush=True)
+            return None
         if _es_eco_prompt(texto, prompt_whisper):
             print(f"[oido] transcripcion='{texto}' descartada motivo=eco_prompt_o_repeticion", flush=True)
             return None
