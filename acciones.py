@@ -126,6 +126,15 @@ def telemetria_local(texto):
         return None
 
 
+def modo_local(texto, app=None):
+    """Modos/rutinas en local: frase corta o None si no aplica (nunca falla)."""
+    try:
+        import modos_rutina
+        return modos_rutina.detectar_y_ejecutar_modo(texto, app=app)
+    except Exception:
+        return None
+
+
 def atajo_archivos_locales(texto):
     """Atajos de archivo ya existentes: (respuesta, accion, emocion) o None."""
     import os

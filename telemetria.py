@@ -2,6 +2,7 @@
 Reutiliza pantalla_remota_datos (CPU/RAM/batería Win32); usa psutil si existe.
 """
 import os
+import re
 import time
 
 try:
@@ -26,6 +27,12 @@ def norm(t):
 def limpio(n):
     n = str(n or "").strip()
     return n[:-4] if n.lower().endswith(".exe") else n
+
+
+def _palabra(texto, *terminos):
+    """Coincide solo con palabras/frases completas: 'ram' no debe estar en 'programacion'."""
+    patron = r"\b(?:" + "|".join(re.escape(t) for t in terminos) + r")\b"
+    return bool(re.search(patron, texto))
 
 
 def estado_bateria():
@@ -191,8 +198,8 @@ def responder_telemetria(texto):
     t = norm(texto)
     if not t or any(c in t for c in CON):
         return None
-    if any(c in t for c in ("consumiendo", "trabando", "ralentiza", "usa mas",
-                            "procesos", "mas memoria", "mas cpu")):
+    if (any(c in t for c in ("consumiendo", "trabando", "ralentiza", "procesos"))
+            or _palabra(t, "usa mas", "mas memoria", "mas cpu")):
         ps = procesos_pesados(3)
         if not ps:
             return "No veo procesos pesados en este momento."
@@ -214,7 +221,7 @@ def responder_telemetria(texto):
             return "No pude leer el espacio del disco ahora."
         return (f"En la unidad principal tienes {d['libre_gb']:.0f} GB libres de "
                 f"{d['total_gb']:.0f} GB, {d['usado_pct']}% ocupado.")
-    if any(c in t for c in ("laptop", "sistema", "ram", "memoria", "cpu",
-                            "procesador", "como va")):
+    if _palabra(t, "laptop", "sistema", "ram", "memoria", "cpu",
+                "procesador", "como va"):
         return estado_sistema()["texto"]
     return None

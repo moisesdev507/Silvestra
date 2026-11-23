@@ -41,6 +41,12 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         _reg_turno(cerebro, texto_orig, (resp := f"Abriendo {app_local}."), al_frase)
         return resp, f"abrir_app_local | {app_local}", "alegre"
 
+    # Modos y rutinas compuestas: se resuelven en local, sin llamar al LLM
+    resp_modo = acciones.modo_local(texto, getattr(cerebro, "app", None))
+    if resp_modo:
+        _reg_turno(cerebro, texto_orig, resp_modo, al_frase)
+        return resp_modo, None, "atenta"
+
     tele = acciones.telemetria_local(texto)
     if tele:
         _reg_turno(cerebro, texto_orig, tele, al_frase)
