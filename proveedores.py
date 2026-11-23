@@ -60,6 +60,9 @@ def completar(mensajes, tarea="charla", timeout=20):
         url = f"{prov['base_url'].rstrip('/')}/chat/completions"
         headers = {"Authorization": f"Bearer {prov['clave']}", "Content-Type": "application/json"}
         modelos = prov.get("modelos_activos") or prov.get("modelos", [])
+        fallos_turno = 0
+        proveedor_enfriado = False
+        proveedor_fuera = False
 
         for modelo in list(modelos):
             if esta_desactivado(nombre, modelo):
@@ -76,20 +79,32 @@ def completar(mensajes, tarea="charla", timeout=20):
                 if r.status_code == 429:
                     mot = extraer_motivo(r, 429)
                     marcar_enfriamiento(nombre, modelo, r.headers, motivo=mot)
+                    fallos_turno += 1
                     _registrar(f"cerebro 429 en {nombre} ({modelo}), pasando al siguiente modelo de la misma cuenta...")
                     continue
+                if r.status_code == 503:
+                    mot = extraer_motivo(r, 503)
+                    marcar_enfriamiento(nombre, modelo, r.headers, motivo=mot)
+                    marcar_enfriamiento(nombre, motivo=f"fallo_total_modelos en {nombre} ({mot})")
+                    fallos_turno += 1
+                    proveedor_enfriado = True
+                    _registrar(f"cerebro HTTP 503 en {nombre} ({modelo}): enfriamiento breve, pasando al siguiente proveedor...")
+                    break
                 if r.status_code == 401:
                     desactivar_proveedor(nombre)
+                    proveedor_fuera = True
                     _registrar(f"cerebro HTTP 401 en {nombre}: credencial rechazada, proveedor fuera de rotación")
                     break
                 if r.status_code in (404, 410):
                     mot = extraer_motivo(r, r.status_code)
                     marcar_enfriamiento(nombre, modelo, r.headers, motivo=mot)
                     desactivar_modelo(nombre, modelo)
+                    fallos_turno += 1
                     estado = "retirado y desactivado" if r.status_code == 410 else "desactivado"
                     _registrar(f"cerebro HTTP {r.status_code} en {nombre} ({modelo}): {mot} ({estado})")
                     continue
                 if r.status_code != 200:
+                    fallos_turno += 1
                     _registrar(f"cerebro HTTP {r.status_code} en {nombre} ({modelo}): {r.text[:80]}")
                     continue
                 try:
@@ -117,10 +132,14 @@ def completar(mensajes, tarea="charla", timeout=20):
             except requests.exceptions.Timeout as ex:
                 mot = f"timeout ({str(ex)[:60].strip()})"
                 marcar_enfriamiento(nombre, modelo, motivo=mot)
+                fallos_turno += 1
                 _registrar(f"cerebro timeout en {nombre} ({modelo}): {mot}")
             except Exception as e:
+                fallos_turno += 1
                 _registrar(f"cerebro error en {nombre} ({modelo}): {e}")
 
+        if fallos_turno and not proveedor_enfriado and not proveedor_fuera:
+            marcar_enfriamiento(nombre, motivo=f"fallo_total_modelos en {nombre}")
         _registrar(f"cerebro agotados modelos en {nombre}, cambiando de proveedor")
         if nombre == "Groq" and _ultimo_proveedor == "Groq":
             _aviso_respaldo_pendiente = True

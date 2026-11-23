@@ -18,6 +18,8 @@ def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_ca
     headers = {"Authorization": f"Bearer {prov['clave']}", "Content-Type": "application/json"}
     t0 = time.time()
     lista_modelos = modelos if isinstance(modelos, list) else [modelos]
+    proveedor_enfriado = False
+    proveedor_fuera = False
 
     for modelo in lista_modelos:
         if evento_cancelar.is_set():
@@ -39,8 +41,16 @@ def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_ca
                 marcar_enfriamiento_fn(nombre, modelo, r.headers, motivo=mot)
                 registrar_fn(f"cerebro 429 en {nombre} ({modelo}), pasando al siguiente modelo de la misma cuenta...")
                 continue
+            if r.status_code == 503:
+                mot = extraer_motivo(r, 503)
+                marcar_enfriamiento_fn(nombre, modelo, r.headers, motivo=mot)
+                marcar_enfriamiento_fn(nombre, motivo=f"fallo_total_modelos en {nombre} ({mot})")
+                proveedor_enfriado = True
+                registrar_fn(f"cerebro HTTP 503 en {nombre} ({modelo}): enfriamiento breve, pasando al siguiente proveedor...")
+                break
             if r.status_code == 401:
                 desactivar_proveedor(nombre)
+                proveedor_fuera = True
                 registrar_fn(f"cerebro HTTP 401 en {nombre}: credencial rechazada, proveedor fuera de rotación")
                 break
             if r.status_code in (404, 410):
@@ -107,6 +117,8 @@ def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_ca
             registrar_fn(f"cerebro fallo en {nombre} ({modelo}): {ex}")
             continue
 
+    if not proveedor_enfriado and not proveedor_fuera:
+        marcar_enfriamiento_fn(nombre, motivo=f"fallo_total_modelos en {nombre}")
     cola_salida.put(("error", nombre, RuntimeError(f"Todos los modelos de {nombre} fallaron")))
 
 
@@ -141,6 +153,7 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
         t_inicio = time.time()
         mod_activo = m_list[0] if m_list else "default"
         primer_token_recibido = False
+        error_recibido = False
 
         while time.time() - t_inicio < limite_espera:
             try:
@@ -160,6 +173,7 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
                     registrar_fn(f"cerebro ganador={nombre_p} modelo={mod_activo} primer_token={t_tok:.2f}s")
                     break
                 elif tipo == "error":
+                    error_recibido = True
                     registrar_fn(f"cerebro {nombre_p} falló: {msg[2]}")
                     break
             except queue.Empty:
@@ -168,6 +182,8 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
         if not primer_token_recibido:
             # Si el proveedor superó el tiempo de espera sin tokens, cancelar y pasar al siguiente
             cancelar.set()
+            if not error_recibido:
+                marcar_enfriamiento_fn(nombre_p, motivo=f"fallo_total_modelos en {nombre_p} (timeout)")
             dt_perdido = time.time() - t_inicio
             tiempo_perdido_fallos += dt_perdido
             registrar_fn(f"cerebro {nombre_p} superó tiempo de espera ({limite_espera:.1f}s) sin responder, pasando al siguiente")
