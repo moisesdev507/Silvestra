@@ -109,6 +109,7 @@ class Silvestra:
 
         self.conversacion = False
         self.escuchando = False
+        self.voz_silenciada = False
         self.silencios = 0
         self.descansando = False
         self.pendiente_descanso = False
@@ -117,7 +118,7 @@ class Silvestra:
 
         self.cara = Cara(
             self.abrir_chat,
-            self.alternar_conversacion,
+            self.alternar_silencio,
             self.renacer,
             self.pedir_descanso,
         )
@@ -269,6 +270,9 @@ class Silvestra:
 
     def alternar_conversacion(self, motivo="interfaz"):
         conversacion.alternar_conversacion(self, motivo=motivo)
+
+    def alternar_silencio(self):
+        conversacion.alternar_silencio(self)
 
     def escuchar(self):
         conversacion.escuchar(self)

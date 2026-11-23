@@ -18,7 +18,7 @@ def cargar():
         "ultima_vez": None,
         "ultimo_saludo": "",
         "iniciativa": False,
-        "palabra_clave": False,
+        "palabra_clave": True,
         "hud": False,
         "telegram_chat_id": None,
         "diario_ultima_fecha": None,

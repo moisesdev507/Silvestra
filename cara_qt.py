@@ -102,7 +102,7 @@ class Cara(CaraMovimientoMixin, QWidget):
 
         self.menu = QMenu()
         self.menu.addAction("Escribirle").triggered.connect(lambda *_: al_escribir())
-        self.menu.addAction("Conversar con voz (activar/desactivar)").triggered.connect(
+        self.menu.addAction("Silenciar / reanudar voz").triggered.connect(
             lambda *_: al_conversar()
         )
         self.accion_paseo = QAction("Pasearse por la pantalla", self.menu)

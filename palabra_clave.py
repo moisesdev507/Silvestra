@@ -108,7 +108,7 @@ class PalabraClave:
     def __init__(self, app):
         self.app = app
         self.vivo = True
-        self.siempre_atenta = estado.cargar().get("palabra_clave", False)
+        self.siempre_atenta = estado.cargar().get("palabra_clave", True)
         self.modelo = None
         self.gramatica = ""
         self.palabras_validas = []
@@ -152,6 +152,8 @@ class PalabraClave:
         self.app.cara.decir("Modo siempre atenta desactivado.", 3000)
 
     def debe_escuchar(self):
+        if getattr(self.app, "voz_silenciada", False):
+            return False
         if not self.modelo or not self.vivo:
             return False
         # Escuchar si está descansando O si está en modo siempre_atenta (sin conversación activa)
@@ -255,6 +257,8 @@ class PalabraClave:
 
     def _disparar(self):
         # Solo enviar evento a la cola de la app. NO tocar Qt desde este hilo.
+        if getattr(self.app, "voz_silenciada", False):
+            return
         if getattr(self.app, "musica_activa", False):
             return
         if self.app.descansando:

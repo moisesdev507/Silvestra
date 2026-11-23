@@ -98,6 +98,19 @@ def alternar_conversacion(app, motivo="desconocido"):
         app._iniciar_reflexion()
 
 
+def alternar_silencio(app):
+    """Silencia o reanuda el micrófono sin hablar (llamadas o reuniones)."""
+    silenciada = not getattr(app, "voz_silenciada", False)
+    app.voz_silenciada = silenciada
+    detector = getattr(app, "palabra_clave", None)
+    if detector is not None:
+        detector.siempre_atenta = not silenciada
+    if silenciada:
+        app.conversacion = False
+        dejar_de_escuchar(app)
+    return silenciada
+
+
 def despertar(app):
     """Sale del reposo y difiere la restauración visual a la cola Qt."""
     app.descansando = False
