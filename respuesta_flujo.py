@@ -100,9 +100,13 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
 
     import memoria_sueno, memoria_progreso
     if memoria_sueno.detectar_orden_sueno(texto):
-        r_s = memoria_sueno.ejecutar_orden_sueno(texto, app=app); _reg_turno(cerebro, texto_orig, r_s, al_frase); return r_s, None, "calida"
+        r_s = memoria_sueno.ejecutar_orden_sueno(texto, app=app)
+        _reg_turno(cerebro, texto_orig, r_s, al_frase)
+        return r_s, None, "calida"
     if memoria_progreso.detectar_orden_progreso(texto):
-        r_p = memoria_progreso.consultar_mi_progreso(); _reg_turno(cerebro, texto_orig, r_p, al_frase); return r_p, None, "orgullosa"
+        r_p = memoria_progreso.consultar_mi_progreso()
+        _reg_turno(cerebro, texto_orig, r_p, al_frase)
+        return r_p, None, "orgullosa"
 
     try:
         import cerebro_planificador
@@ -238,6 +242,14 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         print(f"[gemini_live] fallback: {str(e)[:80]}", flush=True)
 
     tarea = pc.clasificar_dificultad(texto)
+    try:
+        import enrutador_expertos as ee
+        clas = ee.clasificar_consulta(texto)
+        if clas.get("carril") == "pesado":
+            tarea = "razonamiento"
+            print(f"[experto] area={clas.get('area')} carril=pesado", flush=True)
+    except Exception:
+        pass
 
     # Evaluación determinista del carril: rapido vs pro
     app = getattr(cerebro, "app", None)
@@ -334,8 +346,8 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         try:
             import aprendizaje
             aprendizaje.registrar_interaccion(texto, respuesta, emocion)
-        except Exception as e:
-            print(f"[aprendizaje] Error al registrar interacción: {e}", flush=True)
+        except Exception:
+            pass
 
         try:
             turnos_u = sum(1 for m in getattr(cerebro, "historial", []) if m.get("role") == "user")
@@ -351,7 +363,7 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
                     daemon=True,
                     name="MemoriaExtraerFlujo"
                 ).start()
-        except Exception as e:
-            print(f"[memoria] Error en extracción en segundo plano: {e}", flush=True)
+        except Exception:
+            pass
 
     return respuesta, accion, emocion

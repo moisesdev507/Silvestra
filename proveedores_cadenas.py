@@ -266,10 +266,15 @@ def _tiene_modelos_configurados(prov_dict):
 
 
 def obtener_modelos_tarea(prov_dict, tarea):
-    """Prioriza modelos rápidos solo si están configurados; nunca inventa IDs."""
+    """Prioriza modelos rápidos o pesados según la tarea; nunca inventa IDs."""
     modelos = _modelos_configurados(prov_dict, tarea)
     nombre = prov_dict.get("nombre", "")
     if nombre == "Groq":
+        if tarea in ("razonamiento", "pesado"):
+            pesados_tarea = ["llama-3.3-70b-versatile", "qwen/qwen3.8-27b", "openai/gpt-oss-120b", "llama-3.1-8b-instant"]
+            pesados = [m for m in pesados_tarea if m in modelos]
+            restantes = [m for m in modelos if m not in pesados]
+            return (pesados or pesados_tarea) + restantes
         rapidos_tarea = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"]
         if not modelos and not _tiene_modelos_configurados(prov_dict):
             return list(rapidos_tarea)
