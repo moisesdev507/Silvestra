@@ -3,6 +3,7 @@ import time
 
 import conversacion
 import eventos_voz
+import invocacion_lyris
 import sonidos_ui
 
 
@@ -41,6 +42,8 @@ def es_confirmacion_rutinaria(texto):
 
 
 def atender_evento(app, tipo, texto):
+    if invocacion_lyris.interceptar(app, tipo, texto):
+        return
     if tipo == "frase":
         if isinstance(texto, (tuple, list)):
             frase_txt = str(texto[0])
@@ -276,22 +279,7 @@ def atender_evento(app, tipo, texto):
         app.ultimo_clima = texto
 
     elif tipo == "fin_voz":
-        app.flujo = None
-        if (getattr(app, "turno_wakeword", False) and not app.escuchando
-                and not getattr(app, "turno_wakeword_esperando_orden", False)):
-            conversacion.cerrar_turno(app, "fin_voz")
-        if getattr(app, "musica_activa", False) and not app.escuchando:
-            try:
-                import control_laptop
-                control_laptop.restaurar_ducking()
-            except Exception:
-                pass
-        if hasattr(app, "cara") and app.cara:
-            app.cara.programar_retorno_neutral(2500)
-        if app.pendiente_descanso:
-            app.descansar()
-        elif app.conversacion and not app.escuchando:
-            import eventos_rearme; eventos_rearme.rearmar(app)
+        conversacion.fin_voz(app)
 
     elif tipo == "oido":
         app._t_accion_llm = 0

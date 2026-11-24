@@ -67,6 +67,7 @@ import hilos
 import hud
 import ideas
 import iniciativa
+import invocacion_lyris
 import nacimiento
 import palabra_clave
 import pantalla
@@ -164,6 +165,7 @@ class Silvestra:
         proveedores.instalar(self)
         respaldo.instalar(self)
         conversacion.instalar(self)
+        self.invocacion = invocacion_lyris.instalar(self)
         try:
             import aprendiz_habilidades
             aprendiz_habilidades.cargar_habilidades_aprendidas(self)
@@ -329,6 +331,7 @@ class Silvestra:
             pass
         for objeto, metodo, args in (
             (getattr(self, "palabra_clave", None), "detener", ()),
+            (getattr(self, "invocacion", None), "detener", ()),
             (getattr(self, "camara", None), "apagar", ()),
             (getattr(self, "oido", None), "cerrar", ()),
             (getattr(self, "voz", None), "detener", ("cierre_aplicacion",)),

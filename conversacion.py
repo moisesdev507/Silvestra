@@ -92,12 +92,14 @@ def alternar_conversacion(app, motivo="desconocido"):
     if app.conversacion:
         if motivo == "palabra_clave_vosk":
             iniciar_turno_wakeword(app)
-        app.decir("Te escucho. Háblame.", 2500)
+        else:
+            app.decir("Te escucho. Háblame.", 2500)
         escuchar(app)
     else:
         cerrar_flags_wakeword(app)
         dejar_de_escuchar(app)
-        app.decir("Listo, dejo de escuchar.", 2500)
+        if motivo != "palabra_clave_vosk":
+            app.decir("Listo, dejo de escuchar.", 2500)
         app._iniciar_reflexion()
 
 
@@ -108,6 +110,12 @@ def alternar_silencio(app):
     detector = getattr(app, "palabra_clave", None)
     if detector is not None:
         detector.siempre_atenta = not silenciada
+    gestor = getattr(app, "invocacion", None)
+    if gestor is not None:
+        if silenciada:
+            gestor.pausar()
+        else:
+            gestor.reanudar()
     if silenciada:
         app.conversacion = False
         cerrar_flags_wakeword(app)
@@ -147,6 +155,28 @@ def cerrar_turno(app, motivo="wakeword"):
         elif hasattr(cara, "hablando"):
             cara.hablando = False
     print(f"[conversacion] turno wakeword cerrado ({motivo})", flush=True)
+
+
+def fin_voz(app):
+    """Cierre centralizado de la locución: restaura audio, emoción y escucha."""
+    app.flujo = None
+    if (getattr(app, "turno_wakeword", False) and not getattr(app, "escuchando", False)
+            and not getattr(app, "turno_wakeword_esperando_orden", False)):
+        cerrar_turno(app, "fin_voz")
+    if getattr(app, "musica_activa", False) and not getattr(app, "escuchando", False):
+        try:
+            import control_laptop
+            control_laptop.restaurar_ducking()
+        except Exception:
+            pass
+    cara = getattr(app, "cara", None)
+    if cara is not None:
+        cara.programar_retorno_neutral(2500)
+    if getattr(app, "pendiente_descanso", False):
+        app.descansar()
+    elif getattr(app, "conversacion", False) and not getattr(app, "escuchando", False):
+        import eventos_rearme
+        eventos_rearme.rearmar(app)
 
 
 def despertar(app):

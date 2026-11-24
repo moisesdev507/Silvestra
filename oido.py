@@ -222,7 +222,10 @@ class Oido:
             while True:
                 if not self._sesion_vigente(app, generacion):
                     return None
-                if app is not None and (not getattr(app, "escuchando", True) or not getattr(app, "conversacion", True)):
+                ambiental = getattr(app, "invocacion_ambiental", False)
+                if app is not None and not ambiental and (
+                        not getattr(app, "escuchando", True)
+                        or not getattr(app, "conversacion", True)):
                     break
 
                 datos = self._flujo.leer(timeout=0.08)
@@ -326,6 +329,10 @@ class Oido:
                            if n.strip() and len(n.strip()) < 25
                            and n.strip().lower() not in PROMPT_WHISPER.lower())[:40]
         prompt_whisper = f"{PROMPT_WHISPER} {extras}".strip() if extras else PROMPT_WHISPER
+
+        inv = getattr(app, "invocacion", None)
+        if inv is not None and not inv.permitir():
+            return None
 
         r = None
         t0 = time.time()
