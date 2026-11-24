@@ -1,4 +1,6 @@
 """Regresión: manos libres 'Lyris' al arranque y silenciador rápido sin hablar."""
+import contextlib
+import io
 import os
 import queue
 import tempfile
@@ -90,6 +92,51 @@ class TestManosLibres(unittest.TestCase):
         self.assertEqual(app.cola.get_nowait(),
                          ("alternar_conversacion", "palabra_clave_vosk"))
         self.assertEqual(hablado, [])
+
+    def test_debe_escuchar_no_bloquea_por_modo_estudio(self):
+        app = self._app()
+        app.modo_activo = "estudio"
+        app.puede_hablar_sola = lambda: False
+        detector = self._detector(app)
+        self.assertTrue(detector.debe_escuchar())
+
+    def test_debe_escuchar_mantiene_bloqueos_reales(self):
+        app = self._app()
+        detector = self._detector(app)
+
+        app.voz_silenciada = True
+        self.assertFalse(detector.debe_escuchar())
+        app.voz_silenciada = False
+
+        app.voz.ocupada = lambda: True
+        self.assertFalse(detector.debe_escuchar())
+        app.voz.ocupada = lambda: False
+
+        app.escuchando = True
+        self.assertFalse(detector.debe_escuchar())
+        app.escuchando = False
+        self.assertTrue(detector.debe_escuchar())
+
+    def test_coincidencia_variantes_vosk_y_ruido(self):
+        detector = self._detector(self._app())
+        for variante in ("Lyris", "iris", "liria", "lyra", "lira", "lirio", "silvestra"):
+            with self.subTest(variante=variante):
+                self.assertTrue(palabra_clave.coincide_palabra(variante))
+                self.assertTrue(detector._coincide(variante))
+
+        for ruido in ("", "[unk]", "[unk] [unk]", "...", "silencio", "libro",
+                      "hola mundo", "dime la hora por favor"):
+            with self.subTest(ruido=ruido):
+                self.assertFalse(palabra_clave.coincide_palabra(ruido))
+                self.assertFalse(detector._coincide(ruido))
+
+    def test_log_sobrio_al_disparar_candidata(self):
+        app = self._app()
+        detector = self._detector(app)
+        with contextlib.redirect_stdout(io.StringIO()) as salida:
+            detector._disparar("iris")
+        self.assertIn("[palabra_clave] candidata 'iris'", salida.getvalue())
+        self.assertEqual(salida.getvalue().count("[palabra_clave]"), 1)
 
     def test_lyris_sigue_encolando_y_alternar_conversacion_intacto(self):
         app = self._app()

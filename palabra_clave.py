@@ -16,7 +16,7 @@ import unicodedata
 import acciones
 import estado
 
-# Umbral de similitud difflib y palabra objetivo (fácilmente modificables)
+# Umbral mínimo para coincidencias difusas; las variantes conocidas van por lista exacta.
 UMBRAL_RATIO = 0.55
 OBJETIVO = "lyris"
 OBJETIVO_SECUNDARIO = "silvestra"
@@ -55,6 +55,17 @@ CANDIDATAS = [
     "estra",
 ]
 
+# Variantes reales que Vosk small-es produce al oír "Lyris" o "Silvestra".
+VARIANTES_LYRIS = {
+    "lyris", "liris", "iris", "lira", "liras", "lirio", "lirios",
+    "liria", "lyra", "sris", "srisla",
+}
+VARIANTES_SILVESTRA = {
+    "silvestra", "silvestre", "silvestri", "sylvestre", "silvia",
+    "silvio", "silves", "vestra", "vestre",
+}
+RUIDO_VOZ = {"unk", "[unk]", "..."}
+
 RUTA_MODELO = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "modelos",
@@ -70,37 +81,39 @@ def normalizar(texto):
     return "".join(c for c in t if unicodedata.category(c) != "Mn")
 
 
+def _es_candidata(palabra, objetivo, umbral):
+    """Acepta solo variantes conocidas o coincidencias difusas estrictas."""
+    if not palabra or palabra in RUIDO_VOZ or palabra in PALABRAS_EXCLUIDAS:
+        return False
+    if len(palabra) < 3:
+        return False
+    if palabra in VARIANTES_LYRIS or palabra in VARIANTES_SILVESTRA:
+        return True
+    if palabra == objetivo:
+        return True
+    if len(palabra) < 4:
+        return False
+    limite = max(umbral, 0.72)
+    return (difflib.SequenceMatcher(None, palabra, objetivo).ratio() >= limite
+            or difflib.SequenceMatcher(None, palabra, OBJETIVO_SECUNDARIO).ratio() >= limite)
+
+
 def coincide_palabra(texto, objetivo=OBJETIVO, umbral=UMBRAL_RATIO):
-    """Comprueba si alguna palabra reconocida es afín al nombre objetivo, descartando falsos positivos."""
+    """Comprueba si el texto contiene una variante válida del wake-word."""
     if not texto:
         return False
     t = normalizar(texto)
     for c in ",.!?;:-_\"'()[]":
         t = t.replace(c, " ")
-    palabras = [p for p in t.split() if p not in ("unk", "[unk]")]
+    palabras = [p for p in t.split() if p not in RUIDO_VOZ]
     if not palabras:
         return False
-
-    prefijos = ("lyri", "liri", "lyr", "iris", "lira", "liras", "sris", "silvest", "sylvest", "silvi")
+    objetivo = normalizar(objetivo)
     for i, p in enumerate(palabras):
-        if p in PALABRAS_EXCLUIDAS:
-            continue
-        if p.startswith(prefijos):
+        if _es_candidata(p, objetivo, umbral):
             return True
-        if difflib.SequenceMatcher(None, p, objetivo).ratio() >= umbral:
+        if i + 1 < len(palabras) and _es_candidata(p + palabras[i + 1], objetivo, umbral):
             return True
-        if difflib.SequenceMatcher(None, p, OBJETIVO_SECUNDARIO).ratio() >= umbral:
-            return True
-        if i + 1 < len(palabras):
-            par = p + palabras[i + 1]
-            if par in PALABRAS_EXCLUIDAS:
-                continue
-            if par.startswith(prefijos):
-                return True
-            if difflib.SequenceMatcher(None, par, objetivo).ratio() >= umbral:
-                return True
-            if difflib.SequenceMatcher(None, par, OBJETIVO_SECUNDARIO).ratio() >= umbral:
-                return True
     return False
 
 
@@ -113,6 +126,7 @@ class PalabraClave:
         self.gramatica = ""
         self.palabras_validas = []
         self.hilo = None
+        self._log_escuchando = False
         self._cargar_modelo()
 
     def _cargar_modelo(self):
@@ -162,11 +176,9 @@ class PalabraClave:
         activo = descansando or (self.siempre_atenta and not conversacion)
         if not activo:
             return False
-        # Detener si la voz está ocupada, si Whisper graba o si no puede hablar sola
+        # Solo bloqueos reales: voz ocupada o Whisper grabando. El modo estudio NO bloquea.
         voz_ocupada = self.app.voz.ocupada() if hasattr(self.app, "voz") and hasattr(self.app.voz, "ocupada") else False
-        escuchando = getattr(self.app, "escuchando", False)
-        puede_hablar = self.app.puede_hablar_sola() if hasattr(self.app, "puede_hablar_sola") else True
-        if voz_ocupada or escuchando or not puede_hablar:
+        if voz_ocupada or getattr(self.app, "escuchando", False):
             return False
         return True
 
@@ -185,7 +197,6 @@ class PalabraClave:
 
         rate = 16000
         bloque = int(rate * 0.1)  # 1600 muestras = 100 ms
-        ultimo_log = ""
 
         while self.vivo:
             if not self.debe_escuchar():
@@ -202,6 +213,10 @@ class PalabraClave:
                 if not self.vivo or not self.debe_escuchar():
                     continue
 
+                if not self._log_escuchando:
+                    self._log_escuchando = True
+                    print("[palabra_clave] escuchando 'Lyris' (Vosk offline)", flush=True)
+
                 # kaldiRecognizer con gramática restringida
                 if self.gramatica:
                     rec = vosk.KaldiRecognizer(self.modelo, rate, self.gramatica)
@@ -216,32 +231,17 @@ class PalabraClave:
                         if not datos:
                             continue
 
-                        detectado = False
                         if rec.AcceptWaveform(bytes(datos)):
-                            res = json.loads(rec.Result() or "{}")
-                            texto = res.get("text", "").strip()
-                            if texto and texto != ultimo_log:
-                                print(f"[vosk] final: {texto}", flush=True)
-                                ultimo_log = texto
-                            if self._coincide(texto):
-                                detectado = True
+                            texto = json.loads(rec.Result() or "{}").get("text", "")
                         else:
-                            res = json.loads(rec.PartialResult() or "{}")
-                            texto = res.get("partial", "").strip()
-                            if texto and texto != ultimo_log:
-                                print(f"[vosk] parcial: {texto}", flush=True)
-                                ultimo_log = texto
-                            if self._coincide(texto):
-                                detectado = True
-
-                        if detectado:
-                            print(f"[vosk] ¡Palabra clave detectada!: {texto}", flush=True)
+                            texto = json.loads(rec.PartialResult() or "{}").get("partial", "")
+                        texto = (texto or "").strip()
+                        if texto and self._coincide(texto):
                             rec.Reset()
-                            ultimo_log = ""
-                            self._disparar()
+                            self._disparar(texto)
                             time.sleep(0.5)
                             break
-            except Exception as e:
+            except Exception:
                 time.sleep(0.2)
             finally:
                 self.app.oido.bloqueo.release()
@@ -255,16 +255,21 @@ class PalabraClave:
             objetivo = OBJETIVO
         return coincide_palabra(texto, objetivo, UMBRAL_RATIO)
 
-    def _disparar(self):
+    def _disparar(self, texto=""):
         # Solo enviar evento a la cola de la app. NO tocar Qt desde este hilo.
         if getattr(self.app, "voz_silenciada", False):
             return
         if getattr(self.app, "musica_activa", False):
             return
         if self.app.descansando:
-            self.app.cola.put(("despertar", None))
+            evento = ("despertar", None)
         elif self.siempre_atenta and not self.app.conversacion:
-            self.app.cola.put(("alternar_conversacion", "palabra_clave_vosk"))
+            evento = ("alternar_conversacion", "palabra_clave_vosk")
+        else:
+            return
+        if texto:
+            print(f"[palabra_clave] candidata '{texto}' -> {evento[0]}", flush=True)
+        self.app.cola.put(evento)
 
     def detener(self):
         self.vivo = False
