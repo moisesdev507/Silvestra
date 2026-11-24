@@ -10,10 +10,11 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QApplication, QWidget
 
 import cara_dibujo
+import cara_nucleo
 import conversacion
 import estado
 import eventos
@@ -65,6 +66,13 @@ class LienzoNucleo(QWidget):
         self.nivel_volumen = estado.get("nivel", 0.5)
         self.voz_silenciada = estado.get("silenciada", False)
         self._ref_voz = None
+        self._nivel_suave = 0.0
+        self._color_r = float(cara_nucleo.CELESTE.red())
+        self._color_g = float(cara_nucleo.CELESTE.green())
+        self._color_b = float(cara_nucleo.CELESTE.blue())
+        self._energia_suave = 0.0
+        self._radio_suave = 52.0
+        self._sonrisa_suave = 0.0
 
     def paintEvent(self, _evento):
         cara_dibujo.pintar(self)
@@ -160,6 +168,51 @@ class TestEstadoVisualLyris(unittest.TestCase):
                 self.assertEqual(cara_dibujo.color_estado(
                     lienzo.viva, lienzo.escuchando, lienzo.hablando,
                     silenciada=lienzo.voz_silenciada), esperado)
+
+    def test_interpolacion_suave_de_color_energia_y_radio(self):
+        QApplication.instance() or QApplication([])
+
+        def canales(color):
+            return (color.red(), color.green(), color.blue())
+
+        lienzo = LienzoNucleo()
+        # Primer frame: sigue cerca de celeste, nunca salta a ámbar.
+        primer = cara_nucleo.color_suavizado(lienzo, cara_nucleo.AMBAR)
+        self.assertNotEqual(canales(primer), canales(cara_nucleo.AMBAR))
+        self.assertLess(primer.red(), cara_nucleo.AMBAR.red())
+        for _ in range(80):
+            actual = cara_nucleo.color_suavizado(lienzo, cara_nucleo.AMBAR)
+        self.assertEqual(canales(actual), canales(cara_nucleo.AMBAR))
+
+        # La vuelta a reposo y a silenciada también es progresiva.
+        vuelta = cara_nucleo.color_suavizado(lienzo, cara_nucleo.CELESTE)
+        self.assertNotEqual(canales(vuelta), canales(cara_nucleo.CELESTE))
+        for _ in range(80):
+            actual = cara_nucleo.color_suavizado(lienzo, cara_nucleo.CELESTE)
+        self.assertEqual(canales(actual), canales(cara_nucleo.CELESTE))
+        for _ in range(80):
+            actual = cara_nucleo.color_suavizado(lienzo, cara_dibujo.GRIS)
+        self.assertEqual(canales(actual), canales(cara_dibujo.GRIS))
+
+        # Energía y radio aumentan por frames, no de golpe al activar escucha.
+        lienzo.escuchando = True
+        lienzo.nivel_volumen = 0.9
+        imagen = QImage(cara_dibujo.TAM, cara_dibujo.TAM, QImage.Format_ARGB32)
+        imagen.fill(Qt.transparent)
+        painter = QPainter(imagen)
+        try:
+            cara_nucleo.dibujar(painter, lienzo, cara_nucleo.AMBAR, 1.0,
+                                cara_dibujo.TAM)
+            energia_1, radio_1 = lienzo._energia_suave, lienzo._radio_suave
+            self.assertGreater(energia_1, 0.0)
+            self.assertLess(energia_1, 1.0)
+            for _ in range(30):
+                cara_nucleo.dibujar(painter, lienzo, cara_nucleo.AMBAR, 1.1,
+                                    cara_dibujo.TAM)
+            self.assertGreater(lienzo._energia_suave, energia_1)
+            self.assertGreater(lienzo._radio_suave, radio_1)
+        finally:
+            painter.end()
 
     def test_cierre_tras_respuesta_por_wakeword(self):
         app = self._app()

@@ -139,6 +139,36 @@ class TestHotfixDeepgramSTT(unittest.TestCase):
         self.assertNotIn(self.clave, salida.getvalue())
         self.assertIn("deepgram=", salida.getvalue())
 
+    def test_200_vacio_en_clip_corto_no_llama_a_whisper(self):
+        oido, cliente = self._oido()
+        post = Mock(return_value=RespuestaDG(200, texto="", duracion=1.0))
+        with self._con_clave(), patch.object(oido_deepgram.httpx, "post", post):
+            with contextlib.redirect_stdout(io.StringIO()) as salida:
+                resultado = oido.escuchar()
+
+        self.assertIsNone(resultado)
+        self.assertIsNone(cliente.kwargs)
+        self.assertEqual(post.call_count, 1)
+        self.assertIn("sin Whisper", salida.getvalue())
+
+    def test_200_vacio_en_clip_largo_si_cae_a_whisper(self):
+        oido, cliente = self._oido()
+        post = Mock(return_value=RespuestaDG(200, texto="", duracion=2.5))
+        with self._con_clave(), patch.object(oido_deepgram.httpx, "post", post):
+            resultado = oido.escuchar()
+
+        self.assertEqual(resultado, TEXTO_WHISPER)
+        self.assertIsNotNone(cliente.kwargs)
+
+    def test_error_de_red_deepgram_mantiene_fallback_a_whisper(self):
+        oido, cliente = self._oido()
+        post = Mock(side_effect=httpx.ConnectError("sin red"))
+        with self._con_clave(), patch.object(oido_deepgram.httpx, "post", post):
+            resultado = oido.escuchar()
+
+        self.assertEqual(resultado, TEXTO_WHISPER)
+        self.assertIsNotNone(cliente.kwargs)
+
     def test_clave_y_modelo_desde_config_tienen_prioridad(self):
         oido, cliente = self._oido()
         modelo_config = "nova-3-config"

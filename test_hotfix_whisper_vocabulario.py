@@ -12,6 +12,7 @@ from unittest.mock import patch
 import numpy as np
 
 import oido as oido_mod
+import oido_deepgram
 from oido import Oido, PROMPT_WHISPER
 
 TERMINOS = ("Lyris", "Visual Studio Code")
@@ -88,6 +89,9 @@ class TestWhisperVocabulario(unittest.TestCase):
             patch.object(oido_mod, "FlujoMicrofono", FlujoFalso),
             patch.object(oido_mod, "DetectorVozSilero", VadFalso),
             patch.dict(sys.modules, {"oido_feedback": SILENCIOSO}),
+            # Estos tests exercitan el prompt de Whisper: Deepgram no debe
+            # interferir aunque haya clave configurada en el entorno.
+            patch.object(oido_deepgram, "transcribir", lambda *_a: None),
         ):
             parche.start()
             self.addCleanup(parche.stop)

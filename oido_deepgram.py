@@ -12,6 +12,7 @@ import httpx
 URL = "https://api.deepgram.com/v1/listen"
 KEYTERM = "Lyris:5"
 TIMEOUT = 6.0
+CLIP_CORTO_MAX = 1.25
 _bloqueo = threading.RLock()
 _desactivado = False
 
@@ -80,4 +81,12 @@ def transcribir(wav_bytes):
     except Exception:
         return None
     texto = " ".join(str(texto or "").split())
-    return (texto, segundos) if texto else None
+    if texto:
+        return (texto, segundos)
+    if segundos <= CLIP_CORTO_MAX:
+        # Nova-3 ya evaluó el clip: devolver ("", duración) evita el fallback
+        # a Groq Whisper (~2 s) en palabras sueltas o ruido breve.
+        print(f"[oido] Deepgram 200 vacío en clip corto ({segundos:.2f}s): sin Whisper",
+              flush=True)
+        return ("", segundos)
+    return None

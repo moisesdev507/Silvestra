@@ -35,6 +35,12 @@ def _asegurar_atributos(cara):
     if not getattr(cara, "_nucleo_inicializado", False):
         cara._nucleo_inicializado = True
         cara._nivel_suave = 0.0
+        cara._color_r = float(cara_nucleo.CELESTE.red())
+        cara._color_g = float(cara_nucleo.CELESTE.green())
+        cara._color_b = float(cara_nucleo.CELESTE.blue())
+        cara._energia_suave = 0.0
+        cara._radio_suave = 52.0
+        cara._sonrisa_suave = 0.0
     if not hasattr(cara, "t0"):
         cara.t0 = time.time()
     valores = {
