@@ -133,6 +133,14 @@ class Cerebro:
                     contexto_adicional = (contexto_adicional + "\n" + formatear_plan(plan)).strip()[:2800]
             except Exception as exc:
                 print(f"[cerebro] razonamiento de memoria no disponible ({type(exc).__name__})", flush=True)
+        if not es_invitado:
+            try:
+                import memoria_persistente as memoria_guardada
+                recuerdos = memoria_guardada.contexto_para_prompt(texto_actual)
+                if recuerdos:
+                    contexto_adicional = (contexto_adicional + "\n" + recuerdos).strip()
+            except Exception:
+                pass
         return construir_prompt(self.memoria, texto_actual, self._obtener_historial_podado(),
             es_invitado=es_invitado, contexto_adicional=contexto_adicional,
             paquete_memoria=paquete_memoria, contexto_engine=contexto_engine)

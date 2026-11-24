@@ -8,6 +8,7 @@ que se cierra de inmediato y emite ``fin_voz`` al terminar, sin dejar
 import time
 
 from cerebro_parser import limpiar_etiquetas
+import voz_stream
 
 
 def _suelta(app, frase, emo, al_terminar):
@@ -16,9 +17,7 @@ def _suelta(app, frase, emo, al_terminar):
     if not frase:
         al_terminar()
         return
-    flujo = app.voz.flujo(al_terminar, emocion=emo or "neutral")
-    flujo.agregar(frase, emocion=emo)
-    flujo.cerrar()
+    voz_stream.hablar_en_bloques(app.voz, frase, al_terminar, emo or "neutral")
     if getattr(app, "cara", None):
         app.cara.decir(frase, None, emocion=emo)
 

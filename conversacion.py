@@ -17,6 +17,17 @@ def normalizar(texto):
     return "".join(c for c in t if unicodedata.category(c) != "Mn")
 
 
+def _poner_frases(app, frase):
+    """Publica cada oración por separado para hablar la primera sin esperar al resto."""
+    try:
+        import voz_stream
+        texto, emo = (frase[0], frase[1]) if isinstance(frase, (tuple, list)) else (frase, None)
+        for bloque in voz_stream.oraciones(texto):
+            app.cola.put(("frase", (bloque, emo) if emo else bloque))
+    except Exception:
+        app.cola.put(("frase", frase))
+
+
 def es_eco(app, texto):
     """True si lo que 'oyó' es ella misma (su propia voz por los parlantes)."""
     a = normalizar(texto).strip()
@@ -352,7 +363,7 @@ def pensar(app, texto):
                     app.metricas_turno["t_primer_token"] = time.time()
 
         resultado = respuesta_flujo.responder_flujo(
-            app.cerebro, texto, lambda f: app.cola.put(("frase", f)), on_primer_token=_on_token
+            app.cerebro, texto, lambda f: _poner_frases(app, f), on_primer_token=_on_token
         )
         if timer_espera:
             timer_espera.cancel()

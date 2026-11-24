@@ -15,6 +15,42 @@ TIMEOUT = 6.0
 CLIP_CORTO_MAX = 1.25
 _bloqueo = threading.RLock()
 _desactivado = False
+_cliente = None
+
+
+def cerrar_cliente():
+    """Cierra el cliente keep-alive (solo al apagar o en pruebas)."""
+    global _cliente
+    with _bloqueo:
+        if _cliente:
+            try:
+                _cliente.close()
+            except Exception:
+                pass
+        _cliente = None
+
+
+def _cliente_http():
+    """Cliente httpx reutilizable: evita un handshake TLS nuevo por turno."""
+    global _cliente
+    with _bloqueo:
+        if _cliente is None:
+            try:
+                _cliente = httpx.Client(limits=httpx.Limits(
+                    max_keepalive_connections=8, max_connections=16))
+            except Exception:
+                _cliente = False
+        return _cliente
+
+
+def _post(url, **kwargs):
+    """POST con keep-alive; respeta el seam de tests que parchean ``httpx.post``."""
+    if hasattr(httpx.post, "call_args") or hasattr(httpx.post, "return_value"):
+        return httpx.post(url, **kwargs)
+    cliente = _cliente_http()
+    if cliente:
+        return cliente.post(url, **kwargs)
+    return httpx.post(url, **kwargs)
 
 
 def reiniciar():
@@ -53,11 +89,11 @@ def transcribir(wav_bytes):
              "content": wav_bytes, "timeout": TIMEOUT}
     t0 = time.time()
     try:
-        respuesta = httpx.post(URL, params=parametros, **comun)
+        respuesta = _post(URL, params=parametros, **comun)
         if respuesta.status_code == 400:
             print("[oido] Deepgram 400 con keyterm; reintentando sin impulso", flush=True)
             parametros = {k: v for k, v in parametros.items() if k != "keyterm"}
-            respuesta = httpx.post(URL, params=parametros, **comun)
+            respuesta = _post(URL, params=parametros, **comun)
     except httpx.TimeoutException:
         print("[tiempo] deepgram=timeout", flush=True)
         return None

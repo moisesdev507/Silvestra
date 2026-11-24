@@ -129,6 +129,13 @@ def atender_directiva(memoria, texto):
 
 
 def atender_turno(cerebro, texto):
+    # Persistencia ligera: órdenes explícitas aunque no activen una respuesta directa.
+    if not getattr(cerebro, "turno_invitado", False):
+        try:
+            import memoria_persistente
+            memoria_persistente.extraer_y_guardar_automatico(texto)
+        except Exception:
+            pass
     if getattr(cerebro, "turno_invitado", False) and detectar_directiva(texto)["accion"] in ("guardar", "revisar", "corregir"):
         return "No puedo acceder a memoria privada en un turno invitado.", None, "neutral"
     resultado = atender_directiva(cerebro.memoria, texto)

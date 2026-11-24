@@ -55,6 +55,7 @@ perfil_conversacion.json
 *.db
 *.sqlite
 silvestra.db
+memoria_jarvis.db
 
 # Configuraciones de editores de código (opcional/seguro)
 .vscode/

@@ -19,7 +19,7 @@ class DetectorVozSilero:
         ruta_modelo=None,
         sample_rate=16000,
         threshold=0.40,
-        min_silence_duration=0.85,
+        min_silence_duration=0.50,
         min_speech_duration=0.20,
         max_speech_duration=15.0,
         buffer_size=20.0,
@@ -155,7 +155,7 @@ class DetectorVozSilero:
                 self._fb_silencio_count = 0
             elif self._fb_hablando:
                 self._fb_silencio_count += 1
-                if self._fb_silencio_count >= 16:  # ~0.8s de silencio
+                if self._fb_silencio_count >= 10:  # ~0.5s de silencio
                     self._fb_segmento_listo = True
 
         hablando = self.detectando_voz()
