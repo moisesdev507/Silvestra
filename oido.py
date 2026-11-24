@@ -6,6 +6,7 @@ import numpy as np
 
 import config
 import oido_deepgram
+import oido_filtro
 from config import MODELO_VOZ
 from oido_flujo import (
     CORTESIAS_AMBIGUAS,
@@ -54,24 +55,9 @@ def _barge_in(app, datos, comandos_corte, rec_vosk):
         return False
 
 
-def _es_eco_prompt(texto, prompt):
-    """Descarta ecos del prompt de Whisper y bucles de repetición en silencios."""
-    t = " ".join(str(texto or "").lower().split())
-    p = " ".join(str(prompt or "").lower().split())
-    if not t:
-        return True
-    if es_bucle_alucinacion(t):
-        return True
-    if p and (t == p or (len(t) >= 10 and p.startswith(t))
-              or (len(t) >= 40 and (p.startswith(t) or t in p))):
-        return True
-    tokens = re.findall(r"\w+", t, flags=re.UNICODE)
-    if len(tokens) >= 6:
-        if any(tokens[i] == tokens[i - 1] == tokens[i - 2] for i in range(2, len(tokens))):
-            return True
-        if len(tokens) <= 14 and any(tokens.count(w) >= 4 for w in set(tokens) if len(w) >= 4):
-            return True
-    return False
+def _es_eco_prompt(texto_original, texto, prompt, ultimo_dicho=""):
+    """Delega en oido_filtro: solo eco real del TTS o bucle degenerado."""
+    return oido_filtro.debe_descartar(texto_original, texto, prompt, ultimo_dicho)
 
 
 def motivo_descarte_transcripcion(texto, rms, r=None):
@@ -356,6 +342,8 @@ class Oido:
                 raise RuntimeError("No pude entender el audio: " + str(e)[:120])
             texto = (r.text or "").strip()
 
+        texto_original = texto
+        texto = oido_filtro.normalizar_transcripcion(texto)
         self.t_texto = time.time()
         if len(texto) < 3:
             print(f"[oido] transcripcion='{texto}' descartada motivo=demasiado_corta", flush=True)
@@ -364,7 +352,8 @@ class Oido:
         if motivo:
             print(f"[oido] transcripcion='{texto}' descartada motivo={motivo}", flush=True)
             return None
-        if _es_eco_prompt(texto, prompt_whisper):
+        if _es_eco_prompt(texto_original, texto, prompt_whisper,
+                          getattr(app, "ultimo_dicho", "")):
             print(f"[oido] transcripcion='{texto}' descartada motivo=eco_prompt_o_repeticion", flush=True)
             return None
         valida, motivo_whisper = validar_calidad_whisper(r, texto)
