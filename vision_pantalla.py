@@ -1,7 +1,7 @@
 """Módulo de visión de pantalla real bajo demanda para Silvestra / Lyris.
 
 Captura la pantalla en memoria (mss / Pillow), comprime a JPEG base64 (sin archivos en disco),
-respeta el modo Privado y consulta a proveedores multimodales configurados.
+respeta el modo Privado y consulta a Gemini Flash vía API REST directa (urllib).
 """
 import base64
 import io
@@ -9,13 +9,15 @@ import json
 import os
 import re
 import threading
-import time
+import urllib.error
+import urllib.parse
+import urllib.request
 
 _bloqueo = threading.RLock()
 
 
 def es_modo_privado(app=None):
-    """Verifica si el modo privado está activo en app, ecosistema o estado.json."""
+    """Verifica si el modo privado está activo en app o estado.json."""
     if app:
         if getattr(app, "modo_privado", False):
             return True
@@ -36,8 +38,8 @@ def es_modo_privado(app=None):
     return False
 
 
-def capturar_pantalla_b64(ancho_max=1280, calidad=75):
-    """Captura el monitor principal en memoria y lo devuelve como cadena JPEG base64 (cero archivos en disco)."""
+def capturar_pantalla_b64(ancho_max=1280, calidad=70):
+    """Captura el monitor principal en memoria y lo devuelve como JPEG base64 (< 150 KB)."""
     with _bloqueo:
         img = None
         try:
@@ -51,8 +53,7 @@ def capturar_pantalla_b64(ancho_max=1280, calidad=75):
             try:
                 from PIL import ImageGrab
                 img = ImageGrab.grab()
-            except Exception as e:
-                print(f"[vision_pantalla] Error en captura: {e}", flush=True)
+            except Exception:
                 return None
 
         if not img:
@@ -69,222 +70,147 @@ def capturar_pantalla_b64(ancho_max=1280, calidad=75):
         return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
-def obtener_ventana_activa(app=None):
-    """Obtiene el título real de la ventana activa en primer plano de Windows."""
-    # 1. Telemetría de puente multimodal en app
-    if app:
-        try:
-            mm = getattr(app, "sistema_multimodal", None) or getattr(app, "multimodal", None)
-            if mm and hasattr(mm, "estado_salud"):
-                v = mm.estado_salud().get("ultima_ventana_externa")
-                if v and isinstance(v, dict) and v.get("titulo"):
-                    return str(v["titulo"]).strip()
-        except Exception:
-            pass
-
-    # 2. Memoria de trabajo corta (cerebro_trabajo)
-    try:
-        import cerebro_trabajo
-        mem = cerebro_trabajo.obtener_memoria_trabajo()
-        ult_v = mem.get("ultima_ventana")
-        if ult_v and isinstance(ult_v, dict) and ult_v.get("titulo"):
-            return str(ult_v["titulo"]).strip()
-    except Exception:
-        pass
-
-    # 3. Enumeración de ventana externa win32 (excluye el proceso de la app)
-    try:
-        from multimodal_ventana_win32 import enumerar_ventana_externa
-        v_ext = enumerar_ventana_externa()
-        if v_ext and isinstance(v_ext, dict) and v_ext.get("titulo"):
-            return str(v_ext["titulo"]).strip()
-    except Exception:
-        pass
-
-    # 4. Sensor nativo de contexto de Windows
-    try:
-        import contexto_windows
-        ctx = contexto_windows.obtener_contexto_windows()
-        if ctx and isinstance(ctx, dict) and ctx.get("titulo"):
-            return str(ctx["titulo"]).strip()
-    except Exception:
-        pass
-
-    # 5. Fallback win32gui
-    try:
-        import win32gui
-        hwnd = win32gui.GetForegroundWindow()
-        if hwnd:
-            tit = win32gui.GetWindowText(hwnd)
-            if tit and str(tit).strip():
-                return str(tit).strip()
-    except Exception:
-        pass
-
-    return "Escritorio de Windows"
+def _limpiar_para_voz(texto: str) -> str:
+    """Elimina markdown, URLs, listas y asteriscos para voz hablada fluida."""
+    t = str(texto or "")
+    t = re.sub(r"https?://\S+", "", t)
+    t = re.sub(r"\[\s*[^\]]*\s*\]", "", t)
+    t = re.sub(r"[*_#`~>|]", " ", t)
+    t = re.sub(r"^\s*[-•\d+\.]+\s+", "", t, flags=re.M)
+    t = " ".join(t.split())
+    return t.strip()
 
 
-def analizar_imagen_multimodal(b64_img, pregunta, titulo_ventana="", timeout_seg=15.0):
-    """Envía la imagen base64 y el contexto de ventana al proveedor multimodal configurado."""
+def _llamar_gemini(modelo: str, clave: str, b64_img: str, prompt_texto: str, timeout: float = 8.0) -> str:
+    """Envía la imagen a Gemini REST generateContent con timeout controlado."""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={clave}"
+    payload = {
+        "contents": [{
+            "parts": [
+                {"text": prompt_texto},
+                {"inline_data": {"mime_type": "image/jpeg", "data": b64_img}},
+            ]
+        }],
+        "generationConfig": {"maxOutputTokens": 250, "temperature": 0.4},
+    }
+    cuerpo = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=cuerpo,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        datos = json.loads(resp.read().decode("utf-8"))
+    cands = datos.get("candidates", [])
+    if cands:
+        parts = cands[0].get("content", {}).get("parts", [])
+        if parts and "text" in parts[0] and parts[0]["text"].strip():
+            return parts[0]["text"].strip()
+    return ""
+
+
+def analizar_pantalla(pregunta: str = "") -> str:
+    """Analiza la pantalla principal con Gemini Flash y devuelve respuesta hablada estilo F.R.I.D.A.Y."""
+    if es_modo_privado():
+        return "No puedo mirar la pantalla mientras el modo Privado está activo."
+
+    b64_img = capturar_pantalla_b64(ancho_max=1280, calidad=70)
     if not b64_img:
-        return "No pude capturar la pantalla para analizarla."
+        return "No pude capturar la pantalla en este momento."
 
-    import config
-    import sesion_http
+    clave = ""
+    try:
+        import config
+        clave = getattr(config, "CLAVE_GOOGLE", "") or ""
+    except Exception:
+        clave = ""
 
-    session = sesion_http.obtener_sesion()
+    if not clave or not str(clave).strip():
+        return "La visión de pantalla no está configurada: falta la clave de Google Gemini."
 
-    prompt_texto = (
-        f"Contexto: El usuario está viendo la ventana activa: '{titulo_ventana}'.\n"
-        f"Pregunta/Petición: {pregunta}\n"
-        "Instrucción: Eres Lyris, asistente inteligente personal. Responde en español de forma directa, "
-        "concisa, natural y útil sobre lo que ves en la pantalla."
+    # Modelos configurados o fallback seguro a Gemini Flash
+    modelos_candidatos = []
+    try:
+        import config
+        m_cfg = getattr(config, "MODELOS_VISION", None)
+        if isinstance(m_cfg, (list, tuple)):
+            modelos_candidatos.extend(m_cfg)
+        m_single = getattr(config, "MODELO_VISION", "")
+        if m_single and m_single not in modelos_candidatos:
+            modelos_candidatos.append(m_single)
+    except Exception:
+        pass
+
+    for m_def in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"):
+        if m_def not in modelos_candidatos:
+            modelos_candidatos.append(m_def)
+
+    peticion = str(pregunta or "").strip()
+    if not peticion:
+        peticion = "Describe lo principal que ves en la pantalla, enfocándote en errores o contenido activo."
+
+    prompt = (
+        f"Petición del usuario: {peticion}\n"
+        "Instrucción: Eres Lyris, asistente inteligente tipo F.R.I.D.A.Y. "
+        "Observa la captura de pantalla y responde de forma directa en español en máximo 2 oraciones cortas "
+        "(entre 15 y 35 palabras en total). No uses markdown, no uses listas con viñetas, no leas URLs ni código "
+        "kilométrico: sintetiza exactamente lo que el usuario necesita saber para ser leído en voz alta."
     )
 
-    # 1. Candidato Principal: Google Gemini con API nativa generateContent (inline_data)
-    clave_google = getattr(config, "CLAVE_GOOGLE", "") or os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
-    if clave_google:
-        modelos_gemini = ("gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-flash-latest")
-        for mod in modelos_gemini:
-            try:
-                url_gem = f"https://generativelanguage.googleapis.com/v1beta/models/{mod}:generateContent?key={clave_google}"
-                payload_gem = {
-                    "contents": [{
-                        "parts": [
-                            {"text": prompt_texto},
-                            {
-                                "inline_data": {
-                                    "mime_type": "image/jpeg",
-                                    "data": b64_img,
-                                }
-                            },
-                        ]
-                    }],
-                    "generationConfig": {"maxOutputTokens": 600},
-                }
-                r = session.post(url_gem, headers={"Content-Type": "application/json"}, json=payload_gem, timeout=timeout_seg)
-                if r.status_code == 200:
-                    datos = r.json()
-                    cands = datos.get("candidates", [])
-                    if cands:
-                        partes = cands[0].get("content", {}).get("parts", [])
-                        if partes and "text" in partes[0] and partes[0]["text"].strip():
-                            return str(partes[0]["text"]).strip()
-            except Exception as e:
-                print(f"[vision_pantalla] Fallo Gemini REST ({mod}): {e}", flush=True)
-
-            try:
-                url_oa = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-                headers_oa = {"Authorization": f"Bearer {clave_google}", "Content-Type": "application/json"}
-                payload_oa = {
-                    "model": mod,
-                    "messages": [{
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt_texto},
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}},
-                        ],
-                    }],
-                    "max_tokens": 500,
-                }
-                r = session.post(url_oa, headers=headers_oa, json=payload_oa, timeout=timeout_seg)
-                if r.status_code == 200:
-                    datos = r.json()
-                    contenido = datos.get("choices", [{}])[0].get("message", {}).get("content", "")
-                    if contenido and str(contenido).strip():
-                        return str(contenido).strip()
-            except Exception:
-                pass
-
-    # 2. Candidato Groq Vision
-    clave_groq = getattr(config, "CLAVE", "") or os.environ.get("GROQ_API_KEY", "")
-    if clave_groq:
-        modelos_groq = getattr(config, "MODELOS_VISION", ["qwen/qwen3.8-27b"])
-        for mod in modelos_groq:
-            try:
-                headers = {"Authorization": f"Bearer {clave_groq}", "Content-Type": "application/json"}
-                payload = {
-                    "model": mod,
-                    "messages": [{
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt_texto},
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}},
-                        ],
-                    }],
-                    "max_tokens": 500,
-                }
-                r = session.post(
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    headers=headers,
-                    json=payload,
-                    timeout=timeout_seg,
-                )
-                if r.status_code == 200:
-                    datos = r.json()
-                    contenido = datos.get("choices", [{}])[0].get("message", {}).get("content", "")
-                    if contenido and str(contenido).strip():
-                        return str(contenido).strip()
-            except Exception as e:
-                print(f"[vision_pantalla] Fallo Groq ({mod}): {e}", flush=True)
-
-    # 3. Candidato OpenRouter Vision
-    clave_or = getattr(config, "CLAVE_OPENROUTER", "")
-    if clave_or:
+    for mod in modelos_candidatos:
         try:
-            headers = {"Authorization": f"Bearer {clave_or}", "Content-Type": "application/json"}
-            payload = {
-                "model": "google/gemini-flash-1.5",
-                "messages": [{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt_texto},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}},
-                    ],
-                }],
-                "max_tokens": 500,
-            }
-            r = session.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=payload, timeout=timeout_seg)
-            if r.status_code == 200:
-                datos = r.json()
-                contenido = datos.get("choices", [{}])[0].get("message", {}).get("content", "")
-                if contenido and str(contenido).strip():
-                    return str(contenido).strip()
-        except Exception as e:
-            print(f"[vision_pantalla] Fallo OpenRouter: {e}", flush=True)
+            texto = _llamar_gemini(mod, clave, b64_img, prompt, timeout=8.0)
+            if texto:
+                limpio = _limpiar_para_voz(texto)
+                if limpio:
+                    return limpio
+        except urllib.error.HTTPError as e:
+            continue
+        except (urllib.error.URLError, TimeoutError):
+            continue
+        except Exception:
+            continue
 
-    return f"He capturado la pantalla de '{titulo_ventana}', pero los proveedores de visión multimodales no están disponibles en este momento."
+    return "No pude obtener una respuesta visual de Gemini en este momento."
 
 
 def capturar_y_analizar_pantalla(pregunta, app=None):
-    """Punto de entrada principal para análisis visual bajo demanda."""
+    """Punto de entrada compatible con respuesta_flujo.py y tests existentes."""
     if es_modo_privado(app):
         return False, "No puedo mirar la pantalla mientras el modo Privado está activo."
-
-    b64 = capturar_pantalla_b64()
-    if not b64:
-        return False, "No pude capturar la pantalla del equipo."
-
-    titulo = obtener_ventana_activa(app=app)
-    resultado = analizar_imagen_multimodal(b64, pregunta, titulo_ventana=titulo)
-    return True, resultado
+    res = analizar_pantalla(pregunta)
+    ok = not res.startswith("No puedo") and not res.startswith("No pude") and not res.startswith("La visión")
+    return ok, res
 
 
 def detectar_peticion_vision(texto):
-    """Detecta cualquier petición natural de inspección visual de la pantalla."""
-    if not texto or len(str(texto).strip()) < 5:
+    """Detecta peticiones naturales de inspección visual de pantalla."""
+    if not texto or len(str(texto).strip()) < 4:
         return False
     t = str(texto).lower()
     patrones = (
         r"mira (?:la |mi )?pantalla",
-        r"puedes ver (?:la |mi )?pantalla",
-        r"qu[eé] ves(?: aqu[ií]| aki| en (?:la )?pantalla)?",
+        r"(?:ves|puedes ver) (?:la |mi )?pantalla",
+        r"qu[eé] ves(?: aqu[ií]| en (?:la |mi )?pantalla)?",
         r"qu[eé] (?:errores|fallos|problemas) (?:que )?encuentras",
+        r"lee (?:este )?error",
+        r"qu[eé] error (?:sale|tengo) aqu[ií]",
+        r"qu[eé] error es (?:este)?",
+        r"revisa (?:mi |el |este )?(?:c[oó]digo|error|pantalla)",
         r"revisa (?:la |mi )?pantalla",
-        r"revisa (?:este |mi |la )?(?:error|errores|fallos|"
-        r"diseno|diseño|codigo|c[oó]digo) en (?:la )?pantalla",
         r"analiza lo que tengo abierto",
-        r"qu[eé] opinas de (?:este )?(?:diseno|diseño|codigo|c[oó]digo|pantalla)",
-        r"lee (?:lo que dice en )?(?:la )?pantalla",
+        r"analiza (?:la |mi )?pantalla",
+        r"qu[eé] tengo en (?:la |mi )?pantalla",
     )
     return any(re.search(p, t) for p in patrones)
+
+
+__all__ = [
+    "analizar_pantalla",
+    "capturar_y_analizar_pantalla",
+    "detectar_peticion_vision",
+    "capturar_pantalla_b64",
+    "es_modo_privado",
+    "_limpiar_para_voz",
+]

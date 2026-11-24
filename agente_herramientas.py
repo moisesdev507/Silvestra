@@ -11,6 +11,7 @@ import dev_copiloto as dev
 import google_workspace as google
 import memoria_persistente as memoria
 import busqueda_web as web
+import vision_pantalla as vision
 
 LIMITE = 1600
 _ETIQUETA = re.compile(
@@ -55,6 +56,7 @@ CATALOGO = {
     "resumen_correos": google.resumen_correos,
     "buscar_drive": google.buscar_drive,
     "buscar_web": web.buscar_web,
+    "ver_pantalla": vision.analizar_pantalla,
 }
 
 
@@ -137,6 +139,11 @@ def detectar_intencion(consulta):
                                 "quien gano", "partido de", "resultado de", "que paso con",
                                 "documentacion de", "ultimas noticias")):
         acciones.append(("buscar_web", str(consulta)))
+    if any(x in texto for x in ("mira mi pantalla", "mira la pantalla", "ves mi pantalla",
+                                "ves la pantalla", "que ves", "lee este error", "que error tengo",
+                                "que error sale", "analiza la pantalla", "analiza mi pantalla",
+                                "que tengo en pantalla", "que hay en pantalla")):
+        acciones.append(("ver_pantalla", str(consulta)))
     return acciones[:3]
 
 
