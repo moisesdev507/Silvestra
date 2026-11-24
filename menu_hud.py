@@ -14,6 +14,12 @@ import voz_estilo
 
 MODOS = (("normal", "Normal"), ("programacion", "Código"), ("estudio", "Estudio"))
 
+
+def texto_modo_escucha(activo):
+    """Etiqueta del interruptor de invocación en vivo."""
+    return ('Exigir decir "Lyris" — invocación habitual'
+            if activo else 'Escucha directa (solo tu voz CAM++) — sin decir "Lyris"')
+
 ESTILO_HUD = """
 QDialog { background: rgba(8, 18, 30, 238); color: #E2E8F0;
           border: 1px solid #22D3EE; border-radius: 12px; font-size: 12px; }
@@ -70,10 +76,13 @@ class MenuHUD(QDialog):
         self.combo_estilo.currentIndexChanged.connect(self._on_estilo)
         raiz.addWidget(self.combo_estilo)
 
+        manos = bool(datos.get("palabra_clave", True))
         self.chk_manos = QCheckBox('Escucha manos libres ("Lyris")')
-        self.chk_manos.setChecked(bool(datos.get("palabra_clave", True)))
+        self.chk_manos.setChecked(manos)
         self.chk_manos.stateChanged.connect(self._on_manos)
         raiz.addWidget(self.chk_manos)
+        self.lbl_manos = QLabel(texto_modo_escucha(manos))
+        raiz.addWidget(self.lbl_manos)
 
         self.btn_silenciar = QPushButton("Silenciar micrófono y voz")
         self.btn_silenciar.setCheckable(True)
@@ -116,10 +125,23 @@ class MenuHUD(QDialog):
         activo = self.chk_manos.isChecked()
         datos = estado.cargar()
         datos["palabra_clave"] = activo
+        if not activo:
+            # La escucha directa solo obedece a la voz verificada por CAM++.
+            datos["verificacion_voz_activa"] = True
+            datos["modo_solo_dueno"] = True
         estado.guardar(datos)
+        self.lbl_manos.setText(texto_modo_escucha(activo))
         detector = getattr(self.app, "palabra_clave", None)
         if detector is not None:
             detector.siempre_atenta = activo
+        gestor = getattr(self.app, "invocacion", None)
+        if gestor is not None:
+            gestor.palabra_clave = activo
+        if not activo:
+            verificado = getattr(self.app, "voz_dueno", None)
+            if verificado is not None:
+                verificado.activa = True
+                verificado.modo_solo_dueno = True
 
     def _on_silenciar(self, _checked=None):
         if self.app is None:

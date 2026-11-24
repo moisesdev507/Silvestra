@@ -5,8 +5,10 @@ import time
 
 TIEMPO_ORDEN = 10.0
 TIEMPO_RESPUESTA = 12.0
+TIEMPO_SEGUIMIENTO = 18.0
 DURACION_ECO = 0.4
-FUERTES = {"lyris", "liris", "iris", "lyra", "liria", "lyries", "siris",
+FUERTES = {"lyris", "liris", "lirys", "iris", "lyres", "lirez",
+           "lyra", "liria", "lyries", "siris",
            "lira", "lirio", "lirios", "silvestra", "silvestre"}
 DEBILES = {"luis", "serious"}
 VARIANTES = FUERTES | DEBILES
@@ -78,6 +80,28 @@ def permitir_transcripcion(app):
             or bool(uv.get("es_dueno", True)))
 
 
+def palabra_clave_config():
+    """Lee el interruptor del HUD una sola vez (lo actualiza en vivo el propio HUD)."""
+    try:
+        import estado
+        return bool(estado.cargar().get("palabra_clave", True))
+    except Exception:
+        return True
+
+
+def dueno_verificado(app):
+    """Escucha directa: exige CAM++ positivo cuando la verificación está activa."""
+    vd = getattr(app, "voz_dueno", None)
+    if vd is None or not getattr(vd, "activa", False):
+        return True  # política fail-open si CAM++ no está desplegado
+    try:
+        vd.evaluar_entrada_voz("")
+        uv = getattr(vd, "ultima_verificacion", {})
+        return bool(uv.get("es_dueno", False))
+    except Exception:
+        return False
+
+
 def _sonido(nombre="activar"):
     try:
         import sonidos_ui
@@ -107,13 +131,14 @@ def interceptar(app, tipo, texto):
             or getattr(gestor, "esperando_orden", False)):
         gestor.fin_voz()
         return True
-    if tipo == "oido" and (getattr(gestor, "en_turno", False)
-                           or getattr(gestor, "esperando_orden", False)):
-        if (getattr(gestor, "esperando_orden", False)
-                and not getattr(gestor, "en_turno", False)):
-            gestor._procesar(texto)
-        else:
+    if tipo == "oido" and (
+            getattr(gestor, "en_turno", False)
+            or getattr(gestor, "esperando_orden", False)
+            or getattr(gestor, "seguimiento_activo", False)):
+        if getattr(gestor, "en_turno", False):
             gestor.atender_oido(texto)
+        else:
+            gestor._procesar(texto)
         return True
     return False
 
@@ -130,6 +155,9 @@ class GestorInvocacion:
         self.esperando_orden = False
         self.limite_orden = 0.0
         self.limite_respuesta = 0.0
+        self.palabra_clave = palabra_clave_config()
+        self.seguimiento_activo = False
+        self.limite_seguimiento = 0.0
 
     def iniciar(self):
         with self.bloqueo:
@@ -146,6 +174,7 @@ class GestorInvocacion:
             self.activo = False
             self.en_turno = False
             self.esperando_orden = False
+            self.seguimiento_activo = False
         self.app.invocacion_ambiental = False
         self._reposo_visual()
         hilo = self.hilo
@@ -160,6 +189,7 @@ class GestorInvocacion:
             self.activo = False
             self.en_turno = False
             self.esperando_orden = False
+            self.seguimiento_activo = False
         self.app.invocacion_ambiental = False
         self._reposo_visual()
 
@@ -168,6 +198,7 @@ class GestorInvocacion:
             self.activo = True
             self.en_turno = False
             self.esperando_orden = False
+            self.seguimiento_activo = False
         self.app.invocacion_ambiental = True
         self.iniciar()
 
@@ -194,12 +225,16 @@ class GestorInvocacion:
             self.en_turno = False
             self.esperando_orden = False
             self.limite_orden = 0.0
+            self.seguimiento_activo = False
+            self.limite_seguimiento = 0.0
         self.app.conversacion = False
         self.app.escuchando = False
         self.app.cola.put(("invocacion", "reposo"))
 
     def _puede_capturar(self):
         with self.bloqueo:
+            if self.seguimiento_activo and time.monotonic() >= self.limite_seguimiento:
+                self.seguimiento_activo = False
             if self.en_turno and time.monotonic() >= self.limite_respuesta:
                 self._reposo()  # cerebro sin respuesta hablada: nunca queda amarillo
                 return False
@@ -236,6 +271,14 @@ class GestorInvocacion:
             corto = duracion is not None and 0.0 < float(duracion) < DURACION_ECO
         except (TypeError, ValueError):
             corto = False
+        ahora = time.monotonic()
+        with self.bloqueo:
+            seguimiento = self.seguimiento_activo
+            if seguimiento and ahora >= self.limite_seguimiento:
+                self.seguimiento_activo = False
+                seguimiento = False
+            esperando = self.esperando_orden
+            directo = not self.palabra_clave
         if not texto:
             with self.bloqueo:
                 if self.esperando_orden and time.monotonic() >= self.limite_orden:
@@ -253,10 +296,12 @@ class GestorInvocacion:
                     self.limite_orden = time.monotonic() + TIEMPO_ORDEN
                 self.app.cola.put(("invocacion", "amarillo"))
             return
-        with self.bloqueo:
-            esperando = self.esperando_orden
-        if esperando:
-            # Eco/fragmento corto: se ignora sin cerrar la ventana de 10 s.
+        if directo and dueno_verificado(self.app):
+            if not corto and texto_valido(texto):
+                self._iniciar_turno(texto)
+            return
+        if esperando or seguimiento:
+            # Eco/fragmento corto: se ignora sin cerrar la ventana activa.
             if corto or len(str(texto).strip()) < 3 or not texto_valido(texto):
                 return
             self._iniciar_turno(texto)
@@ -265,6 +310,8 @@ class GestorInvocacion:
         with self.bloqueo:
             self.en_turno = True
             self.esperando_orden = False
+            self.seguimiento_activo = False
+            self.limite_seguimiento = 0.0
         self.app.conversacion = True
         self.app.silencios = 0
         self.limite_respuesta = time.monotonic() + TIEMPO_RESPUESTA
@@ -300,7 +347,13 @@ class GestorInvocacion:
         with self.bloqueo:
             if not (self.en_turno or self.esperando_orden):
                 return
+            respondido = self.en_turno
         self._reposo()
+        if respondido:
+            # Tras responder, 18 s de escucha continua para repreguntas o correcciones.
+            with self.bloqueo:
+                self.seguimiento_activo = True
+                self.limite_seguimiento = time.monotonic() + TIEMPO_SEGUIMIENTO
 
 
 def instalar(app):

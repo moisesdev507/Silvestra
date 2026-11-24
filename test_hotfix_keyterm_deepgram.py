@@ -33,7 +33,7 @@ class TestKeytermDeepgram(unittest.TestCase):
         params = post.call_args.kwargs["params"]
         self.assertEqual((resultado[0], params["model"], params["language"],
                           params["keyterm"]),
-                         ("Lyris, abre el bloc", "nova-3", "es", "Lyris:5"))
+                         ("Lyris, abre el bloc", "nova-3", "es", "Lyris:10,Liris:6,Iris:5"))
         with patch.dict(os.environ, {"LYRIS_DEEPGRAM_LANG": "multi"}), \
                 patch.object(oido_deepgram.httpx, "post",
                              Mock(return_value=RespuestaDG(200))) as post_multi:
@@ -44,7 +44,7 @@ class TestKeytermDeepgram(unittest.TestCase):
         with patch.object(oido_deepgram.httpx, "post", post):
             resultado = oido_deepgram.transcribir(b"RIFFfalso")
         self.assertEqual((resultado[0], post.call_count), ("Lyris, abre el bloc", 2))
-        self.assertEqual(post.call_args_list[0].kwargs["params"]["keyterm"], "Lyris:5")
+        self.assertEqual(post.call_args_list[0].kwargs["params"]["keyterm"], "Lyris:10,Liris:6,Iris:5")
         self.assertNotIn("keyterm", post.call_args_list[1].kwargs["params"])
         self.assertTrue(oido_deepgram.esta_activo())
 

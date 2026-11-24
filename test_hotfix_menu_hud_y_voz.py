@@ -159,6 +159,30 @@ class TestMenuHudYVoz(unittest.TestCase):
         finally:
             primero.close()
 
+    def test_interruptor_escucha_directa_en_vivo(self):
+        app = AppFalsa()
+        app.invocacion = SimpleNamespace(palabra_clave=True)
+        app.voz_dueno.activa = False
+        self._guardar(palabra_clave=True)
+        menu = menu_hud.MenuHUD(app)
+        try:
+            self.assertIn("Exigir decir", menu.lbl_manos.text())
+            menu.chk_manos.setChecked(False)
+            datos = estado.cargar()
+            self.assertFalse(datos["palabra_clave"])
+            self.assertTrue(datos["verificacion_voz_activa"])
+            self.assertTrue(datos["modo_solo_dueno"])
+            self.assertFalse(app.invocacion.palabra_clave)
+            self.assertTrue(app.voz_dueno.activa)
+            self.assertTrue(app.voz_dueno.modo_solo_dueno)
+            self.assertIn("Escucha directa", menu.lbl_manos.text())
+            menu.chk_manos.setChecked(True)
+            self.assertTrue(estado.cargar()["palabra_clave"])
+            self.assertTrue(app.invocacion.palabra_clave)
+            self.assertIn("Exigir decir", menu.lbl_manos.text())
+        finally:
+            menu.close()
+
     def test_cara_qt_tiene_enganche_del_hud(self):
         with open("cara_qt.py", encoding="utf-8") as archivo:
             fuente = archivo.read()

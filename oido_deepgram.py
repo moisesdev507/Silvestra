@@ -10,7 +10,7 @@ import config
 import httpx
 
 URL = "https://api.deepgram.com/v1/listen"
-KEYTERM = "Lyris:5"
+KEYTERM = "Lyris:10,Liris:6,Iris:5"
 TIMEOUT = 6.0
 CLIP_CORTO_MAX = 1.25
 _bloqueo = threading.RLock()

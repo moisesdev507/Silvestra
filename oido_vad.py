@@ -4,7 +4,11 @@ Procesa audio a 16 kHz en ventanas de 512 muestras (32 ms), detecta habla humana
 y entrega segmentos limpios con soporte de fallback por energía RMS.
 """
 import os
+from collections import deque
+
 import numpy as np
+
+PRERROLL_SEG = 0.80  # 800 ms de audio previo al disparo del VAD
 
 
 class DetectorVozSilero:
@@ -37,6 +41,13 @@ class DetectorVozSilero:
         self._detector = None
         self._disponible = False
         self._residuo = np.array([], dtype=np.float32)
+
+        # Pre-roll: retén los últimos 800 ms antes de que Silero dispare, para
+        # que la palabra inicial («Lyris») nunca salga mutilada del segmento.
+        self._pre_roll = deque()
+        self._pre_roll_muestras = int(PRERROLL_SEG * sample_rate)
+        self._pre_roll_congelado = None
+        self._voz_antes = False
 
         # Variables de fallback RMS si el modelo ONNX no está presente
         self._fb_audio = []
@@ -90,6 +101,9 @@ class DetectorVozSilero:
     def reset(self):
         """Reinicia el detector para un nuevo turno de escucha."""
         self._residuo = np.array([], dtype=np.float32)
+        self._pre_roll.clear()
+        self._pre_roll_congelado = None
+        self._voz_antes = False
         if self.disponible:
             try:
                 self._detector.reset()
@@ -110,6 +124,12 @@ class DetectorVozSilero:
             return
 
         muestras = arr_1d / np.float32(32768.0)
+
+        # Búfer circular: conserva solo los últimos PRERROLL_SEG segundos.
+        self._pre_roll.append(np.ascontiguousarray(muestras, dtype=np.float32))
+        exceso = sum(len(b) for b in self._pre_roll) - self._pre_roll_muestras
+        while exceso > 0 and len(self._pre_roll) > 1:
+            exceso -= len(self._pre_roll.popleft())
 
         if self.disponible:
             if len(self._residuo) > 0:
@@ -138,6 +158,11 @@ class DetectorVozSilero:
                 if self._fb_silencio_count >= 16:  # ~0.8s de silencio
                     self._fb_segmento_listo = True
 
+        hablando = self.detectando_voz()
+        if hablando and not self._voz_antes and self._pre_roll:
+            self._pre_roll_congelado = np.concatenate(list(self._pre_roll))
+        self._voz_antes = hablando
+
     def detectando_voz(self):
         """True si actualmente se detecta actividad de voz humana."""
         if self.disponible:
@@ -165,6 +190,10 @@ class DetectorVozSilero:
                 seg = self._detector.front
                 muestras = np.ascontiguousarray(seg.samples, dtype=np.float32).reshape(-1)
                 self._detector.pop()
+                pre = self._pre_roll_congelado
+                self._pre_roll_congelado = None
+                if pre is not None and len(pre):
+                    muestras = np.concatenate([pre, muestras]).astype(np.float32)
                 return muestras
             except Exception as e:
                 print(f"[oido_vad] Error extrayendo segmento Silero: {e}", flush=True)
