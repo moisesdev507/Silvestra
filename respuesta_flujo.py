@@ -59,8 +59,6 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         _reg_turno(cerebro, texto_orig, resp, al_frase)
         return resp, accion_atajo, emo_atajo
 
-    # Visión natural: se fuerza captura + modelo multimodal ANTES de cualquier
-    # atajo de texto (portapapeles, telemetría o LLM sin imagen).
     app = getattr(cerebro, "app", None)
     import vision_pantalla
     if vision_pantalla.detectar_peticion_vision(texto):
@@ -68,7 +66,6 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         _reg_turno(cerebro, texto_orig, resp_v, al_frase)
         return resp_v, None, "atenta"
 
-    # Copiloto de portapapeles: solo se activa si el usuario lo pide explícitamente
     import portapapeles as pp
     ctx_pp = pp.construir_contexto_portapapeles(texto)
     if ctx_pp == pp.SIN_TEXTO:
@@ -107,7 +104,6 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     if memoria_progreso.detectar_orden_progreso(texto):
         r_p = memoria_progreso.consultar_mi_progreso(); _reg_turno(cerebro, texto_orig, r_p, al_frase); return r_p, None, "orgullosa"
 
-    # 1. Planificador cognitivo multi-paso (prioritario ante órdenes compuestas)
     try:
         import cerebro_planificador
         if cerebro_planificador.detectar_intencion_multipaso(texto):
@@ -218,7 +214,8 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         import agente_herramientas as ag
         respuesta_ag = ag.responder_directo(texto)
         if respuesta_ag:
-            _reg_turno(cerebro, texto, respuesta_ag, al_frase)
+            hablado = ag.limpiar_para_voz(respuesta_ag) if hasattr(ag, "limpiar_para_voz") else respuesta_ag
+            _reg_turno(cerebro, texto, hablado, al_frase)
             return respuesta_ag, None, "neutral"
     except Exception:
         pass

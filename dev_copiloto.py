@@ -56,6 +56,10 @@ def _inspeccionar(ruta, encontrados):
 
 def descubrir_proyectos(max_profundidad=2):
     """Repositorios/proyectos activos en la unidad y en ``~`` (profundidad 1-2)."""
+    try:
+        profundidad = int(max_profundidad) if max_profundidad is not None and str(max_profundidad).strip().isdigit() else 2
+    except (TypeError, ValueError):
+        profundidad = 2
     with _bloqueo:
         if _cache["proyectos"] and time.time() - _cache["momento"] < 60.0:
             return [dict(p) for p in _cache["proyectos"]]
@@ -70,7 +74,7 @@ def descubrir_proyectos(max_profundidad=2):
             continue
         for primario in primarios:
             _inspeccionar(primario, encontrados)
-            if max_profundidad < 2:
+            if profundidad < 2:
                 continue
             try:
                 with os.scandir(primario) as it:

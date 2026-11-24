@@ -154,6 +154,15 @@ def responder_directo(consulta):
     return "Datos reales: " + " | ".join(partes)[:1000]
 
 
+def limpiar_para_voz(texto):
+    """Elimina prefijos técnicos tipo 'Datos reales: <herramienta>:' antes de hablar."""
+    t = str(texto or "").strip()
+    t = re.sub(r"^datos\s+reales:\s*", "", t, flags=re.I).strip()
+    herramientas = "|".join(re.escape(k) for k in CATALOGO.keys())
+    t = re.sub(rf"^({herramientas}):\s*", "", t, flags=re.I).strip()
+    return t
+
+
 def parsear_tags(texto):
     """Extrae (herramienta, argumento) de las etiquetas ``[[TOOL:...]]``."""
     return [(m.group(1).lower(), (m.group(2) or "").strip())
@@ -214,5 +223,5 @@ def post_llm(crudo, respuesta, al_frase=None):
 
 
 __all__ = ["CATALOGO", "ejecutar", "detectar_intencion", "contexto_para_cerebro",
-           "responder_directo", "parsear_tags", "limpiar_tags",
+           "responder_directo", "limpiar_para_voz", "parsear_tags", "limpiar_tags",
            "ejecutar_bucle", "post_llm"]

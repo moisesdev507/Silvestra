@@ -56,12 +56,10 @@ def _barge_in(app, datos, comandos_corte, rec_vosk):
 
 
 def _es_eco_prompt(texto_original, texto, prompt, ultimo_dicho=""):
-    """Delega en oido_filtro: solo eco real del TTS o bucle degenerado."""
     return oido_filtro.debe_descartar(texto_original, texto, prompt, ultimo_dicho)
 
 
 def motivo_descarte_transcripcion(texto, rms, r=None):
-    """Devuelve el motivo de descarte o None si la transcripción es válida."""
     t_low = " ".join(str(texto or "").lower().split())
     if es_cortesia_corta(texto):
         if cortesia_descartada(texto, rms, r):
@@ -74,8 +72,6 @@ def motivo_descarte_transcripcion(texto, rms, r=None):
 
 
 class Oido:
-    """Escucha el micrófono con VAD adaptativo y transcribe a texto con Whisper y Vosk."""
-
     def __init__(self, cliente, vocabulario):
         self.cliente = cliente
         self.vocabulario = vocabulario
@@ -93,16 +89,13 @@ class Oido:
         self._escuchando_activo = False
 
     def liberar_microfono(self):
-        """Pausa y libera el flujo persistente para procesos exclusivos (ej. calibración de voz)."""
         with self.bloqueo:
             self._flujo.liberar()
 
     def cerrar(self):
-        """Cierre definitivo del flujo al apagar Silvestra."""
         self.liberar_microfono()
 
     def _obtener_reconocedor_vosk(self):
-        """Carga perezosa del modelo Vosk sin gramática restringida."""
         if self._reconocedor_vosk is None:
             import os
             import vosk
@@ -119,7 +112,6 @@ class Oido:
         return self._reconocedor_vosk
 
     def _transcribir_vosk(self, audio_bytes):
-        """Transcribe audio int16 16kHz usando Vosk local como respaldo cuando Whisper falla."""
         try:
             import json
             t0 = time.time()
@@ -205,6 +197,7 @@ class Oido:
             self.t_captura_inicio = time.monotonic()
             t_habla_inicio = None
             hablo = False
+            streamer = None
 
             while True:
                 if not self._sesion_vigente(app, generacion):
@@ -226,7 +219,6 @@ class Oido:
                         break
                     continue
 
-                # Barge-in rápido con Vosk si la voz suena en paralelo
                 hablando_ella = bool(app and hasattr(app, "voz") and app.voz.ocupada())
 
                 if hablando_ella:
@@ -242,7 +234,6 @@ class Oido:
                     if _barge_in(app, datos, comandos_corte, rec_vosk):
                         continue
 
-                # Alimentar bloques int16 al VAD neuronal
                 self._vad.alimentar(datos)
 
                 if not hablo:
@@ -250,10 +241,17 @@ class Oido:
                         hablo = True
                         t_habla_inicio = ahora
                         self.t_fin_habla = ahora
+                        try:
+                            import oido_stream
+                            streamer = oido_stream.crear_streamer()
+                        except Exception:
+                            streamer = None
                     elif (ahora - t_inicio) >= tiempo_espera_max:
                         break
                 else:
                     self.t_fin_habla = ahora
+                    if streamer:
+                        streamer.alimentar(datos)
                     if self._vad.hay_segmento_completo():
                         break
                     if t_habla_inicio and (ahora - t_habla_inicio >= max_habla_segundos):
@@ -285,7 +283,6 @@ class Oido:
         audio_int16 = (np.clip(seg_float, -1.0, 1.0) * 32767.0).astype(np.int16)
         rms = float(np.sqrt(np.mean(audio_int16.astype(np.float32) ** 2))) if len(audio_int16) > 0 else 0.0
 
-        # Filtro de Silero VAD (permite frases cortas >= 0.30s)
         if duracion < 0.30:
             print(f"[oido] silero_segmento descartado: duracion={duracion:.2f}s < 0.30s rms={rms:.1f}", flush=True)
             self.ultimo_audio = None
@@ -299,8 +296,6 @@ class Oido:
             return None
 
         print(f"[oido] silero_segmento={duracion:.2f}s rms={rms:.1f}", flush=True)
-
-        # Sin timbre aquí: invocacion_lyris suena solo al activarse de verdad.
         audio = preparar_audio_int16(audio_int16, ganancia=ganancia)
         self.ultimo_audio = audio
         self.duracion_ultimo_audio = len(audio) / float(rate)
@@ -318,9 +313,13 @@ class Oido:
 
         r = None
         t0 = time.time()
-        dg = oido_deepgram.transcribir(buffer.getvalue())
+        dg = streamer.finalizar() if streamer else None
         if dg and str(dg[0] or "").strip():
-            print("[oido] Deepgram valido: sin Whisper", flush=True)
+            print("[oido] Deepgram stream WS valido", flush=True)
+        else:
+            dg = oido_deepgram.transcribir(buffer.getvalue())
+            if dg and str(dg[0] or "").strip():
+                print("[oido] Deepgram valido: sin Whisper", flush=True)
         if dg:
             texto = dg[0]
         else:

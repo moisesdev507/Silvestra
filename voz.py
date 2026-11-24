@@ -166,38 +166,8 @@ class Voz:
 
     @staticmethod
     def _audio(frase, emocion="neutral"):
-        import voz_cache
-
-        en_cache = voz_cache.obtener_audio_cache(frase, emocion)
-        if en_cache:
-            return en_cache
-
-        import voz_local
-        if voz_local.debe_ir_local_primero():
-            audio_local = voz_local.fallback_local(frase, emocion)
-            if audio_local:
-                return audio_local
-
-        import edge_tts
-        import voz_estilo
-
-        emo = normalizar_emocion(emocion)
-        a = voz_estilo.ajustes(emo, EMOCIONES_VOZ.get(emo))
-        rate, pitch, volume = a["rate"], a["pitch"], a["volume"]
-        voz = voz_estilo.voz_actual()
-        print(f"[voz] motor=edge_tts voz={voz} emocion={emo} rate={rate} pitch={pitch}", flush=True)
-
-        async def crear():
-            datos = bytearray()
-            async for trozo in edge_tts.Communicate(frase, voz, rate=rate, pitch=pitch, volume=volume).stream():
-                if trozo["type"] == "audio":
-                    datos += trozo["data"]
-            return bytes(datos)
-
-        audio_generado = voz_local.generar_edge(crear, frase, emocion)
-        if audio_generado:
-            return audio_generado
-        return voz_local.fallback_local(frase, emocion) or b""
+        import voz_rapida
+        return voz_rapida.sintetizar_cadena(frase, emocion)
 
     def soltar_espera(self):
         """Reproduce inmediatamente una muletilla o sonido natural en caché si la respuesta demora."""

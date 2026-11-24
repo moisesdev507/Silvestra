@@ -227,6 +227,26 @@ MODELOS_RAPIDOS_GROQ = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"]
 MODELOS_RAPIDOS_GOOGLE = ["gemini-flash-lite-latest", "gemini-flash-latest"]
 
 
+def _ajustar_carril_rapido_groq():
+    """Configura el carril rápido de Groq en config.PROVEEDORES priorizando Llama sin <think>."""
+    try:
+        for p in getattr(config, "PROVEEDORES", []):
+            if isinstance(p, dict) and p.get("nombre") == "Groq":
+                rapidos = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"]
+                for campo in ("modelos", "modelos_charla", "modelos_razonamiento"):
+                    existentes = list(p.get(campo) or [])
+                    sin_qwen = [m for m in existentes if "qwen" not in str(m).lower() and m not in rapidos]
+                    if campo == "modelos_razonamiento":
+                        p[campo] = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"] + sin_qwen
+                    else:
+                        p[campo] = list(rapidos) + sin_qwen
+    except Exception:
+        pass
+
+
+_ajustar_carril_rapido_groq()
+
+
 def _modelos_configurados(prov_dict, tarea):
     """Modelos declarados por el proveedor para la tarea, sin duplicados."""
     modelos = prov_dict.get(f"modelos_{tarea}")
@@ -253,10 +273,14 @@ def obtener_modelos_tarea(prov_dict, tarea):
     modelos = _modelos_configurados(prov_dict, tarea)
     nombre = prov_dict.get("nombre", "")
     if nombre == "Groq":
-        # Respaldo de emergencia solo si el proveedor no tiene ningún modelo declarado.
+        rapidos_tarea = (
+            ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+            if tarea == "razonamiento"
+            else MODELOS_RAPIDOS_GROQ
+        )
         if not modelos and not _tiene_modelos_configurados(prov_dict):
-            return list(MODELOS_RAPIDOS_GROQ)
-        rapidos = [m for m in MODELOS_RAPIDOS_GROQ if m in modelos]
+            return list(rapidos_tarea)
+        rapidos = [m for m in rapidos_tarea if m in modelos]
         return rapidos + [m for m in modelos if m not in rapidos]
     if nombre == "Google":
         rapidos = [m for m in MODELOS_RAPIDOS_GOOGLE if m in modelos]
