@@ -6,12 +6,7 @@ import unicodedata
 from config import MODELOS
 from cerebro_parser import separar, _respuesta_parcial, _cortar
 from cerebro_prompt import (
-    DIAS,
-    MESES,
-    SOBRE_MI,
-    cargar_alma,
-    obtener_hora_local,
-    construir_prompt,
+    DIAS, MESES, SOBRE_MI, cargar_alma, obtener_hora_local, construir_prompt
 )
 
 
@@ -29,6 +24,11 @@ class Cerebro:
         self.modelos = list(MODELOS)
         self.ultima_reflexion = 0.0
         self._seguimiento_visual_pendiente = False
+        try:
+            import enrutador_expertos
+            enrutador_expertos.clasificar_consulta("")
+        except Exception:
+            pass
 
     def reiniciar(self):
         self.historial = []
@@ -79,17 +79,11 @@ class Cerebro:
                 proceso = ventana.get("ejecutable") or "no disponible"
                 titulo = ("omitido por privacidad" if ventana.get("titulo_omitido")
                           else ventana.get("titulo") or "no disponible")
-                contexto_adicional = ("[ESTADO ACTUAL EN VIVO DE WINDOWS]\n"
-                    + f'Aplicación activa en Windows: {proceso} | Ventana: "{titulo}"'
-                    + "\n[FIN ESTADO ACTUAL EN VIVO DE WINDOWS]\n"
-                    + "Contexto multimodal reciente, evidencia observada: ventana externa: "
-                    + str(ventana.get("titulo", "sin ventana externa conocida"))
-                    + "; audio: " + str(datos.get("audio", "sin datos recientes"))
-                    + "; situación: " + str(datos.get("situacion", "sin interpretación"))
-                    + "; pantalla: " + str(datos.get("captura_pantalla", "no consultada"))
-                    + "\nDistingue hechos de hipótesis. No afirmes causalidad ni inventes detalles visuales; "
-                    "explica si faltan permisos, captura o datos.")
-                contexto_adicional = contexto_adicional[:1100]
+                contexto_adicional = (
+                    f'[ESTADO ACTUAL EN VIVO DE WINDOWS]\nAplicación activa: {proceso} | Ventana: "{titulo}"\n'
+                    f'[FIN ESTADO ACTUAL EN VIVO]\nEvidencia: ventana: {ventana.get("titulo", "desconocida")}; '
+                    f'audio: {datos.get("audio", "sin audio")}; situacion: {datos.get("situacion", "sin datos")}.'
+                )[:1100]
                 self._seguimiento_visual_pendiente = visual or seguimiento
             except Exception:
                 contexto_adicional = "Contexto multimodal no disponible; no infieras datos del entorno."
@@ -141,31 +135,43 @@ class Cerebro:
                 print(f"[cerebro] razonamiento de memoria no disponible ({type(exc).__name__})", flush=True)
         if not es_invitado and not es_ultrarrapido:
             try:
+                import memoria_cache_rapida
                 import memoria_persistente as memoria_guardada
-                recuerdos = memoria_guardada.contexto_para_prompt(texto_actual)
+                recuerdos = memoria_cache_rapida.obtener_contexto_rapido(
+                    texto_actual, lambda: memoria_guardada.contexto_para_prompt(texto_actual), "mem_pers"
+                )
                 if recuerdos:
                     contexto_adicional = (contexto_adicional + "\n" + recuerdos).strip()
             except Exception:
                 pass
             try:
-                import agente_herramientas as agente_herr
-                datos_herr = agente_herr.contexto_para_cerebro(texto_actual)
-                if datos_herr:
-                    contexto_adicional = (contexto_adicional + "\n" + datos_herr).strip()
+                import memoria_cache_rapida
+                if not memoria_cache_rapida.es_seguimiento_o_frase_corta(texto_actual):
+                    import agente_herramientas as agente_herr
+                    datos_herr = agente_herr.contexto_para_cerebro(texto_actual)
+                    if datos_herr:
+                        contexto_adicional = (contexto_adicional + "\n" + datos_herr).strip()
             except Exception:
                 pass
             try:
-                import vigilante_proactivo as vigilante
-                aviso_vig = vigilante.contexto_para_prompt(texto_actual)
-                if aviso_vig:
-                    contexto_adicional = (contexto_adicional + "\n" + aviso_vig).strip()
+                import memoria_cache_rapida
+                if not memoria_cache_rapida.es_seguimiento_o_frase_corta(texto_actual):
+                    import vigilante_proactivo as vigilante
+                    aviso_vig = memoria_cache_rapida.obtener_contexto_rapido(
+                        texto_actual, lambda: vigilante.contexto_para_prompt(texto_actual), "vigilante"
+                    )
+                    if aviso_vig:
+                        contexto_adicional = (contexto_adicional + "\n" + aviso_vig).strip()
             except Exception:
                 pass
         if not es_ultrarrapido:
             try:
+                import memoria_cache_rapida
                 import enrutador_expertos
-                clasif = enrutador_expertos.clasificar_consulta(texto_actual)
-                cartucho = clasif.get("prompt_experto")
+                clasif = memoria_cache_rapida.obtener_contexto_rapido(
+                    texto_actual, lambda: enrutador_expertos.clasificar_consulta(texto_actual), "expertos"
+                )
+                cartucho = clasif.get("prompt_experto") if isinstance(clasif, dict) else None
                 if cartucho:
                     contexto_adicional = (contexto_adicional + "\n" + cartucho).strip()
             except Exception:

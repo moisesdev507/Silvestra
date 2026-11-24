@@ -4,8 +4,12 @@ Clasifica consultas en < 10 ms (léxico/regex puro) a carril 'rapido' o 'pesado'
 e inyecta cartuchos especializados de programación o matemáticas solo cuando corresponde.
 """
 import re
+import threading
 import unicodedata
 from expertos import obtener_cartucho
+
+_precalentamiento_iniciado = False
+_lock_precalentar = threading.Lock()
 
 # Patrones para programación / arquitectura / software
 # Notar límites especiales (?<!\w) y (?!\w) para lenguajes con símbolos como C++ y C#
@@ -58,7 +62,7 @@ _PATRON_CHARLA_CASUAL = re.compile(
     r"pres[eé]ntate|presentate|qui[eé]n\s+eres|c[oó]mo\s+te\s+llamas|"
     r"cu[eé]ntame\s+de\s+ti|qu[eé]\s+opinas|qu[eé]\s+haces|qu[eé]\s+puedes\s+hacer|"
     r"cu[aá]l\s+es\s+tu\s+funci[oó]n|dime\s+algo|h[aá]blame\s+de\s+ti|"
-    r"qu[eé]\s+sabes\s+hacer)\b",
+    r"qu[eé]\s+sabes\s+hacer|todo\s+bien|gracias|ok|vale|adios|chao)\b",
     re.I,
 )
 
@@ -94,12 +98,19 @@ def _notificar_modo_experto(activo: bool, area: str = "general"):
 
 def clasificar_consulta(texto: str) -> dict:
     """Clasifica en < 10ms la consulta para determinar área, carril y prompt experto."""
-    try:
-        import tts_aura_stream
-        if tts_aura_stream.aura_disponible():
-            tts_aura_stream.precalentar_conexion()
-    except Exception:
-        pass
+    global _precalentamiento_iniciado
+    if not _precalentamiento_iniciado:
+        with _lock_precalentar:
+            if not _precalentamiento_iniciado:
+                _precalentamiento_iniciado = True
+                def _tarea_pre():
+                    try:
+                        import tts_aura_stream
+                        if tts_aura_stream.aura_disponible():
+                            tts_aura_stream.precalentar_conexion()
+                    except Exception:
+                        pass
+                threading.Thread(target=_tarea_pre, daemon=True).start()
 
     t_orig = str(texto or "").strip()
     if not t_orig:

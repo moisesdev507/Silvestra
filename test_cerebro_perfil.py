@@ -78,6 +78,41 @@ class TestCerebroPerfil(unittest.TestCase):
         lineas = [l for l in salida.splitlines() if "[perfil]" in l]
         self.assertEqual(len(lineas), 1)
 
+    def test_cache_ligera_memoria_e_invalidacion(self):
+        """Verifica acierto de caché, invalidación al guardar un recuerdo y reducción en caliente."""
+        import memoria_cache_rapida
+        import memoria_persistente as mp
+
+        memoria_cache_rapida.invalidar_recuerdos()
+        contador = 0
+
+        def extractor():
+            nonlocal contador
+            contador += 1
+            return f"dato_calculado_{contador}"
+
+        # 1. Primera consulta: ejecuta extractor
+        val1 = memoria_cache_rapida.obtener_contexto_rapido("test_query", extractor, "test")
+        self.assertEqual(val1, "dato_calculado_1")
+        self.assertEqual(contador, 1)
+
+        # 2. Segunda consulta idéntica: debe usar caché (< 80 ms, sin llamar extractor)
+        t0 = time.perf_counter()
+        val2 = memoria_cache_rapida.obtener_contexto_rapido("test_query", extractor, "test")
+        dt_ms = (time.perf_counter() - t0) * 1000
+        self.assertEqual(val2, "dato_calculado_1")
+        self.assertEqual(contador, 1)
+        self.assertLess(dt_ms, 80.0)
+
+        # 3. Invalidación al guardar recuerdo
+        mp.guardar_recuerdo("general", "clave_test_perf", "Dato para invalidar")
+        val3 = memoria_cache_rapida.obtener_contexto_rapido("test_query", extractor, "test")
+        self.assertEqual(val3, "dato_calculado_2")
+        self.assertEqual(contador, 2)
+
+        # Limpiar
+        mp.eliminar_recuerdo("clave_test_perf")
+
 
 if __name__ == "__main__":
     unittest.main()
