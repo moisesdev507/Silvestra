@@ -154,6 +154,92 @@ class TestCaraOrbeHibrido(unittest.TestCase):
                 px = img.pixelColor(140, 140)
                 self.assertTrue(px.alpha() > 0)
 
+    def test_proyeccion_y_separacion_giroscopios_3d(self):
+        """Valida matemáticas 3D, perspectiva y división z delantera/trasera."""
+        import cara_holo_3d as h3d
+        # 1. Rotación y proyección
+        x, y, z = h3d.rotar_3d(10.0, 20.0, 30.0, pitch=0.2, yaw=0.3, roll=0.1)
+        px, py, k, pz = h3d.proyectar_3d(x, y, z)
+        self.assertTrue(k > 0.0)
+        self.assertEqual(pz, z)
+
+        # 2. Separación z de anillos
+        traseros, delanteros = h3d._calcular_segmentos_anillo(
+            r_anillo=50.0, pitch_anillo=0.4, yaw_anillo=0.2,
+            vel_roll=1.0, t=1.0, pitch_cur=0.0, yaw_cur=0.0
+        )
+        self.assertTrue(len(traseros) > 0)
+        self.assertTrue(len(delanteros) > 0)
+        for _, _, z_med in traseros:
+            self.assertTrue(z_med < 0.0)
+        for _, _, z_med in delanteros:
+            self.assertTrue(z_med >= 0.0)
+
+        # 3. Manejo seguro sin cursor en QImage
+        img = QImage(100, 100, QImage.Format_ARGB32)
+        p = QPainter(img)
+        try:
+            pitch, yaw = h3d.obtener_inclinacion_cursor(p)
+            self.assertEqual((pitch, yaw), (0.0, 0.0))
+        finally:
+            p.end()
+
+    def test_centro_obsidiana_no_quemado_en_blanco(self):
+        """Verifica que el núcleo use cristal obsidiana oscuro y no una mancha blanca plana."""
+        img = QImage(280, 280, QImage.Format_ARGB32_Premultiplied)
+        img.fill(0)
+        p = QPainter(img)
+        cara = SimpleNamespace(
+            hablando=False,
+            escuchando=False,
+            pensando=False,
+            pensando_hasta=0.0,
+            baile_hasta=0.0,
+            nivel_volumen=0.0,
+            voz_silenciada=False,
+        )
+        try:
+            coh.dibujar_orbe_hibrido(p, cara, t=1.5, tam=280)
+        finally:
+            p.end()
+
+        px = img.pixelColor(140, 140)
+        self.assertTrue(px.alpha() > 0)
+        # El centro NO debe ser blanco puro quemado (255, 255, 255)
+        es_blanco_quemado = (px.red() >= 250 and px.green() >= 250 and px.blue() >= 250)
+        self.assertFalse(es_blanco_quemado, f"Centro quemado en blanco: rgb=({px.red()}, {px.green()}, {px.blue()})")
+
+    def test_diferencia_visual_con_rms_hablando(self):
+        """El ecualizador radial y la red 3D reaccionan con diferencia visual visible ante RMS de voz."""
+        def render_con_rms(nivel_rms):
+            img = QImage(280, 280, QImage.Format_ARGB32_Premultiplied)
+            img.fill(0)
+            p = QPainter(img)
+            cara = SimpleNamespace(
+                hablando=True,
+                escuchando=False,
+                pensando=False,
+                pensando_hasta=0.0,
+                baile_hasta=0.0,
+                nivel_volumen=nivel_rms,
+                voz_silenciada=False,
+            )
+            try:
+                coh.dibujar_orbe_hibrido(p, cara, t=2.0, tam=280)
+            finally:
+                p.end()
+            return img
+
+        img_silencio = render_con_rms(0.0)
+        img_voz_alta = render_con_rms(0.85)
+
+        # Contar píxeles que difieren entre ambas imágenes en la zona perimétrica
+        diferencias = 0
+        for y in range(80, 200, 4):
+            for x in range(80, 200, 4):
+                if img_silencio.pixelColor(x, y) != img_voz_alta.pixelColor(x, y):
+                    diferencias += 1
+        self.assertTrue(diferencias > 15, f"Esperadas diferencias visuales por RMS, encontradas: {diferencias}")
 
 
 if __name__ == "__main__":
