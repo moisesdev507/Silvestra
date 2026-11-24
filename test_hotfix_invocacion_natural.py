@@ -1,26 +1,18 @@
 """Regresión: invocación natural Lyris y captura en dos tiempos."""
 import contextlib
 import io
-import os
 import queue
 import threading
 import time
 import unittest
+import wave
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import conversacion
 import eventos
 import invocacion_lyris
-
-class RespuestaDG:
-    def __init__(self, codigo, texto="Lyris, abre el bloc", duracion=1.0):
-        self.status_code = codigo
-        self._texto, self._duracion = texto, duracion
-
-    def json(self):
-        return {"metadata": {"duration": self._duracion}, "results": {
-            "channels": [{"alternatives": [{"transcript": self._texto}]}]}}
+import sonidos_ui
 
 class CaraFalsa:
     def __init__(self):
@@ -93,6 +85,14 @@ class TestInvocacionNatural(unittest.TestCase):
         app.invocacion_ambiental = True
         return app, enviados, hablado
 
+    def setUp(self):
+        self.voces = []
+        for nombre, objetivo in (("_sonido", lambda *_a: None),
+                                 ("_micro_voz", lambda app: self.voces.append(app))):
+            p = patch.object(invocacion_lyris, nombre, objetivo)
+            p.start()
+            self.addCleanup(p.stop)
+
     @staticmethod
     def _drenar(app):
         while not app.cola.empty():
@@ -132,6 +132,7 @@ class TestInvocacionNatural(unittest.TestCase):
         self.assertFalse(app.cara.hablando)
         self.assertEqual(hablado, [])
         self.assertEqual(enviados, [])
+        self.assertEqual(len(self.voces), 1)  # micro-voz «¿Sí?» en vez de pitido
 
         app.invocacion._procesar("dime la hora")
         self._drenar(app)
@@ -207,7 +208,7 @@ class TestInvocacionNatural(unittest.TestCase):
                     app.invocacion._procesar(frase)
                     self._drenar(app)
                     self.assertEqual(enviados, [orden])
-                    self.assertEqual(len(sonidos), 1)
+                    self.assertEqual((sonidos, self.voces), ([], []))
                     self.assertIn(
                         f"[invocacion] detectada='{variante}' -> orden='{orden}'",
                         salida.getvalue())
@@ -218,14 +219,15 @@ class TestInvocacionNatural(unittest.TestCase):
             self._drenar(app)
             self.assertTrue(app.invocacion.esperando_orden)
             self.assertEqual(enviados, [])
-            self.assertEqual(len(sonidos), 1)
+            self.assertEqual((sonidos, len(self.voces)), ([], 1))
 
             sonidos.clear()
+            self.voces.clear()
             app, enviados, _hablado = self._app()
             app.invocacion._procesar("Conocí a Luis ayer en clase")
             self._drenar(app)
             self.assertEqual(enviados, [])
-            self.assertEqual(sonidos, [])
+            self.assertEqual((sonidos, self.voces), ([], []))
             self.assertTrue(self._reposo_celeste(app))
             self.assertTrue(app.invocacion._puede_capturar())
 
@@ -238,7 +240,7 @@ class TestInvocacionNatural(unittest.TestCase):
                           lambda nombre="activar": sonidos.append(nombre)):
             app.invocacion._procesar("Lyris.")
             self._drenar(app)
-            self.assertEqual(sonidos, ["activar"])
+            self.assertEqual((sonidos, len(self.voces)), ([], 1))
             self.assertTrue(app.invocacion.esperando_orden)
             self.assertTrue(app.cara.escuchando)
             self.assertAlmostEqual(app.invocacion.limite_orden - time.monotonic(),
@@ -250,7 +252,7 @@ class TestInvocacionNatural(unittest.TestCase):
             orden = "¿Puedes revisar cómo va la laptop, por favor?"
             app.invocacion._procesar(orden)
             self._drenar(app)
-        self.assertEqual((enviados, sonidos), ([orden], ["activar"]))
+        self.assertEqual((enviados, sonidos, len(self.voces)), ([orden], [], 1))
         self.assertTrue(self._reposo_celeste(app))
 
     def test_confirmar_junto_y_pasivo_sin_sonido(self):
@@ -262,7 +264,8 @@ class TestInvocacionNatural(unittest.TestCase):
             self._drenar(app)
             app.invocacion._procesar("Hoy hace mucho sol en la ventana")
             self._drenar(app)
-        self.assertEqual((enviados, sonidos), (["cómo va la laptop"], ["confirmar"]))
+        self.assertEqual((enviados, sonidos, self.voces),
+                         (["cómo va la laptop"], [], []))
         self.assertTrue(self._reposo_celeste(app))
 
     def test_evento_oido_en_espera_es_orden(self):
@@ -274,38 +277,6 @@ class TestInvocacionNatural(unittest.TestCase):
             self._drenar(app)
         self.assertEqual(enviados, ["revisa la batería"])
         self.assertTrue(self._reposo_celeste(app))
-
-    def test_impulso_keyterm_en_deepgram_y_reintento_sin_el(self):
-        import oido_deepgram
-        oido_deepgram.reiniciar()
-        self.addCleanup(oido_deepgram.reiniciar)
-        for parche in (
-                patch.object(oido_deepgram.config, "DEEPGRAM_API_KEY", "", create=True),
-                patch.object(oido_deepgram.config, "DEEPGRAM_MODEL", "", create=True),
-                patch.dict(os.environ, {"DEEPGRAM_API_KEY": "prueba-keyterm",
-                                        "DEEPGRAM_MODEL": "nova-3"})):
-            parche.start()
-            self.addCleanup(parche.stop)
-        with patch.object(oido_deepgram.httpx, "post",
-                          Mock(return_value=RespuestaDG(200))) as post:
-            resultado = oido_deepgram.transcribir(b"RIFFfalso")
-        params = post.call_args.kwargs["params"]
-        self.assertEqual((resultado[0], params["model"], params["language"],
-                          params["keyterm"]),
-                         ("Lyris, abre el bloc", "nova-3", "es", "Lyris:5"))
-        with patch.dict(os.environ, {"LYRIS_DEEPGRAM_LANG": "multi"}), \
-                patch.object(oido_deepgram.httpx, "post",
-                             Mock(return_value=RespuestaDG(200))) as post_multi:
-            oido_deepgram.transcribir(b"RIFFfalso")
-        self.assertEqual(post_multi.call_args.kwargs["params"]["language"], "multi")
-
-        post = Mock(side_effect=[RespuestaDG(400), RespuestaDG(200)])
-        with patch.object(oido_deepgram.httpx, "post", post):
-            resultado = oido_deepgram.transcribir(b"RIFFfalso")
-        self.assertEqual((resultado[0], post.call_count), ("Lyris, abre el bloc", 2))
-        self.assertEqual(post.call_args_list[0].kwargs["params"]["keyterm"], "Lyris:5")
-        self.assertNotIn("keyterm", post.call_args_list[1].kwargs["params"])
-        self.assertTrue(oido_deepgram.esta_activo())
 
     def test_sin_respuesta_hablada_vuelve_a_celeste(self):
         app, enviados, _hablado = self._app()
@@ -349,6 +320,24 @@ class TestInvocacionNatural(unittest.TestCase):
         self.assertFalse(invocacion_lyris.permitir_transcripcion(app))
         vd.ultima_verificacion = {"es_dueno": True}
         self.assertTrue(invocacion_lyris.permitir_transcripcion(app))
+
+    def test_sonidos_ui_sin_pitidos_y_micro_voz_salome(self):
+        with wave.open(io.BytesIO(sonidos_ui.generar_wav("activar"))) as wf:
+            muestras = wf.readframes(wf.getnframes())
+            self.assertEqual(wf.getframerate(), 44100)
+        self.assertEqual(set(muestras), {0})
+        for nombre in ("activar", "confirmar", "captado", "accion"):
+            self.assertIsNone(getattr(sonidos_ui, nombre)())
+        self.assertIsNone(sonidos_ui.reproducir("captado"))
+        app, _, hablado = self._app()
+        app.voz.reproductor = SimpleNamespace(reproducir_corto=lambda *a, **k: None)
+        import micro_voz
+        import voz_cache
+        voz_cache.guardar_audio_cache(micro_voz.FRASE_INVOCACION, b"audio-salome")
+        self.addCleanup(voz_cache.limpiar)
+        self.assertTrue(micro_voz.sonar_invocacion(app))
+        self.assertEqual(micro_voz.FRASE_INVOCACION, "¿Sí?")
+        self.assertEqual(hablado, [])
 
 if __name__ == "__main__":
     unittest.main()

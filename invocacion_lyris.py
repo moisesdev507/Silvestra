@@ -86,6 +86,15 @@ def _sonido(nombre="activar"):
         pass
 
 
+def _micro_voz(app):
+    """Confirma la invocación con la voz de Salomé, nunca con un pitido."""
+    try:
+        import micro_voz
+        micro_voz.sonar_invocacion(app)
+    except Exception:
+        pass
+
+
 def interceptar(app, tipo, texto):
     gestor = getattr(app, "invocacion", None)
     if gestor is None or not getattr(gestor, "activo", False):
@@ -236,10 +245,9 @@ class GestorInvocacion:
         if dispara:
             print(f"[invocacion] detectada='{variante}' -> orden='{orden}'", flush=True)
             if tiene_orden(orden):
-                _sonido("confirmar")
                 self._iniciar_turno(orden)
             else:
-                _sonido("activar")
+                _micro_voz(self.app)
                 with self.bloqueo:
                     self.esperando_orden = True
                     self.limite_orden = time.monotonic() + TIEMPO_ORDEN

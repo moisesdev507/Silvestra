@@ -279,6 +279,8 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
     print(f"[tiempo] prompt_tokens={tok_total} anterior={tokens_base} ahorro={ahorro}%", flush=True)
 
     bloques = [instrucciones_texto, alma_texto]
+    import cerebro_estilo
+    bloques.append(cerebro_estilo.DIRECTIVA_JARVIS)
     try:
         import modos_sistema
         dir_modo = modos_sistema.directiva_prompt_modo()

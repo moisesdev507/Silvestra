@@ -34,17 +34,17 @@ class Cerebro:
         self.historial = []
 
     def _podar_historial(self):
-        if len(self.historial) > 16:
-            self.historial = self.historial[-10:]
+        if len(self.historial) > 24:
+            self.historial = self.historial[-16:]
 
     def _obtener_historial_podado(self):
-        """Devuelve los últimos 4 turnos recortando respuestas largas para no inflar tokens."""
-        hist_reciente = self.historial[-4:]
+        """Devuelve los últimos 8 turnos recortando respuestas largas."""
+        hist_reciente = self.historial[-8:]
         hist_podado = []
         for h in hist_reciente:
             c = h.get("content", "")
-            if h.get("role") == "assistant" and len(c) > 150:
-                c = c[:150].rsplit(" ", 1)[0] + "..."
+            if h.get("role") == "assistant" and len(c) > 220:
+                c = c[:220].rsplit(" ", 1)[0] + "..."
             hist_podado.append({"role": h.get("role"), "content": c})
         return hist_podado
 

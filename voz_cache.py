@@ -57,6 +57,7 @@ def precargar_audios_frecuentes(sintetizar_fn):
     """Genera en segundo plano el audio de las muletillas y frases frecuentes."""
     def _tarea():
         frases_base = list(SONIDOS_ESPERA) + [
+            "¿Sí?",
             "Listo, me callo.",
             "Te escucho, dime.",
             "De acuerdo.",

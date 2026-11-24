@@ -59,19 +59,21 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         _reg_turno(cerebro, texto_orig, resp, al_frase)
         return resp, accion_atajo, emo_atajo
 
+    # Visión natural: se fuerza captura + modelo multimodal ANTES de cualquier
+    # atajo de texto (portapapeles, telemetría o LLM sin imagen).
+    app = getattr(cerebro, "app", None)
+    import vision_pantalla
+    if vision_pantalla.detectar_peticion_vision(texto):
+        ok_v, resp_v = vision_pantalla.capturar_y_analizar_pantalla(texto, app=app)
+        _reg_turno(cerebro, texto_orig, resp_v, al_frase)
+        return resp_v, None, "atenta"
+
     # Copiloto de portapapeles: solo se activa si el usuario lo pide explícitamente
     import portapapeles as pp
     ctx_pp = pp.construir_contexto_portapapeles(texto)
     if ctx_pp == pp.SIN_TEXTO:
         _reg_turno(cerebro, texto_orig, ctx_pp, al_frase)
         return ctx_pp, None, "atenta"
-
-    app = getattr(cerebro, "app", None)
-    import vision_pantalla
-    if not ctx_pp and vision_pantalla.detectar_peticion_vision(texto):
-        ok_v, resp_v = vision_pantalla.capturar_y_analizar_pantalla(texto, app=app)
-        _reg_turno(cerebro, texto_orig, resp_v, al_frase)
-        return resp_v, None, "atenta"
 
     import cerebro_rag
     ruta_idx = cerebro_rag.detectar_orden_indexacion(texto)
@@ -213,11 +215,11 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     if directo:
         return directo
     cerebro.historial.append({"role": "user", "content": texto})
-    # Limitar historial a los 8 turnos más recientes para ahorrar tokens y latencia
+    # Ventana ampliada a 12 mensajes para razonamiento técnico multi-turno.
     mensajes = [{"role": "system", "content": cerebro.instrucciones(texto)}]
     if ctx_pp:
         mensajes.append({"role": "system", "content": ctx_pp})
-    mensajes += cerebro.historial[-8:]
+    mensajes += cerebro.historial[-12:]
 
     # 6. Charla en vivo (Gemini Live): solo si está activo y sin enfriamiento por 429.
     try:

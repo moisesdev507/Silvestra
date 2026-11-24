@@ -271,15 +271,20 @@ def capturar_y_analizar_pantalla(pregunta, app=None):
 
 
 def detectar_peticion_vision(texto):
-    """Detecta si el usuario pide explícitamente ver, analizar o leer la pantalla."""
+    """Detecta cualquier petición natural de inspección visual de la pantalla."""
     if not texto or len(str(texto).strip()) < 5:
         return False
-    t = str(texto).strip()
-    patron = (
-        r"\b(?:mira\s+(?:la\s+)?pantalla|"
-        r"qu[eé]\s+(?:ves|hay|aparece|dice)\s+(?:en\s+)?(?:la\s+)?pantalla|"
-        r"revisa\s+(?:este\s+)?(?:error|diseño|diseno|codigo|código|pantalla)\s*(?:en\s+(?:la\s+)?pantalla)?|"
-        r"qu[eé]\s+opinas\s+de\s+(?:este\s+)?(?:diseño|diseno|codigo|código|pantalla)|"
-        r"lee\s+(?:lo\s+que\s+dice\s+en\s+)?(?:la\s+)?pantalla)\b"
+    t = str(texto).lower()
+    patrones = (
+        r"mira (?:la |mi )?pantalla",
+        r"puedes ver (?:la |mi )?pantalla",
+        r"qu[eé] ves(?: aqu[ií]| aki| en (?:la )?pantalla)?",
+        r"qu[eé] (?:errores|fallos|problemas) (?:que )?encuentras",
+        r"revisa (?:la |mi )?pantalla",
+        r"revisa (?:este |mi |la )?(?:error|errores|fallos|"
+        r"diseno|diseño|codigo|c[oó]digo) en (?:la )?pantalla",
+        r"analiza lo que tengo abierto",
+        r"qu[eé] opinas de (?:este )?(?:diseno|diseño|codigo|c[oó]digo|pantalla)",
+        r"lee (?:lo que dice en )?(?:la )?pantalla",
     )
-    return bool(re.search(patron, t, re.I))
+    return any(re.search(p, t) for p in patrones)
