@@ -58,6 +58,14 @@ def _norm(texto: str) -> str:
     return "".join(c for c in t if not unicodedata.combining(c))
 
 
+def _obtener_calculo_local(texto: str) -> str:
+    try:
+        import sandbox_calculo
+        return sandbox_calculo.precalcular_contexto(texto)
+    except Exception:
+        return ""
+
+
 def clasificar_consulta(texto: str) -> dict:
     """Clasifica en < 10ms la consulta para determinar área, carril y prompt experto."""
     t_orig = str(texto or "").strip()
@@ -74,10 +82,14 @@ def clasificar_consulta(texto: str) -> dict:
     if es_mat and not (
         re.search(r"(?<!\w)(?:c\+\+|c#)(?!\w)|\b(python|javascript|typescript|c[oó]digo|codigo|script|sql|scanf|printf|malloc|struct|puntero|punteros|def|class|git)\b", t_orig, re.I)
     ):
+        prompt_mat = obtener_cartucho("matematicas")
+        calc_verificado = _obtener_calculo_local(t_orig)
+        if calc_verificado:
+            prompt_mat = f"{prompt_mat}\n\n{calc_verificado}"
         return {
             "area": "matematicas",
             "carril": "pesado",
-            "prompt_experto": obtener_cartucho("matematicas"),
+            "prompt_experto": prompt_mat,
         }
 
     # 2. Si contiene términos de programación, clasificar en programación
@@ -88,12 +100,16 @@ def clasificar_consulta(texto: str) -> dict:
             "prompt_experto": obtener_cartucho("programacion"),
         }
 
-    # 3. Resto de casos matemáticos
-    if es_mat:
+    # 3. Resto de casos matemáticos o expresiones aritméticas directas
+    calc_verificado = _obtener_calculo_local(t_orig)
+    if es_mat or calc_verificado:
+        prompt_mat = obtener_cartucho("matematicas")
+        if calc_verificado:
+            prompt_mat = f"{prompt_mat}\n\n{calc_verificado}"
         return {
             "area": "matematicas",
             "carril": "pesado",
-            "prompt_experto": obtener_cartucho("matematicas"),
+            "prompt_experto": prompt_mat,
         }
 
     # 3. Razonamiento analítico pesado general

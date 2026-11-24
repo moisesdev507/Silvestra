@@ -60,6 +60,19 @@ class TestEnrutadorExpertos(unittest.TestCase):
             self.assertEqual(c["carril"], "pesado")
             self.assertIn("CARTUCHO ESPECIALISTA: MATEMÁTICAS", c["prompt_experto"])
 
+    def test_inyeccion_calculo_local_verificado_en_prompt_experto(self):
+        """Si la consulta matemática tiene cálculo computable, se inyecta el resultado verificado."""
+        c = ee.clasificar_consulta("Calcula cuánto es 128 * 37 + 15")
+        self.assertEqual(c["area"], "matematicas")
+        self.assertEqual(c["carril"], "pesado")
+        self.assertIn("CÁLCULO VERIFICADO EN PYTHON LOCAL", c["prompt_experto"])
+        self.assertIn("4751", c["prompt_experto"])
+
+        c_mat = ee.clasificar_consulta("Calcula el determinante de la matriz [[1, 2], [3, 4]]")
+        self.assertEqual(c_mat["area"], "matematicas")
+        self.assertIn("CÁLCULO VERIFICADO EN PYTHON LOCAL", c_mat["prompt_experto"])
+        self.assertIn("-2", c_mat["prompt_experto"])
+
     def test_cartuchos_registrados(self):
         """El registro central permite obtener cartuchos limpios."""
         self.assertIn("programacion", REGISTRO_EXPERTOS)
