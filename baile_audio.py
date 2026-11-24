@@ -26,7 +26,7 @@ def _inicializar_mixer_seguro():
 _inicializar_mixer_seguro()
 
 
-def _normalizar_y_guardar(ruta, audio, rate=22050, fade_in=0.4, fade_out=1.2, vol=0.38):
+def _normalizar_y_guardar(ruta, audio, rate=22050, fade_in=0.4, fade_out=1.2, vol=0.21):
     """Aplica fade-in/fade-out, volumen moderado y guarda en WAV PCM 16-bit."""
     n_in = int(rate * fade_in)
     n_out = int(rate * fade_out)
@@ -246,7 +246,7 @@ def reproducir_musica_baile(estilo="groove"):
                 _SONIDO_CACHE[ruta] = snd
             # Usar canal dedicado 6 para no colisionar con la voz
             canal = pygame.mixer.Channel(6)
-            canal.set_volume(0.40)
+            canal.set_volume(0.24)
             canal.play(snd)
             _CANAL_ACTIVO = canal
             return True

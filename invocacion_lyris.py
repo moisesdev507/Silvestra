@@ -9,10 +9,13 @@ TIEMPO_SEGUIMIENTO = 18.0
 DURACION_ECO = 0.4
 FUERTES = {"lyris", "liris", "lirys", "iris", "lyres", "lirez",
            "lyra", "liria", "lyries", "siris",
-           "lira", "lirio", "lirios", "silvestra", "silvestre"}
-DEBILES = {"luis", "serious"}
+           "lira", "lirio", "lirios", "silvestra", "silvestre", "viris", "lyrys"}
+DEBILES = {"luis", "serious", "liernes", "libres"}
 VARIANTES = FUERTES | DEBILES
 RELLENO = {"oye", "oiga", "hola", "hey", "bueno", "pues", "entonces", "buenas"}
+ORDENES_PARAR_BAILE = (
+    "para de bailar", "deja de bailar", "detente", "stop", "para el baile", "deja el baile", "para",
+)
 _SEPARADOR = re.compile(r"[^\wáéíóúñü]+", re.UNICODE)
 
 
@@ -37,18 +40,61 @@ def _orden_despues_de(ps, indice):
     return _orden_de(ps[indice + 1:])
 
 
-def detectar(texto):
+def _esta_bailando(app):
+    """Verifica si la cara o el motor de baile están actualmente activos."""
+    if app is None:
+        return False
+    try:
+        cara = getattr(app, "cara", None)
+        gb = getattr(cara, "gestor_baile", None)
+        if gb and getattr(gb, "activo", False):
+            return True
+        import baile_audio
+        if getattr(baile_audio, "_AUDIO_ACTIVO", False):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def detectar(texto, en_baile=False):
+    t_limpio = " ".join(str(texto or "").lower().split()).strip()
+    if not t_limpio:
+        return False, "", ""
+
+    # Parada directa de baile si la cara está bailando activamente
+    if en_baile:
+        for pb in ORDENES_PARAR_BAILE:
+            if t_limpio == pb or t_limpio.startswith(pb + " ") or t_limpio.endswith(" " + pb):
+                return True, "baile_stop", "para de bailar"
+
     ps = palabras(texto)
     if not ps:
         return False, "", ""
+
+    # 1. Palabras fuertes (lyris, viris, liris, lyrys...)
     for i, p in enumerate(ps):
         if p in FUERTES:
             return True, p, _orden_despues_de(ps, i)
+
+    # 2. Confusiones fonéticas débiles ("libres", "liernes", "luis"):
+    # Válidas SOLO al inicio de la frase, como invocación aislada o en modo baile
     if len(ps) == 1 and ps[0] in DEBILES:
         return True, ps[0], ""
-    if ps[0] in DEBILES or ps[-1] in DEBILES:
-        indice = 0 if ps[0] in DEBILES else len(ps) - 1
+
+    # Si está al inicio ("libres para de bailar") o al final, o si está bailando
+    if ps[0] in DEBILES:
+        return True, ps[0], _orden_despues_de(ps, 0)
+
+    if en_baile:
+        for i, p in enumerate(ps):
+            if p in DEBILES:
+                return True, p, _orden_despues_de(ps, i)
+
+    if ps[-1] in DEBILES:
+        indice = len(ps) - 1
         return True, ps[indice], _orden_despues_de(ps, indice)
+
     return False, "", ""
 
 
@@ -289,9 +335,19 @@ class GestorInvocacion:
                 if self.esperando_orden and time.monotonic() >= self.limite_orden:
                     self._reposo()
             return
-        dispara, variante, orden = detectar(texto)
+        bailando = _esta_bailando(self.app)
+        dispara, variante, orden = detectar(texto, en_baile=bailando)
         if dispara:
             print(f"[invocacion] detectada='{variante}' -> orden='{orden}'", flush=True)
+            if bailando and (variante == "baile_stop" or any(p in orden.lower() for p in ("para", "stop", "detente"))):
+                try:
+                    cara = getattr(self.app, "cara", None)
+                    if cara and getattr(cara, "gestor_baile", None):
+                        cara.gestor_baile.detener(app=self.app)
+                    import baile_audio
+                    baile_audio.detener_musica_baile()
+                except Exception:
+                    pass
             if tiene_orden(orden):
                 self._iniciar_turno(orden)
             else:
