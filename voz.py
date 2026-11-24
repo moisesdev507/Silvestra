@@ -347,13 +347,13 @@ class Voz:
                 if version == self.version:
                     print(f"[voz] terminó='{frase}'", flush=True)
 
-            if version == self.version and al_terminar:
-                al_terminar()
         finally:
             with self._estado_lock:
                 if version == self.version:
                     self.nivel_volumen = 0.0
                     self._activos = max(0, self._activos - 1)
+            if version == self.version and al_terminar:
+                al_terminar()
 
 
 class Flujo:

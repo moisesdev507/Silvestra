@@ -214,6 +214,15 @@ def abrir_chat(app):
 
 def enviar(app, texto):
     """Procesa un texto enviado por el usuario (por voz o por teclado)."""
+    flujo = getattr(app, "flujo", None)
+    voz = getattr(app, "voz", None)
+    ocupada = bool(voz and hasattr(voz, "ocupada") and voz.ocupada())
+    if flujo is None or not ocupada:
+        if flujo is not None:
+            flujo.cerrar()
+        app.flujo = None
+        app._fragmentos_voz = False
+        app._flujo_cerrado = False
     t_habla = getattr(getattr(app, "oido", None), "t_fin_habla", getattr(getattr(app, "oido", None), "t_fin_escucha", time.time()))
     t_txt = getattr(getattr(app, "oido", None), "t_texto", time.time())
     app.t_fin_habla = t_habla

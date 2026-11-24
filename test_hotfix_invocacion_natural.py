@@ -39,8 +39,10 @@ class TestInvocacionNatural(unittest.TestCase):
     def test_lyris_inicio_medio_y_final_sin_frases_hechas(self):
         casos = [
             ("Lyris, qué hora es", "qué hora es"),
-            ("Oye, cómo va la batería, Lyris", "cómo va la batería"),
-            ("Por cierto Lyris dime la hora", "por cierto dime la hora"),
+            ("Haciendo venda ustedes, Lyris. Después. ¿Y el núcleo?",
+             "después y el núcleo"),
+            ("Oye, cómo va la batería, Lyris", ""),
+            ("Por cierto Lyris dime la hora", "dime la hora"),
         ]
         for frase, orden in casos:
             with self.subTest(frase=frase):
@@ -48,10 +50,13 @@ class TestInvocacionNatural(unittest.TestCase):
                 with patch.object(invocacion_lyris, "_sonido", lambda *_a: None):
                     app.invocacion._procesar(frase)
                     self._drenar(app)
-                self.assertEqual(enviados, [orden])
+                self.assertEqual(enviados, [orden] if orden else [])
+                if not orden:
+                    self.assertTrue(app.invocacion.esperando_orden)
                 self.assertFalse(any("Te escucho" in h or "dejo de escuchar" in h
                                      for h in hablado))
-                self.assertTrue(self._reposo_celeste(app))
+                if orden:
+                    self.assertTrue(self._reposo_celeste(app))
 
     def test_solo_lyris_amarillo_sin_hablar_y_espera_orden(self):
         app, enviados, hablado = self._app()
@@ -121,7 +126,7 @@ class TestInvocacionNatural(unittest.TestCase):
         sonidos = []
         casos = [
             ("Luis ¿Cómo va la laptop?", "luis", "cómo va la laptop"),
-            ("¿Cómo va la laptop, Luis?", "luis", "cómo va la laptop"),
+            ("¿Cómo va la laptop, Luis?", "luis", ""),
             ("Serious, dime la hora", "serious", "dime la hora"),
             ("Iris, dime la hora", "iris", "dime la hora"),
             ("Lyra, dime la hora", "lyra", "dime la hora"),
@@ -135,11 +140,15 @@ class TestInvocacionNatural(unittest.TestCase):
             for frase, variante, orden in casos:
                 with self.subTest(frase=frase):
                     sonidos.clear()
+                    self.voces.clear()
                     app, enviados, _hablado = self._app()
                     app.invocacion._procesar(frase)
                     self._drenar(app)
-                    self.assertEqual(enviados, [orden])
-                    self.assertEqual((sonidos, self.voces), ([], []))
+                    self.assertEqual(enviados, [orden] if orden else [])
+                    if not orden:
+                        self.assertTrue(app.invocacion.esperando_orden)
+                    self.assertEqual((sonidos, len(self.voces)),
+                                     ([], 1 if not orden else 0))
                     self.assertIn(
                         f"[invocacion] detectada='{variante}' -> orden='{orden}'",
                         salida.getvalue())

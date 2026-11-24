@@ -33,23 +33,22 @@ def _orden_de(ps):
     return " ".join(salida)
 
 
+def _orden_despues_de(ps, indice):
+    return _orden_de(ps[indice + 1:])
+
+
 def detectar(texto):
     ps = palabras(texto)
     if not ps:
         return False, "", ""
-    for p in ps:
+    for i, p in enumerate(ps):
         if p in FUERTES:
-            return True, p, _orden_de(ps)
+            return True, p, _orden_despues_de(ps, i)
     if len(ps) == 1 and ps[0] in DEBILES:
         return True, ps[0], ""
     if ps[0] in DEBILES or ps[-1] in DEBILES:
-        variante = ps[0] if ps[0] in DEBILES else ps[-1]
-        restantes = list(ps)
-        if restantes[0] in DEBILES:
-            restantes.pop(0)
-        if restantes and restantes[-1] in DEBILES:
-            restantes.pop()
-        return True, variante, _orden_de(restantes)
+        indice = 0 if ps[0] in DEBILES else len(ps) - 1
+        return True, ps[indice], _orden_despues_de(ps, indice)
     return False, "", ""
 
 

@@ -62,9 +62,12 @@ def garantizar_voz(app, texto, emocion=None):
     de modo que la app nunca se quede con la voz ocupada ni en silencio.
     """
     limpio = limpiar_etiquetas(texto)
-    if not limpio or getattr(app, "_fragmentos_voz", False):
-        return False
     flujo = getattr(app, "flujo", None)
+    voz = getattr(app, "voz", None)
+    fragmentos = getattr(app, "_fragmentos_voz", False)
+    ocupada = bool(voz and hasattr(voz, "ocupada") and voz.ocupada())
+    if not limpio or (fragmentos and (flujo is not None or ocupada)):
+        return False
     if flujo is not None:
         try:
             flujo.cerrar()
@@ -84,7 +87,7 @@ def garantizar_voz(app, texto, emocion=None):
             pass
     try:
         fin = lambda: app.cola.put(("fin_voz", None))
-        app.voz.hablar(limpio, fin, emocion=emo)
+        app.voz.hablar(limpio, al_terminar=fin, emocion=emo)
     except Exception:
         try:
             app.decir(limpio, emocion=emo)

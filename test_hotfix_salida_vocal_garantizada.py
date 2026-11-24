@@ -116,6 +116,14 @@ class TestSalidaVocalGarantizada(unittest.TestCase):
         self.assertEqual(cara.burbujas, [texto])
         self.assertTrue(app._fragmentos_voz)
 
+    def test_marca_de_fragmentos_obsoleta_no_bloquea_voz_directa(self):
+        app, voz, _cara = self._app()
+        app._fragmentos_voz = True
+        texto = "Respuesta posterior sin flujo activo."
+        app.cola.put(("respuesta", (texto, None, "neutral")))
+        self._drenar(app)
+        self.assertEqual(voz.hablado, [texto])
+
     def test_think_se_limpia_antes_de_dividir_y_se_habla(self):
         self.assertEqual(
             cp.limpiar_etiquetas("<think>analizo</think> Respuesta corta."),
