@@ -121,6 +121,40 @@ class TestCaraOrbeHibrido(unittest.TestCase):
         self.assertEqual(c_gen["area"], "general")
         self.assertFalse(coh.obtener_orbe().modo_experto_activo)
 
+    def test_renderizado_todos_los_estados(self):
+        """Verifica que Holograma 2.0 pinte sin error en todos los estados visuales."""
+        estados_a_probar = [
+            ("reposo", False, False, False, False, 0.0),
+            ("escuchando", False, True, False, False, 0.0),
+            ("pensando", False, False, True, False, 0.0),
+            ("hablando_bajo", True, False, False, False, 0.05),
+            ("hablando_alto", True, False, False, False, 0.95),
+            ("bailando", False, False, False, True, 0.0),
+            ("silenciada", False, False, False, False, 0.0, True),
+        ]
+        for item in estados_a_probar:
+            with self.subTest(estado=item[0]):
+                img = QImage(280, 280, QImage.Format_ARGB32_Premultiplied)
+                img.fill(0)
+                p = QPainter(img)
+                cara = SimpleNamespace(
+                    hablando=item[1],
+                    escuchando=item[2],
+                    pensando=item[3],
+                    pensando_hasta=0.0,
+                    baile_hasta=9999999999.0 if item[4] else 0.0,
+                    nivel_volumen=item[5],
+                    voz_silenciada=item[6] if len(item) > 6 else False,
+                )
+                try:
+                    coh.dibujar_orbe_hibrido(p, cara, t=2.5, tam=280)
+                finally:
+                    p.end()
+                self.assertFalse(img.isNull())
+                px = img.pixelColor(140, 140)
+                self.assertTrue(px.alpha() > 0)
+
+
 
 if __name__ == "__main__":
     unittest.main()
