@@ -204,7 +204,11 @@ class PalabraClave:
                 continue
 
             # Adquirir el candado del micrófono ANTES de abrir cualquier stream en PortAudio
-            adquirido = self.app.oido.bloqueo.acquire(timeout=0.3)
+            bloqueo = getattr(getattr(self.app, "oido", None), "bloqueo", None)
+            if bloqueo is None:
+                time.sleep(0.2)
+                continue
+            adquirido = bloqueo.acquire(timeout=0.3)
             if not adquirido:
                 time.sleep(0.1)
                 continue
@@ -244,7 +248,7 @@ class PalabraClave:
             except Exception:
                 time.sleep(0.2)
             finally:
-                self.app.oido.bloqueo.release()
+                bloqueo.release()
                 time.sleep(0.05)
 
     def _coincide(self, texto):

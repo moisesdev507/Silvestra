@@ -90,9 +90,12 @@ def alternar_conversacion(app, motivo="desconocido"):
     app.silencios = 0
     print(f"[conversacion] alternar_conversacion motivo='{motivo}' nuevo_estado={'escuchando' if app.conversacion else 'silencio'}", flush=True)
     if app.conversacion:
+        if motivo == "palabra_clave_vosk":
+            iniciar_turno_wakeword(app)
         app.decir("Te escucho. Háblame.", 2500)
         escuchar(app)
     else:
+        cerrar_flags_wakeword(app)
         dejar_de_escuchar(app)
         app.decir("Listo, dejo de escuchar.", 2500)
         app._iniciar_reflexion()
@@ -107,8 +110,43 @@ def alternar_silencio(app):
         detector.siempre_atenta = not silenciada
     if silenciada:
         app.conversacion = False
+        cerrar_flags_wakeword(app)
         dejar_de_escuchar(app)
     return silenciada
+
+
+def iniciar_turno_wakeword(app):
+    """Marca el turno abierto por 'Lyris': primero espera una orden."""
+    app.turno_wakeword = True
+    app.turno_wakeword_esperando_orden = True
+    app.silencios = 0
+
+
+def cerrar_flags_wakeword(app):
+    """Limpia las marcas de turno sin tocar el estado de escucha."""
+    app.turno_wakeword = False
+    app.turno_wakeword_esperando_orden = False
+
+
+def registrar_orden_wakeword(app):
+    """La orden llegó: el fin de la respuesta cerrará el turno."""
+    if getattr(app, "turno_wakeword", False):
+        app.turno_wakeword_esperando_orden = False
+
+
+def cerrar_turno(app, motivo="wakeword"):
+    """Cierra el turno, devuelve la cara a celeste y libera el detector Lyris."""
+    dejar_de_escuchar(app)
+    cerrar_flags_wakeword(app)
+    app.conversacion = False
+    app.silencios = 0
+    cara = getattr(app, "cara", None)
+    if cara is not None:
+        if hasattr(cara, "poner_hablando"):
+            cara.poner_hablando(False)
+        elif hasattr(cara, "hablando"):
+            cara.hablando = False
+    print(f"[conversacion] turno wakeword cerrado ({motivo})", flush=True)
 
 
 def despertar(app):
@@ -116,7 +154,7 @@ def despertar(app):
     app.descansando = False
     app.pendiente_descanso = False
     app.conversacion = True
-    app.silencios = 0
+    iniciar_turno_wakeword(app)
     app.cola.put(("restaurar_ventanas", None))
     app.decir(f"Aquí estoy, {app.memoria.creador}. Dime.", 3000)
 

@@ -18,6 +18,17 @@ GRIS = QColor(120, 132, 160)
 
 import cara_emociones
 
+
+def color_estado(viva, escuchando, hablando, feliz=False, base=None):
+    """Celeste en reposo; amarillo solo al escuchar o hablar (gris si no viva)."""
+    if not viva:
+        return GRIS
+    if escuchando or hablando:
+        return AMARILLO
+    if feliz:
+        return ROSA
+    return base if base is not None else CIAN
+
 # Perfiles de expresión y rasgos faciales (delegados a cara_emociones)
 PERFILES_EMOCION = cara_emociones.RASGOS_FACIALES
 
@@ -76,14 +87,10 @@ def pintar(self):
     self.val_color_b += (t_color.blue() - self.val_color_b) * factor
     color_emocion = QColor(int(self.val_color_r), int(self.val_color_g), int(self.val_color_b))
 
-    if not self.viva:
-        color = GRIS
-    elif self.escuchando:
-        color = AMARILLO
-    elif feliz:
-        color = ROSA
-    else:
-        color = color_emocion
+    color = color_estado(
+        self.viva, self.escuchando, getattr(self, "hablando", False),
+        feliz, color_emocion,
+    )
 
     p = QPainter(self)
     try:
@@ -162,6 +169,7 @@ def pintar(self):
             vel_a = 75.0
             pulso_a = 0.7 + 0.3 * math.sin(t * 5.0)
         elif self.hablando:
+            c_a1, c_a2 = AMARILLO, QColor(245, 158, 11)
             vel_a = 90.0
             pulso_a = 0.6 + 0.4 * math.sin(t * 6.5)
 

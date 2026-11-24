@@ -164,6 +164,10 @@ class Cara(CaraMovimientoMixin, QWidget):
         self.escuchando = bool(escuchando)
         self.update()
 
+    def poner_hablando(self, hablando):
+        self.hablando = bool(hablando)
+        self.update()
+
     def changeEvent(self, evento):
         if evento.type() in (QEvent.WindowStateChange, QEvent.ActivationChange):
             import qt_estabilidad_ui

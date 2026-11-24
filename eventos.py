@@ -1,6 +1,7 @@
 """Cola de eventos: Qt ejecuta los cambios de UI."""
 import time
 
+import conversacion
 import eventos_voz
 import sonidos_ui
 
@@ -276,6 +277,9 @@ def atender_evento(app, tipo, texto):
 
     elif tipo == "fin_voz":
         app.flujo = None
+        if (getattr(app, "turno_wakeword", False) and not app.escuchando
+                and not getattr(app, "turno_wakeword_esperando_orden", False)):
+            conversacion.cerrar_turno(app, "fin_voz")
         if getattr(app, "musica_activa", False) and not app.escuchando:
             try:
                 import control_laptop
@@ -295,6 +299,7 @@ def atender_evento(app, tipo, texto):
         if hasattr(app, "iniciativa"):
             app.iniciativa.interaccion()
         app._dejar_de_escuchar()
+        conversacion.registrar_orden_wakeword(app)
         if hasattr(app, "cara") and hasattr(app.cara, "asentir"):
             app.cara.asentir(0.55)
         if app.conversacion:
@@ -323,6 +328,9 @@ def atender_evento(app, tipo, texto):
 
     elif tipo == "silencio":
         app._dejar_de_escuchar()
+        if getattr(app, "turno_wakeword", False):
+            conversacion.cerrar_turno(app, "silencio")
+            return
         hablando = bool(hasattr(app, "voz") and app.voz.ocupada())
         if not hablando:
             app.silencios += 1
