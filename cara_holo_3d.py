@@ -107,9 +107,9 @@ def dibujar_giroscopios_traseros(p: QPainter, col: dict, est: str, t: float, r: 
     """Dibuja los arcos 3D que caen detrás de la esfera (z < 0)."""
     p.save()
     anillos = [
-        (r + 14.0 * factor_exp, 0.42, 0.20, 1.35, col["halo"], 1.1),
-        (r + 25.0 * factor_exp, -0.50, -0.35, -1.05, col["acento"], 1.4),
-        (r + 36.0 * factor_exp, 0.30, 0.60, 0.80, col["centro"], 1.0),
+        (r * 1.18 * factor_exp, 0.42, 0.20, 1.35, col["halo"], 1.1),
+        (r * 1.28 * factor_exp, -0.50, -0.35, -1.05, col["acento"], 1.4),
+        (r * 1.38 * factor_exp, 0.30, 0.60, 0.80, col["centro"], 1.0),
     ]
     for r_a, p_a, y_a, v_r, c_pen, w_pen in anillos:
         traseros, _ = _calcular_segmentos_anillo(r_a, p_a, y_a, v_r, t, pitch, yaw)
@@ -125,9 +125,9 @@ def dibujar_giroscopios_delanteros(p: QPainter, col: dict, est: str, t: float, r
     """Dibuja los arcos técnicos luminosos y cabezas que pasan por delante (z >= 0)."""
     p.save()
     anillos = [
-        (r + 14.0 * factor_exp, 0.42, 0.20, 1.35, col["halo"], 1.6),
-        (r + 25.0 * factor_exp, -0.50, -0.35, -1.05, col["acento"], 2.0),
-        (r + 36.0 * factor_exp, 0.30, 0.60, 0.80, col["centro"], 1.4),
+        (r * 1.18 * factor_exp, 0.42, 0.20, 1.35, col["halo"], 1.6),
+        (r * 1.28 * factor_exp, -0.50, -0.35, -1.05, col["acento"], 2.0),
+        (r * 1.38 * factor_exp, 0.30, 0.60, 0.80, col["centro"], 1.4),
     ]
     for r_a, p_a, y_a, v_r, c_pen, w_pen in anillos:
         _, delanteros = _calcular_segmentos_anillo(r_a, p_a, y_a, v_r, t, pitch, yaw)
@@ -140,7 +140,6 @@ def dibujar_giroscopios_delanteros(p: QPainter, col: dict, est: str, t: float, r
             p.setPen(QPen(_alpha(c_pen, alfa), w_pen * (0.8 + 0.4 * prof), Qt.SolidLine, Qt.RoundCap))
             p.drawLine(QPointF(p1[0], p1[1]), QPointF(p2[0], p2[1]))
 
-        # Nodo brillante delantero (cabeza del giroscopio)
         pt_cabeza = max_z_pt[0]
         p.setPen(Qt.NoPen)
         p.setBrush(QBrush(_alpha(col["acento"], 245)))
@@ -150,46 +149,52 @@ def dibujar_giroscopios_delanteros(p: QPainter, col: dict, est: str, t: float, r
 
 def dibujar_red_neuronal_3d(p: QPainter, col: dict, est: str, t: float, r: float,
                             pitch: float, yaw: float, rms: float):
-    """Núcleo geodésico 3D: 28 nodos de Fibonacci y sinapsis ordenadas por profundidad."""
-    r_red = r * 0.66
+    """Núcleo geodésico 3D: 28 nodos de Fibonacci con impulsos sinápticos vivos."""
+    r_red = r * 0.65 * (1.0 + 0.08 * rms)
     vel_red = 0.55 if est != "pensando" else 1.35
     if est == "silenciada": vel_red = 0.05
 
-    # 1. Proyectar todos los nodos
     nodos_proj = []
     for i, (bx, by, bz) in enumerate(_NODOS_BASE):
-        # Pulsación orgánica según RMS y estado
-        radio_i = r_red * (1.0 + 0.15 * rms * math.sin(t * 8.0 + i))
+        radio_i = r_red * (1.0 + 0.12 * rms * math.sin(t * 8.0 + i))
         x, y, z = bx * radio_i, by * radio_i, bz * radio_i
         x, y, z = rotar_3d(x, y, z, 0.25, t * vel_red)
         x, y, z = rotar_3d(x, y, z, pitch, yaw)
         px, py, k, pz = proyectar_3d(x, y, z)
-        nodos_proj.append((px, py, k, pz))
+        nodos_proj.append((px, py, k, pz, i))
 
-    # 2. Dibujar aristas ordenadas por profundidad media
     aristas_ordenadas = []
     for i, j in _ARISTAS_BASE:
         p1, p2 = nodos_proj[i], nodos_proj[j]
-        aristas_ordenadas.append((p1, p2, (p1[3] + p2[3]) * 0.5))
+        aristas_ordenadas.append((p1, p2, (p1[3] + p2[3]) * 0.5, i, j))
     aristas_ordenadas.sort(key=lambda item: item[2])
 
     p.save()
-    for p1, p2, z_med in aristas_ordenadas:
-        norm_z = (z_med + r_red) / (2.0 * r_red)
-        norm_z = max(0.0, min(1.0, norm_z))
+    for p1, p2, z_med, i, j in aristas_ordenadas:
+        norm_z = max(0.0, min(1.0, (z_med + r_red) / (2.0 * r_red)))
         alfa_linea = int(25 + 130 * norm_z)
+        es_sinapsis = (rms > 0.08 and z_med > 0 and (i + j + int(t * 14.0)) % 3 == 0)
+        if es_sinapsis:
+            alfa_linea = min(255, int(alfa_linea * 1.8 + 60))
+            c_linea = col["acento"]
+            w_linea = (0.9 + 0.6 * norm_z) * 1.4
+        else:
+            c_linea = col["plasma2"] if z_med < 0 else col["plasma1"]
+            w_linea = 0.9 + 0.6 * norm_z
         if est == "silenciada": alfa_linea = int(alfa_linea * 0.4)
-        c_linea = col["plasma2"] if z_med < 0 else col["plasma1"]
-        p.setPen(QPen(_alpha(c_linea, alfa_linea), 0.9 + 0.6 * norm_z))
+        p.setPen(QPen(_alpha(c_linea, alfa_linea), w_linea))
         p.drawLine(QPointF(p1[0], p1[1]), QPointF(p2[0], p2[1]))
 
-    # 3. Dibujar nodos (círculos) con luminosidad según z
     nodos_proj.sort(key=lambda n: n[3])
-    for px, py, k, pz in nodos_proj:
+    for px, py, k, pz, idx in nodos_proj:
         norm_z = max(0.0, min(1.0, (pz + r_red) / (2.0 * r_red)))
         alfa_nodo = int(40 + 200 * norm_z)
         radio_nodo = (1.2 + 1.4 * norm_z) * k
-        if est == "experto":
+        if rms > 0.08 and pz > 0 and (idx + int(t * 10)) % 4 == 0:
+            col_nodo = col["acento"]
+            radio_nodo *= 1.3
+            alfa_nodo = 255
+        elif est == "experto":
             col_nodo = col["acento"] if pz > 0 else col["centro"]
         else:
             col_nodo = col["centro"] if pz > 0 else col["medio"]
@@ -200,7 +205,7 @@ def dibujar_red_neuronal_3d(p: QPainter, col: dict, est: str, t: float, r: float
 
 
 def dibujar_ecualizador_radial(p: QPainter, col: dict, est: str, t: float, r: float, rms: float):
-    """32 barras radiales alrededor del núcleo que laten con el audio RMS y micro-armónicos."""
+    """32 barras radiales alrededor del núcleo con recorrido vivo y puntas brillantes."""
     n_barras = 32
     step = math.tau / n_barras
     r_in = r + 2.0
@@ -208,40 +213,45 @@ def dibujar_ecualizador_radial(p: QPainter, col: dict, est: str, t: float, r: fl
     for i in range(n_barras):
         ang = i * step + t * 0.20
         c, s = math.cos(ang), math.sin(ang)
-        # Altura dinámica: base sutil en reposo, saltos vivos al hablar con RMS
-        onda = 0.5 + 0.5 * math.sin(i * 1.8 + t * 14.0)
-        longitud = 1.6 + (14.0 * rms) * (0.35 + 0.65 * onda)
+        onda = 0.45 + 0.55 * math.sin(i * 1.9 + t * 16.0)
+        longitud = 2.4 + (r * 0.26 * rms) * (0.35 + 0.65 * onda)
         if est == "pensando":
-            longitud += 2.0 * (0.5 + 0.5 * math.sin(i * 3.0 + t * 6.0))
+            longitud += 2.2 * (0.5 + 0.5 * math.sin(i * 3.0 + t * 6.0))
         elif est == "experto":
-            longitud += 3.0 * (0.5 + 0.5 * math.cos(i * 2.0 + t * 4.0))
+            longitud += 3.2 * (0.5 + 0.5 * math.cos(i * 2.0 + t * 4.0))
 
-        alfa = int(60 + 180 * min(1.0, rms * 1.5 + 0.2))
+        alfa = int(60 + 190 * min(1.0, rms * 1.6 + 0.25))
         if est == "silenciada": alfa = 30; longitud = 1.0
         p1 = QPointF(r_in * c, r_in * s)
-        p2 = QPointF((r_in + longitud) * c, (r_in + longitud) * s)
+        x2, y2 = (r_in + longitud) * c, (r_in + longitud) * s
+        p2 = QPointF(x2, y2)
         c_barra = col["acento"] if (i % 4 == 0) else col["halo"]
         p.setPen(QPen(_alpha(c_barra, alfa), 1.2, Qt.SolidLine, Qt.RoundCap))
         p.drawLine(p1, p2)
+
+        if rms > 0.08 and longitud > 4.0:
+            p.setPen(Qt.NoPen)
+            p.setBrush(QBrush(_alpha(col["acento"], min(255, int(alfa * 1.2)))))
+            p.drawEllipse(p2, 1.1, 1.1)
     p.restore()
 
 
 def dibujar_particulas_3d(p: QPainter, col: dict, est: str, t: float, r: float, pitch: float, yaw: float):
-    """Micro-partículas que orbitan en 3D con halo difuso delantero."""
+    """Micro-partículas que orbitan en 3D en el espacio exterior limpio."""
     if est == "silenciada": return
     p.save()
     p.setPen(Qt.NoPen)
     for i in range(10):
         vel = 0.65 + (i % 4) * 0.18
         ang = t * vel + i * (math.tau / 10.0)
-        r_orb = r + 16.0 + (i % 4) * 6.5
+        r_orb = r * 1.22 + (i % 4) * (r * 0.06)
         incl = (i - 5) * 0.14
         x = r_orb * math.cos(ang)
         y = r_orb * math.sin(ang) * math.cos(incl)
         z = r_orb * math.sin(ang) * math.sin(incl)
         x, y, z = rotar_3d(x, y, z, pitch, yaw)
         px, py, k, pz = proyectar_3d(x, y, z)
-        if pz > -10.0:  # Mostrar partículas frontales y laterales
+        if pz > -10.0:
             alfa = int(80 + 160 * max(0.0, min(1.0, (pz + 10.0) / (r_orb * 0.8))))
             p.setBrush(QBrush(_alpha(col["acento"], alfa)))
             p.drawEllipse(QPointF(px, py), 1.3 * k, 1.3 * k)

@@ -46,19 +46,31 @@ def _cerrar_cliente():
 atexit.register(_cerrar_cliente)
 
 
+_ULTIMO_PRECALENTADO = 0.0
+
+
 def aura_disponible() -> bool:
     """Verifica si Deepgram Aura-2 está configurado y habilitado para streaming prioritario."""
     clave = str(getattr(config, "DEEPGRAM_API_KEY", "") or os.environ.get("DEEPGRAM_API_KEY", "")).strip()
     return bool(clave)
 
 
-def precalentar_conexion():
-    """Precalentamiento no bloqueante de TLS en segundo plano usando el singleton."""
+def precalentar_conexion(forzar: bool = False):
+    """Precalentamiento no bloqueante de TLS en segundo plano usando el singleton (cooldown 12s)."""
+    global _ULTIMO_PRECALENTADO
+    if not aura_disponible():
+        return
+    ahora = time.time()
+    if not forzar and (ahora - _ULTIMO_PRECALENTADO) < 12.0:
+        return
+    _ULTIMO_PRECALENTADO = ahora
+
     def _tarea():
         try:
             cli = _obtener_cliente()
             cli.get("https://api.deepgram.com", timeout=2.5)
-        except Exception: pass
+        except Exception:
+            pass
     threading.Thread(target=_tarea, daemon=True, name="aura-warmup").start()
 
 

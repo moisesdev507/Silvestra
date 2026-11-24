@@ -32,16 +32,22 @@ PALETAS = {
         "plasma2": QColor(56, 189, 248), "plasma3": QColor(129, 140, 248),
     },
     "experto": {
-        "centro": QColor(253, 230, 138), "medio": QColor(168, 85, 247),
-        "borde": QColor(107, 33, 168), "halo": QColor(217, 70, 239),
-        "acento": QColor(245, 158, 11), "plasma1": QColor(192, 38, 211),
-        "plasma2": QColor(147, 51, 234), "plasma3": QColor(251, 191, 36),
+        "centro": QColor(254, 240, 138), "medio": QColor(168, 85, 247),
+        "borde": QColor(88, 28, 135), "halo": QColor(217, 70, 239),
+        "acento": QColor(250, 204, 21), "plasma1": QColor(192, 38, 211),
+        "plasma2": QColor(126, 34, 206), "plasma3": QColor(251, 191, 36),
     },
     "hablando": {
-        "centro": QColor(255, 251, 235), "medio": QColor(245, 158, 11),
+        "centro": QColor(224, 252, 255), "medio": QColor(6, 182, 212),
+        "borde": QColor(14, 116, 144), "halo": QColor(56, 189, 248),
+        "acento": QColor(240, 253, 255), "plasma1": QColor(34, 211, 238),
+        "plasma2": QColor(14, 165, 233), "plasma3": QColor(99, 102, 241),
+    },
+    "hablando_calido": {
+        "centro": QColor(254, 243, 199), "medio": QColor(245, 158, 11),
         "borde": QColor(180, 83, 9), "halo": QColor(251, 191, 36),
-        "acento": QColor(254, 240, 138), "plasma1": QColor(234, 88, 12),
-        "plasma2": QColor(245, 158, 11), "plasma3": QColor(251, 191, 36),
+        "acento": QColor(255, 110, 150), "plasma1": QColor(251, 146, 60),
+        "plasma2": QColor(244, 63, 94), "plasma3": QColor(253, 224, 71),
     },
     "bailando": {
         "centro": QColor(255, 240, 245), "medio": QColor(244, 63, 94),
@@ -57,7 +63,7 @@ PALETAS = {
     },
 }
 
-_OBSIDIANA = QColor(8, 14, 26, 222)  # Cristal obsidiana abisal
+_OBSIDIANA = QColor(6, 12, 22, 215)  # Cristal obsidiana abisal limpio
 
 
 def _interp_col(c1: QColor, c2: QColor, f: float) -> QColor:
@@ -82,7 +88,7 @@ class GestorOrbeHibrido:
         self.modo_experto_activo = False
         self.area_experto = "general"
         self.rms_suave = 0.0
-        self.radio_suave = 52.0
+        self.radio_suave = 45.0
         self.ang_halo_1 = 0.0
         self.ang_halo_2 = 180.0
         self.t_anterior = 0.0
@@ -99,7 +105,11 @@ class GestorOrbeHibrido:
         if getattr(cara, "voz_silenciada", False): return "silenciada"
         ahora = time.time()
         if ahora < getattr(cara, "baile_hasta", 0.0): return "bailando"
-        if getattr(cara, "hablando", False): return "hablando"
+        if getattr(cara, "hablando", False):
+            emo = str(getattr(cara, "emocion_objetivo", "") or "").lower()
+            if emo in ("alegre", "feliz", "calida", "amorosa", "entusiasta"):
+                return "hablando_calido"
+            return "hablando"
         if getattr(cara, "escuchando", False): return "escuchando"
         if self.modo_experto_activo or getattr(cara, "modo_experto", False): return "experto"
         if getattr(cara, "pensando", False) or ahora < getattr(cara, "pensando_hasta", 0.0): return "pensando"
@@ -153,9 +163,10 @@ class GestorOrbeHibrido:
 
         col = self._colores_suaves
         resp = 0.5 + 0.5 * math.sin(t * (math.tau / 3.5))
-        r_base = 51.0 + (2.5 * resp if est == "reposo" else 0.0)
-        if est == "hablando": r_base += 10.0 * self.rms_suave
-        elif est == "experto": r_base += 4.5 + 2.0 * math.sin(t * 3.2)
+        # Núcleo proporcionado (~66% del radio útil) para dar amplio aire a los anillos y ecualizador
+        r_base = 45.0 + (2.0 * resp if est == "reposo" else 0.0)
+        if "hablando" in est: r_base += 7.5 * self.rms_suave
+        elif est == "experto": r_base += 3.5 + 1.8 * math.sin(t * 3.2)
 
         self.radio_suave += (r_base - self.radio_suave) * 0.15
         r_n = self.radio_suave
@@ -188,17 +199,21 @@ class GestorOrbeHibrido:
 
         # Gradiente radial con centro profundo semi-oscuro (jamás se quema en blanco)
         fresnel = QRadialGradient(QPointF(0, 0), r)
-        fresnel.setColorAt(0.0, _alpha(col["borde"], 30))
-        fresnel.setColorAt(0.65, _alpha(col["medio"], 65))
-        fresnel.setColorAt(0.92, _alpha(col["centro"], 150))
-        fresnel.setColorAt(1.0, _alpha(col["halo"], 215))
+        fresnel.setColorAt(0.0, _alpha(col["borde"], 25))
+        fresnel.setColorAt(0.65, _alpha(col["medio"], 60))
+        fresnel.setColorAt(0.92, _alpha(col["centro"], 135))
+        fresnel.setColorAt(1.0, _alpha(col["halo"], 190))
         p.setBrush(QBrush(fresnel))
         p.drawEllipse(QPointF(0, 0), r, r)
 
     def _dibujar_borde_fresnel(self, p: QPainter, col: dict, est: str, r: float):
-        """Fino aro perimetral luminoso que delimita la lente."""
-        p.setPen(QPen(_alpha(col["centro"], 190 if est != "silenciada" else 65), 1.2))
+        """Fino aro perimetral Fresnel con doble halo suave para fundirse en el aire."""
         p.setBrush(Qt.NoBrush)
+        # Halo difuso exterior muy sutil
+        p.setPen(QPen(_alpha(col["halo"], 45 if est != "silenciada" else 20), 2.2))
+        p.drawEllipse(QPointF(0, 0), r + 0.8, r + 0.8)
+        # Borde nítido ultrafino tintado con el color del tema
+        p.setPen(QPen(_alpha(col["centro"], 150 if est != "silenciada" else 55), 1.2))
         p.drawEllipse(QPointF(0, 0), r, r)
 
     def _dibujar_filamentos_suaves(self, p: QPainter, col: dict, est: str, t: float, r: float):
@@ -219,7 +234,7 @@ class GestorOrbeHibrido:
         for color_capa, dir_rot, frec, f1, f2, alfa in capas:
             if est == "silenciada": alfa = 15
             path = QPainterPath()
-            amp = (2.2 + 4.5 * v) if est == "hablando" else 2.5
+            amp = (2.2 + 4.5 * v) if "hablando" in est else 2.5
             r_c = r * 0.70
             coords = []
             for i in range(puntos):
@@ -240,19 +255,19 @@ class GestorOrbeHibrido:
         p.restore()
 
     def _dibujar_especular(self, p: QPainter, col: dict, r: float):
-        """Reflejo curvo superior izquierdo para volumen esférico 3D."""
+        """Reflejo curvo superior izquierdo sutil para volumen esférico 3D."""
         p.setPen(Qt.NoPen)
         r_spec = r * 0.28
         spec_pos = QPointF(-r * 0.32, -r * 0.34)
         grad_spec = QRadialGradient(spec_pos, r_spec)
-        grad_spec.setColorAt(0.0, _alpha(QColor(255, 255, 255), 160))
-        grad_spec.setColorAt(0.55, _alpha(col["acento"], 70))
+        grad_spec.setColorAt(0.0, _alpha(QColor(255, 255, 255), 130))
+        grad_spec.setColorAt(0.55, _alpha(col["acento"], 60))
         grad_spec.setColorAt(1.0, _alpha(col["acento"], 0))
         p.setBrush(QBrush(grad_spec))
         p.drawEllipse(spec_pos, r_spec, r_spec * 0.70)
 
     def _dibujar_ondas_reactivas(self, p: QPainter, col: dict, est: str, t: float, r: float):
-        if est == "hablando" and self.rms_suave > 0.12:
+        if "hablando" in est and self.rms_suave > 0.12:
             fase = (t * 2.5) % 1.0
             r_o = r + 4.0 + 36.0 * fase
             alfa = int(160 * (1.0 - fase) * min(1.0, self.rms_suave * 1.8))

@@ -222,6 +222,27 @@ class TestTtsAuraStream(unittest.TestCase):
             self.assertTrue(niveles[0] > 0.30)
             self.assertEqual(niveles[-1], 0.0)
 
+    @patch("config.DEEPGRAM_API_KEY", "fake_key_12345")
+    def test_precalentado_con_cooldown(self):
+        """Precalentado respeta el cooldown de 12s y no falla si no hay red."""
+        tas._ULTIMO_PRECALENTADO = 0.0
+        with patch.object(tas, "_obtener_cliente") as mock_cli:
+            mock_inst = MagicMock()
+            mock_cli.return_value = mock_inst
+
+            # 1. Primera llamada se dispara
+            tas.precalentar_conexion()
+            self.assertTrue(tas._ULTIMO_PRECALENTADO > 0.0)
+            t_primera = tas._ULTIMO_PRECALENTADO
+
+            # 2. Segunda llamada inmediata es ignorada por cooldown
+            tas.precalentar_conexion()
+            self.assertEqual(tas._ULTIMO_PRECALENTADO, t_primera)
+
+            # 3. Forzar sí actualiza
+            tas.precalentar_conexion(forzar=True)
+            self.assertTrue(tas._ULTIMO_PRECALENTADO >= t_primera)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -46,6 +46,9 @@ class TestCaraOrbeHibrido(unittest.TestCase):
         # 5. Hablando
         cara.hablando = True
         self.assertEqual(orbe.deducir_estado(cara), "hablando")
+        cara.emocion_objetivo = "alegre"
+        self.assertEqual(orbe.deducir_estado(cara), "hablando_calido")
+        cara.emocion_objetivo = ""
         cara.hablando = False
 
         # 6. Bailando
@@ -129,6 +132,7 @@ class TestCaraOrbeHibrido(unittest.TestCase):
             ("pensando", False, False, True, False, 0.0),
             ("hablando_bajo", True, False, False, False, 0.05),
             ("hablando_alto", True, False, False, False, 0.95),
+            ("hablando_calido", True, False, False, False, 0.50),
             ("bailando", False, False, False, True, 0.0),
             ("silenciada", False, False, False, False, 0.0, True),
         ]
@@ -240,6 +244,27 @@ class TestCaraOrbeHibrido(unittest.TestCase):
                 if img_silencio.pixelColor(x, y) != img_voz_alta.pixelColor(x, y):
                     diferencias += 1
         self.assertTrue(diferencias > 15, f"Esperadas diferencias visuales por RMS, encontradas: {diferencias}")
+
+    def test_proporcion_nucleo_y_margen_exterior(self):
+        """El núcleo tiene proporción ~66-70% del radio útil dejando aire libre para anillos 3D."""
+        orbe = coh.GestorOrbeHibrido()
+        cara = SimpleNamespace(
+            hablando=False, escuchando=False, pensando=False,
+            pensando_hasta=0.0, baile_hasta=0.0, nivel_volumen=0.0,
+            voz_silenciada=False
+        )
+        img = QImage(280, 280, QImage.Format_ARGB32)
+        p = QPainter(img)
+        try:
+            orbe.dibujar_orbe(p, cara, t=0.0, tam=280)
+        finally:
+            p.end()
+
+        # El radio suave del núcleo debe ser ~45 px (< 50 px)
+        self.assertTrue(orbe.radio_suave < 50.0)
+        # El lienzo mide semieje 140 px, dejando > 85 px de margen exterior
+        margen = 140.0 - orbe.radio_suave
+        self.assertTrue(margen > 85.0)
 
 
 if __name__ == "__main__":

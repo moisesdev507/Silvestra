@@ -94,6 +94,13 @@ def _notificar_modo_experto(activo: bool, area: str = "general"):
 
 def clasificar_consulta(texto: str) -> dict:
     """Clasifica en < 10ms la consulta para determinar área, carril y prompt experto."""
+    try:
+        import tts_aura_stream
+        if tts_aura_stream.aura_disponible():
+            tts_aura_stream.precalentar_conexion()
+    except Exception:
+        pass
+
     t_orig = str(texto or "").strip()
     if not t_orig:
         _notificar_modo_experto(False)
