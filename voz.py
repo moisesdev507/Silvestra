@@ -264,10 +264,12 @@ class Voz:
                         break
                     frase, emo = item if isinstance(item, tuple) else (item, getattr(flujo, "emocion", emocion_defecto))
                     try:
-                        audio = self._audio(frase, emo)
-                        buzon.put((frase, audio, emo))
+                        import tts_aura_stream
+                        audio = tts_aura_stream.procesar_frase_productor(self, frase, emo)
                     except Exception:
-                        buzon.put((frase, None, emo))
+                        try: audio = self._audio(frase, emo)
+                        except Exception: audio = None
+                    buzon.put((frase, audio, emo))
                 buzon.put(None)
 
             threading.Thread(target=productor, daemon=True).start()
@@ -291,18 +293,15 @@ class Voz:
                 inicio_audio, set_nivel = self.sincronia_labial.callbacks(
                     self, generacion, version, _reportar_primera_palabra)
 
-                # 1. Intentar streaming directo con Deepgram Aura-2 PCM
-                if not audio:
-                    try:
-                        import tts_aura_stream
-                        if tts_aura_stream.intentar_stream_frase(
-                            self, frase, generacion, version, inicio_audio, set_nivel
-                        ):
-                            if version != self.version:
-                                return
-                            continue
-                    except Exception:
-                        pass
+                # Intentar Aura streaming; si no aplica o falla, obtiene audio fallback
+                try:
+                    import tts_aura_stream
+                    ok_stream, audio = tts_aura_stream.procesar_frase_consumidor(
+                        self, frase, audio, emo, generacion, version, inicio_audio, set_nivel)
+                    if ok_stream:
+                        if version != self.version: return
+                        continue
+                except Exception: pass
 
                 if audio and self.reproductor is not None:
                     try:

@@ -28,6 +28,10 @@ GRACIA_DUENO_SEG = 90.0  # ventana de gracia tras verificación biométrica posi
 _extractor = None
 _lock_extractor = threading.Lock()
 
+_cache_biometria = {}
+_lock_cache = threading.RLock()
+TTL_CACHE_SEG = 4.0
+
 FRASES_NEGATIVA = [
     "Eso solo se lo hago a Moisés, pero me da gusto escucharte.",
     "Esa orden solo se la obedezco a Moisés. Pero podemos seguir conversando.",
@@ -166,6 +170,20 @@ class VozDueno:
             print(f"[voz_dueno] audio_corto={duracion:.2f}s camara_ok={camara_ok} gracia_dueno_reciente={gracia} permitido={es_dueno}", flush=True)
             return
 
+        # Micro-caché seguro TTL para evitar doble inferencia en el mismo turno
+        clave_cache = None
+        if audio is not None and isinstance(audio, np.ndarray) and audio.size > 0:
+            muestra_hash = hash((audio.size, float(audio[0]), float(audio[-1]), float(audio[audio.size // 2])))
+            clave_cache = (audio.size, muestra_hash)
+            ahora_m = time.monotonic()
+            with _lock_cache:
+                hit = _cache_biometria.get(clave_cache)
+                if hit and (ahora_m - hit["t"]) < TTL_CACHE_SEG:
+                    self.ultima_verificacion = dict(hit["resultado"])
+                    if hit.get("embedding") is not None:
+                        self.ultimo_embedding = hit["embedding"].copy()
+                    return
+
         try:
             audio_limpio, dur_filtrada = preparar_audio_biometria(audio)
             emb = extraer_embedding(audio_limpio)
@@ -190,6 +208,13 @@ class VozDueno:
                 "camara": camara_ok,
                 "motivo": "camara" if (camara_ok and score < self.umbral) else ("voz_ok" if es_dueno else "rechazado"),
             }
+            if clave_cache is not None:
+                with _lock_cache:
+                    _cache_biometria[clave_cache] = {
+                        "t": time.monotonic(),
+                        "resultado": dict(self.ultima_verificacion),
+                        "embedding": self.ultimo_embedding.copy(),
+                    }
         except Exception as e:
             # Política fail-open: nunca dejar fuera al dueño ante fallos técnicos
             print(f"[voz_dueno] Error al verificar voz (fail-open activado): {e}", flush=True)

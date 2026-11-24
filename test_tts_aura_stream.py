@@ -116,12 +116,53 @@ class TestTtsAuraStream(unittest.TestCase):
             ok = tas.reproducir_stream_aura("Hola")
             self.assertFalse(ok)
 
-    def test_intentar_stream_frase_respeta_local_primero(self):
+    def test_procesar_frase_productor_salta_edge_tts_si_aura_activo(self):
         voz_mock = MagicMock()
-        voz_mock.version = 1
-        with patch("voz_local.debe_ir_local_primero", return_value=True):
-            res = tas.intentar_stream_frase(voz_mock, "Prueba", 1, 1, None, None)
-            self.assertFalse(res)
+        voz_mock._audio.return_value = b"edge_audio"
+
+        with patch.object(tas, "aura_disponible", return_value=True), \
+             patch("voz_cache.obtener_audio_cache", return_value=None), \
+             patch("voz_local.debe_ir_local_primero", return_value=False):
+            # Debe devolver None (sin sintetizar con Edge-TTS por adelantado)
+            res = tas.procesar_frase_productor(voz_mock, "Hola mundo", "neutral")
+            self.assertIsNone(res)
+            self.assertFalse(voz_mock._audio.called)
+
+        # Si Aura NO está disponible, sí debe llamar a pre-síntesis
+        with patch.object(tas, "aura_disponible", return_value=False), \
+             patch("voz_cache.obtener_audio_cache", return_value=None), \
+             patch("voz_local.debe_ir_local_primero", return_value=False):
+            res = tas.procesar_frase_productor(voz_mock, "Hola mundo", "neutral")
+            self.assertEqual(res, b"edge_audio")
+            self.assertTrue(voz_mock._audio.called)
+
+    def test_micro_cache_biometria_dueno(self):
+        import numpy as np
+        import voz_dueno
+
+        vd = voz_dueno.VozDueno(app=MagicMock())
+        vd.activa = True
+        vd.banco_dueno = np.ones((5, 192), dtype=np.float32)
+
+        # Buffer simulado
+        audio_sim = np.sin(np.linspace(0, 100, 16000 * 3, dtype=np.float32))
+        vd.app.oido.ultimo_audio = audio_sim
+        vd.app.oido.duracion_ultimo_audio = 3.0
+
+        with patch("voz_dueno.preparar_audio_biometria", return_value=(audio_sim, 3.0)) as mock_prep, \
+             patch("voz_dueno.extraer_embedding", return_value=np.ones(192, dtype=np.float32)) as mock_emb, \
+             patch("voz_dueno.calcular_similitud_banco", return_value=(0.85, 0.85, 5)) as mock_sim:
+
+            # 1. Primera inferencia
+            vd.evaluar_entrada_voz("hola")
+            self.assertEqual(mock_emb.call_count, 1)
+            self.assertTrue(vd.ultima_verificacion["es_dueno"])
+
+            # 2. Segunda inferencia inmediata con el mismo audio
+            vd.evaluar_entrada_voz("hola de nuevo")
+            # El extractor CAM++ no debe llamarse una segunda vez
+            self.assertEqual(mock_emb.call_count, 1)
+            self.assertTrue(vd.ultima_verificacion["es_dueno"])
 
 
 if __name__ == "__main__":

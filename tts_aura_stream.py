@@ -46,12 +46,18 @@ def _cerrar_cliente():
 atexit.register(_cerrar_cliente)
 
 
+def aura_disponible() -> bool:
+    """Verifica si Deepgram Aura-2 está configurado y habilitado para streaming prioritario."""
+    clave = str(getattr(config, "DEEPGRAM_API_KEY", "") or os.environ.get("DEEPGRAM_API_KEY", "")).strip()
+    return bool(clave)
+
+
 def precalentar_conexion():
-    """Precalentamiento no bloqueante de TLS en segundo plano."""
+    """Precalentamiento no bloqueante de TLS en segundo plano usando el singleton."""
     def _tarea():
         try:
             cli = _obtener_cliente()
-            cli.get("https://api.deepgram.com", timeout=2.0)
+            cli.get("https://api.deepgram.com", timeout=2.5)
         except Exception: pass
     threading.Thread(target=_tarea, daemon=True, name="aura-warmup").start()
 
@@ -145,20 +151,32 @@ def reproducir_stream_aura(
         return False
 
 
-def intentar_stream_frase(voz_obj, frase, generacion, version, al_iniciar, al_nivel) -> bool:
-    """Envoltorio desacoplado para no inflar voz.py."""
+def procesar_frase_productor(voz_obj, frase, emo):
+    """Decide si sintetiza audio o si pasa directo a streaming sin bloquear el hilo."""
+    import voz_cache, voz_local
+    en_cache = voz_cache.obtener_audio_cache(frase, emo)
+    if en_cache or voz_local.debe_ir_local_primero() or not aura_disponible():
+        return voz_obj._audio(frase, emo)
+    return None
+
+
+def procesar_frase_consumidor(voz_obj, frase, audio, emo, gen, ver, al_ini, al_niv):
+    """Intenta streaming Aura-2; si falla o no aplica, retorna el audio listo para reproductor."""
     import voz_local
-    if voz_local.debe_ir_local_primero():
-        return False
-    try:
-        ok = reproducir_stream_aura(frase, lambda: version != voz_obj.version, al_iniciar, al_nivel)
-        if ok:
-            if version != voz_obj.version:
-                print(f"[voz] cancelada motivo=interrupcion frase='{frase}'", flush=True)
-            else:
-                voz_obj.sincronia_labial.finalizar(generacion)
-                print(f"[voz] terminó='{frase}'", flush=True)
-            return True
-    except Exception as e:
-        print(f"[voz] error intentando aura stream: {e}", flush=True)
-    return False
+    if not audio and not voz_local.debe_ir_local_primero():
+        try:
+            if reproducir_stream_aura(frase, lambda: ver != voz_obj.version, al_ini, al_niv):
+                if ver != voz_obj.version:
+                    print(f"[voz] cancelada motivo=interrupcion frase='{frase}'", flush=True)
+                else:
+                    voz_obj.sincronia_labial.finalizar(gen)
+                    print(f"[voz] terminó='{frase}'", flush=True)
+                return True, None
+        except Exception as e:
+            print(f"[voz] aura stream error ({e}), usando fallback...", flush=True)
+    if not audio:
+        try:
+            audio = voz_obj._audio(frase, emo)
+        except Exception:
+            audio = None
+    return False, audio
