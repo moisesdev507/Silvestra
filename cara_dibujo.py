@@ -53,19 +53,24 @@ def _asegurar_atributos(cara):
 
 
 def pintar(cara):
-    """Pinta el orbe y sus anillos sin bloquear el hilo de Qt."""
+    """Pinta el orbe híbrido (Núcleo Vivo + Halo Técnico) sin bloquear el hilo de Qt."""
     _asegurar_atributos(cara)
     ahora = time.time()
-    feliz = ahora < cara.feliz_hasta or ahora < cara.baile_hasta
-    color = color_estado(
-        getattr(cara, "viva", True),
-        getattr(cara, "escuchando", False),
-        getattr(cara, "hablando", False),
-        feliz,
-        silenciada=cara_nucleo.esta_silenciada(cara),
-    )
     p = QPainter(cara)
     try:
+        import cara_orbe_hibrido
+        cara_orbe_hibrido.dibujar_orbe_hibrido(p, cara, ahora - cara.t0,
+                                               cara.width() or TAM)
+    except Exception:
+        # Fallback defensivo a cara_nucleo si ocurriera cualquier error
+        feliz = ahora < cara.feliz_hasta or ahora < cara.baile_hasta
+        color = color_estado(
+            getattr(cara, "viva", True),
+            getattr(cara, "escuchando", False),
+            getattr(cara, "hablando", False),
+            feliz,
+            silenciada=cara_nucleo.esta_silenciada(cara),
+        )
         cara_nucleo.dibujar(p, cara, color, ahora - cara.t0,
                             cara.width() or TAM)
     finally:

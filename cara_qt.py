@@ -5,13 +5,7 @@ import unicodedata
 
 from PySide6.QtCore import Qt, QTimer, QEvent
 from PySide6.QtGui import QAction, QCursor
-from PySide6.QtWidgets import (
-    QApplication,
-    QInputDialog,
-    QMenu,
-    QMessageBox,
-    QWidget,
-)
+from PySide6.QtWidgets import QApplication, QInputDialog, QMenu, QMessageBox, QWidget
 
 import acciones
 import cara_nucleo
@@ -169,6 +163,15 @@ class Cara(CaraMovimientoMixin, QWidget):
 
     def poner_hablando(self, hablando):
         self.hablando = bool(hablando)
+        if self.hablando:
+            self.fijar_modo_experto(False)
+        self.update()
+
+    def fijar_modo_experto(self, activo, area="general"):
+        try:
+            import cara_orbe_hibrido
+            cara_orbe_hibrido.fijar_modo_experto(activo, area)
+        except Exception: pass
         self.update()
 
     def color_estado(self):

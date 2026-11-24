@@ -66,10 +66,19 @@ def _obtener_calculo_local(texto: str) -> str:
         return ""
 
 
+def _notificar_modo_experto(activo: bool, area: str = "general"):
+    try:
+        import cara_orbe_hibrido
+        cara_orbe_hibrido.fijar_modo_experto(activo, area)
+    except Exception:
+        pass
+
+
 def clasificar_consulta(texto: str) -> dict:
     """Clasifica en < 10ms la consulta para determinar área, carril y prompt experto."""
     t_orig = str(texto or "").strip()
     if not t_orig:
+        _notificar_modo_experto(False)
         return {"area": "general", "carril": "rapido", "prompt_experto": ""}
 
     t_norm = _norm(t_orig)
@@ -86,6 +95,7 @@ def clasificar_consulta(texto: str) -> dict:
         calc_verificado = _obtener_calculo_local(t_orig)
         if calc_verificado:
             prompt_mat = f"{prompt_mat}\n\n{calc_verificado}"
+        _notificar_modo_experto(True, "matematicas")
         return {
             "area": "matematicas",
             "carril": "pesado",
@@ -94,6 +104,7 @@ def clasificar_consulta(texto: str) -> dict:
 
     # 2. Si contiene términos de programación, clasificar en programación
     if es_prog:
+        _notificar_modo_experto(True, "programacion")
         return {
             "area": "programacion",
             "carril": "pesado",
@@ -106,20 +117,23 @@ def clasificar_consulta(texto: str) -> dict:
         prompt_mat = obtener_cartucho("matematicas")
         if calc_verificado:
             prompt_mat = f"{prompt_mat}\n\n{calc_verificado}"
+        _notificar_modo_experto(True, "matematicas")
         return {
             "area": "matematicas",
             "carril": "pesado",
             "prompt_experto": prompt_mat,
         }
 
-    # 3. Razonamiento analítico pesado general
+    # 4. Razonamiento analítico pesado general
     if _PATRON_RAZONAMIENTO_PESADO.search(t_orig) or _PATRON_RAZONAMIENTO_PESADO.search(t_norm):
+        _notificar_modo_experto(True, "general")
         return {
             "area": "general",
             "carril": "pesado",
             "prompt_experto": "",
         }
 
+    _notificar_modo_experto(False)
     return {
         "area": "general",
         "carril": "rapido",
