@@ -4,6 +4,7 @@ import threading
 import time
 
 TIEMPO_ORDEN = 8.0
+TIEMPO_RESPUESTA = 12.0
 FUERTES = {"lyris", "liris", "iris", "lyra", "liria", "lyries", "siris",
            "lira", "lirio", "lirios", "silvestra", "silvestre"}
 DEBILES = {"luis", "serious"}
@@ -24,7 +25,6 @@ def _orden_de(ps):
 
 
 def detectar(texto):
-    """(dispara, variante, orden); Luis/Serious solo como vocativo de borde."""
     ps = palabras(texto)
     if not ps:
         return False, "", ""
@@ -55,6 +55,16 @@ def extraer_orden(texto):
 def tiene_orden(texto):
     return any(len(p) >= 2 and p not in RELLENO and p not in DEBILES
                for p in palabras(texto))
+
+
+def texto_valido(texto):
+    if not str(texto or "").strip():
+        return False
+    try:
+        import oido_flujo
+        return not oido_flujo.es_bucle_alucinacion(texto)
+    except Exception:
+        return True
 
 
 def permitir_transcripcion(app):
@@ -94,7 +104,6 @@ def interceptar(app, tipo, texto):
 
 
 class GestorInvocacion:
-    """Estado del turno ambiental; nunca toca Qt directamente."""
 
     def __init__(self, app):
         self.app = app
@@ -105,6 +114,7 @@ class GestorInvocacion:
         self.en_turno = False
         self.esperando_orden = False
         self.limite_orden = 0.0
+        self.limite_respuesta = 0.0
 
     def iniciar(self):
         with self.bloqueo:
@@ -175,6 +185,9 @@ class GestorInvocacion:
 
     def _puede_capturar(self):
         with self.bloqueo:
+            if self.en_turno and time.monotonic() >= self.limite_respuesta:
+                self._reposo()  # cerebro sin respuesta hablada: nunca queda amarillo
+                return False
             if not (self.vivo and self.activo and not self.en_turno):
                 return False
             if self.esperando_orden and time.monotonic() >= self.limite_orden:
@@ -228,6 +241,7 @@ class GestorInvocacion:
             self.esperando_orden = False
         self.app.conversacion = True
         self.app.silencios = 0
+        self.limite_respuesta = time.monotonic() + TIEMPO_RESPUESTA
         self.app.cola.put(("invocacion", "amarillo"))
         self.app.cola.put(("oido", orden))
 
@@ -239,6 +253,9 @@ class GestorInvocacion:
             self._reposo_visual()
 
     def atender_oido(self, texto):
+        if not texto_valido(texto):
+            self.fin_voz()
+            return
         self.app._t_accion_llm = 0
         self.app._flujo_cerrado = False
         self.app.origen_entrada_actual = "microfono"

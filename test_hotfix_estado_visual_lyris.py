@@ -1,9 +1,17 @@
 """Regresión: cara celeste en reposo, amarillo al escuchar/hablar y turno Lyris autocerrado."""
+import os
 import queue
 import threading
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QImage
+from PySide6.QtWidgets import QApplication, QWidget
 
 import cara_dibujo
 import conversacion
@@ -38,6 +46,28 @@ class CaraFalsa:
 
     def programar_retorno_neutral(self, *_a):
         pass
+
+
+class LienzoNucleo(QWidget):
+    """Widget mínimo para renderizar el núcleo sin arrancar la aplicación completa."""
+
+    def __init__(self, **estado):
+        super().__init__(None)
+        self.setFixedSize(cara_dibujo.TAM, cara_dibujo.TAM)
+        self.t0 = time.time()
+        self.viva = estado.get("viva", True)
+        self.escuchando = estado.get("escuchando", False)
+        self.hablando = estado.get("hablando", False)
+        self.pensando = False
+        self.feliz_hasta = 0.0
+        self.baile_hasta = 0.0
+        self.emocion_objetivo = "neutral"
+        self.nivel_volumen = estado.get("nivel", 0.5)
+        self.voz_silenciada = estado.get("silenciada", False)
+        self._ref_voz = None
+
+    def paintEvent(self, _evento):
+        cara_dibujo.pintar(self)
 
 
 class TestEstadoVisualLyris(unittest.TestCase):
@@ -99,6 +129,37 @@ class TestEstadoVisualLyris(unittest.TestCase):
                          cara_dibujo.CIAN)
         self.assertEqual(cara_dibujo.color_estado(False, True, True),
                          cara_dibujo.GRIS)
+
+    def test_paleta_y_render_qt_offscreen_cuatro_estados(self):
+        self.assertEqual((cara_dibujo.CIAN.red(), cara_dibujo.CIAN.green(),
+                          cara_dibujo.CIAN.blue()), (34, 211, 238))
+        self.assertEqual((cara_dibujo.AMARILLO.red(), cara_dibujo.AMARILLO.green(),
+                          cara_dibujo.AMARILLO.blue()), (245, 158, 11))
+        self.assertEqual((cara_dibujo.GRIS.red(), cara_dibujo.GRIS.green(),
+                          cara_dibujo.GRIS.blue()), (100, 116, 139))
+        self.assertEqual(cara_dibujo.color_estado(True, True, True, silenciada=True),
+                         cara_dibujo.GRIS)
+
+        QApplication.instance() or QApplication([])
+        estados = (
+            ("reposo", {}, cara_dibujo.CIAN),
+            ("escuchando", {"escuchando": True}, cara_dibujo.AMARILLO),
+            ("hablando", {"hablando": True, "nivel": 0.8}, cara_dibujo.AMARILLO),
+            ("silenciada", {"silenciada": True}, cara_dibujo.GRIS),
+        )
+        for nombre, params, esperado in estados:
+            with self.subTest(estado=nombre):
+                lienzo = LienzoNucleo(**params)
+                imagen = QImage(cara_dibujo.TAM, cara_dibujo.TAM,
+                                QImage.Format_ARGB32)
+                imagen.fill(Qt.transparent)
+                lienzo.render(imagen)
+                self.assertGreater(
+                    imagen.pixelColor(cara_dibujo.TAM // 2,
+                                      cara_dibujo.TAM // 2).alpha(), 0)
+                self.assertEqual(cara_dibujo.color_estado(
+                    lienzo.viva, lienzo.escuchando, lienzo.hablando,
+                    silenciada=lienzo.voz_silenciada), esperado)
 
     def test_cierre_tras_respuesta_por_wakeword(self):
         app = self._app()

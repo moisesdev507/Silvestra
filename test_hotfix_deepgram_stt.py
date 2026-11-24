@@ -131,7 +131,7 @@ class TestHotfixDeepgramSTT(unittest.TestCase):
         self.assertIsNone(cliente.kwargs)
         peticion = post.call_args.kwargs
         self.assertEqual(peticion["params"]["model"], "nova-3")
-        self.assertEqual(peticion["params"]["language"], "multi")
+        self.assertEqual(peticion["params"]["language"], "es")
         self.assertEqual(peticion["params"]["smart_format"], "true")
         self.assertEqual(peticion["headers"]["Authorization"], "Token " + self.clave)
         self.assertEqual(peticion["headers"]["Content-Type"], "audio/wav")

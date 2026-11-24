@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 import acciones
+import cara_nucleo
 from burbuja import Burbuja, Entrada
 from cara_dibujo import TAM, pintar
 from cara_movimiento import CaraMovimientoMixin
@@ -168,6 +169,11 @@ class Cara(CaraMovimientoMixin, QWidget):
         self.hablando = bool(hablando)
         self.update()
 
+    def color_estado(self):
+        return cara_nucleo.color_estado(
+            self.viva, self.escuchando, self.hablando,
+            silenciada=cara_nucleo.esta_silenciada(self))
+
     def changeEvent(self, evento):
         if evento.type() in (QEvent.WindowStateChange, QEvent.ActivationChange):
             import qt_estabilidad_ui
@@ -228,18 +234,8 @@ class Cara(CaraMovimientoMixin, QWidget):
     def paintEvent(self, _):
         t0 = time.time()
         pintar(self)
-        dt = time.time() - t0
-        self._tiempo_dibujo_acum += dt
-        self._fps_cuadros += 1
+        cara_nucleo.registrar_cuadro(self, time.time() - t0)
         ahora = time.time()
-        dt_fps = ahora - self._fps_t0
-        if dt_fps >= 5.0:
-            fps_real = self._fps_cuadros / dt_fps
-            cpu_est = (self._tiempo_dibujo_acum / dt_fps) * 100.0
-            print(f"[cara] fps={fps_real:.1f}, cpu_estimada={cpu_est:.1f}%", flush=True)
-            self._fps_cuadros = 0
-            self._fps_t0 = ahora
-            self._tiempo_dibujo_acum = 0.0
 
         # Reducción de tasa de refresco en reposo para mantener baja la CPU
         reposo_ahora = (

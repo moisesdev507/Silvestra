@@ -256,7 +256,13 @@ class TestInvocacionNatural(unittest.TestCase):
             resultado = oido_deepgram.transcribir(b"RIFFfalso")
         self.assertEqual(resultado[0], "Lyris, abre el bloc")
         self.assertEqual(post.call_args.kwargs["params"]["model"], "nova-3")
+        self.assertEqual(post.call_args.kwargs["params"]["language"], "es")
         self.assertEqual(post.call_args.kwargs["params"]["keyterm"], "Lyris:5")
+        with patch.dict(os.environ, {"LYRIS_DEEPGRAM_LANG": "multi"}), \
+                patch.object(oido_deepgram.httpx, "post",
+                             Mock(return_value=RespuestaDG(200))) as post_multi:
+            oido_deepgram.transcribir(b"RIFFfalso")
+        self.assertEqual(post_multi.call_args.kwargs["params"]["language"], "multi")
 
         post = Mock(side_effect=[RespuestaDG(400), RespuestaDG(200)])
         with patch.object(oido_deepgram.httpx, "post", post):
@@ -266,6 +272,33 @@ class TestInvocacionNatural(unittest.TestCase):
         self.assertEqual(post.call_args_list[0].kwargs["params"]["keyterm"], "Lyris:5")
         self.assertNotIn("keyterm", post.call_args_list[1].kwargs["params"])
         self.assertTrue(oido_deepgram.esta_activo())
+
+    def test_sin_respuesta_hablada_vuelve_a_celeste(self):
+        app, enviados, _hablado = self._app()
+        app.enviar = lambda texto: enviados.append(texto)  # nunca llega fin_voz
+        with patch.object(invocacion_lyris, "_sonido", lambda: None):
+            app.invocacion._procesar("Lyris, revisa el estado")
+            self._drenar(app)
+        self.assertEqual(len(enviados), 1)
+        self.assertTrue(app.invocacion.en_turno)
+
+        # El cerebro nunca emite fin_voz: el guardián libera el turno.
+        app.invocacion.limite_respuesta = time.monotonic() - 1
+        self.assertFalse(app.invocacion._puede_capturar())
+        self._drenar(app)
+        self.assertFalse(app.invocacion.en_turno)
+        self.assertTrue(self._reposo_celeste(app))
+        self.assertTrue(app.invocacion._puede_capturar())
+
+    def test_orden_garabateada_no_enviada_y_vuelve_a_celeste(self):
+        app, enviados, _hablado = self._app()
+        garabateo = "Lyris, qué hora es, qué hora es, cuándo es, cuándo es"
+        with patch.object(invocacion_lyris, "_sonido", lambda: None):
+            app.invocacion._procesar(garabateo)
+            self._drenar(app)
+        self.assertEqual(enviados, [])
+        self.assertFalse(app.invocacion.en_turno)
+        self.assertTrue(self._reposo_celeste(app))
 
     def test_instalar_apaga_vosk_y_filtro_campp(self):
         app, _enviados, _hablado = self._app()
