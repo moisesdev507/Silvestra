@@ -47,13 +47,16 @@ def _lanzar_reintento(tarea):
     pc.lanzar_reintento_segundo_plano(proveedores_disponibles, tarea)
 
 
-def completar(mensajes, tarea="charla", timeout=20):
+def completar(mensajes, tarea="charla", timeout=20, max_tokens=None):
     global _aviso_respaldo_pendiente, _ultimo_proveedor
     candidatos = proveedores_disponibles(tarea)
     if not candidatos:
         _registrar("cerebro sin proveedores disponibles: modo emergencia local")
         _lanzar_reintento(tarea)
         return pc.respuesta_emergencia_local()
+
+    if max_tokens is None:
+        max_tokens = 550 if tarea in ("razonamiento", "pesado") else 260
 
     for prov in candidatos:
         nombre = prov["nombre"]
@@ -72,7 +75,7 @@ def completar(mensajes, tarea="charla", timeout=20):
                 r = sesion.post(
                     url,
                     headers=headers,
-                    json={"model": modelo, "messages": mensajes, "max_tokens": 500},
+                    json={"model": modelo, "messages": mensajes, "max_tokens": max_tokens},
                     timeout=timeout,
                 )
                 r.encoding = "utf-8"

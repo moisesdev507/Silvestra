@@ -146,8 +146,25 @@ def _respuesta_parcial(crudo):
 _CONECTORES_COLGANTES = {
     "de", "del", "en", "que", "y", "e", "o", "u", "a", "al", "con", "por",
     "para", "el", "la", "los", "las", "un", "una", "su", "sus", "mi", "mis",
-    "tu", "tus", "sin", "sobre", "como", "pero", "sino", "aunque"
+    "tu", "tus", "sin", "sobre", "como", "pero", "sino", "aunque", "cada",
+    "otro", "otra", "otros", "otras"
 }
+
+
+def podar_oracion_incompleta(texto):
+    """Si el texto termina abruptamente sin puntuación de cierre, poda la última oración truncada."""
+    t = str(texto or "").strip()
+    if not t or t[-1] in ".!?…":
+        return t
+    # Buscar última puntuación fuerte de cierre (. ! ?)
+    m = list(re.finditer(r"[.!?]+(?:\s+|$)", t))
+    if m:
+        ultimo = m[-1]
+        corte = t[:ultimo.end()].strip()
+        if len(corte) >= 5:
+            return corte
+    # Si no había ninguna frase previa completa, cerramos con punto limpio
+    return t.rstrip(",;:- ") + "."
 
 
 _PATRON_CORTE = re.compile(
@@ -170,7 +187,7 @@ def _es_oracion_completa(texto):
     if re.search(r"\b(?:[a-zA-Z]+[0-9]+|[0-9]+[a-zA-Z]+)[!.]?$", t):
         return False
     palabras = [w.lower() for w in re.findall(r"[a-záéíóúñ0-9]+", t)]
-    if palabras and palabras[-1] in _CONECTORES_COLGANTES:
+    if palabras and (palabras[-1] in _CONECTORES_COLGANTES or palabras[-1] in ("cada", "otro", "otra", "otros", "otras")):
         return False
     return t[-1] in ".!?…"
 
@@ -199,7 +216,11 @@ def _cortar(parcial, emitido, final=False):
         resto = pendiente[inicio:].strip().replace("*", "")
         if resto:
             palabras = [w.lower() for w in re.findall(r"[a-záéíóúñ0-9]+", resto)]
-            if palabras and palabras[-1] in _CONECTORES_COLGANTES:
+            if palabras and (palabras[-1] in _CONECTORES_COLGANTES or palabras[-1] in ("cada", "otro", "otra", "otros", "otras")):
+                pass
+            elif resto[-1] not in ".!?…" and frases:
+                # Si ya hay al menos una frase completa previa y este remanente quedó trunco,
+                # se descarta para no dejar la respuesta colgada a mitad de frase.
                 pass
             else:
                 if resto[-1] not in ".!?…":

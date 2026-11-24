@@ -12,7 +12,7 @@ from sesion_http import obtener_sesion
 from proveedores_validador import extraer_motivo, desactivar_modelo, desactivar_proveedor, esta_desactivado
 
 
-def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_cancelar, cola_salida, marcar_enfriamiento_fn, registrar_fn):
+def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_cancelar, cola_salida, marcar_enfriamiento_fn, registrar_fn, tarea="charla", max_tokens=None):
     nombre = prov["nombre"]
     url = f"{prov['base_url'].rstrip('/')}/chat/completions"
     headers = {"Authorization": f"Bearer {prov['clave']}", "Content-Type": "application/json"}
@@ -20,6 +20,9 @@ def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_ca
     lista_modelos = modelos if isinstance(modelos, list) else [modelos]
     proveedor_enfriado = False
     proveedor_fuera = False
+
+    if max_tokens is None:
+        max_tokens = 550 if tarea in ("razonamiento", "pesado") else 260
 
     for modelo in lista_modelos:
         if evento_cancelar.is_set():
@@ -31,7 +34,7 @@ def _intentar_stream_proveedor(prov, modelos, mensajes, timeout_token, evento_ca
             r = sesion.post(
                 url,
                 headers=headers,
-                json={"model": modelo, "messages": mensajes, "stream": True, "max_tokens": 500},
+                json={"model": modelo, "messages": mensajes, "stream": True, "max_tokens": max_tokens},
                 stream=True,
                 timeout=(timeout_token, 7.0),
             )
@@ -144,7 +147,7 @@ def completar_flujo(mensajes, al_frase, tarea, candidatos, forzar_utf8_fn, marca
         limite_espera = min(float(timeout_espera), 3.5)
         hilo = threading.Thread(
             target=_intentar_stream_proveedor,
-            args=(p, m_list, mensajes, limite_espera, cancelar, cola, marcar_enfriamiento_fn, registrar_fn),
+            args=(p, m_list, mensajes, limite_espera, cancelar, cola, marcar_enfriamiento_fn, registrar_fn, tarea),
             daemon=True,
         )
         hilo.start()

@@ -9,5 +9,8 @@ EXPERTO_PROGRAMACION = (
     "- Proporciona soluciones limpias, idiomáticas y modulares sin explicaciones redundantes.\n"
     "- Si la salida es hablada por voz, resume la solución en 1 o 2 frases directas y concisas, "
     "evitando leer código kilométrico o sintaxis mecánica en voz alta.\n"
+    "- Regla de operadores hablados: cuando expliques sintaxis para respuesta hablada, "
+    "escribe los operadores en palabras ('asterisco' en vez de '*', 'ampersand' en vez de '&', "
+    "'flecha' en vez de '->') para evitar que el limpiador de Markdown borre símbolos al leerlos en voz alta.\n"
     "[FIN CARTUCHO ESPECIALISTA]"
 )
