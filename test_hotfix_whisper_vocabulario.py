@@ -109,17 +109,17 @@ class TestWhisperVocabulario(unittest.TestCase):
         prompt = cliente.kwargs["prompt"]
         for termino in TERMINOS:
             self.assertIn(termino, prompt)
-        for prohibido in ("¿qué hora es?", "minimiza", "Spotify", "Chrome", "volumen"):
+        for prohibido in ("minimiza", "Spotify", "Chrome", "volumen"):
             self.assertNotIn(prohibido, prompt)
         self.assertNotIn("¿", prompt)
-        self.assertLessEqual(len(prompt), 60)
+        self.assertLessEqual(len(prompt), 230)
 
     def test_nombres_de_memoria_no_rompen_el_limite(self):
         oido, cliente = self._oido("Abre Chrome.", vocab="Moisés, Lyris, Proyecto, Silvestra, Moisés")
         oido.escuchar()
         prompt = cliente.kwargs["prompt"]
         self.assertIn("Proyecto", prompt)
-        self.assertLessEqual(len(prompt), 90)
+        self.assertLessEqual(len(prompt), 260)
 
     def test_transcripcion_normal_no_se_rompe(self):
         oido, _cliente = self._oido("Lyris, maximiza el volumen.")

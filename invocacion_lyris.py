@@ -29,19 +29,19 @@ def palabras(texto):
     return [p for p in _SEPARADOR.split(str(texto or "").lower()) if p]
 
 
-def _orden_de(ps):
-    salida = [p for p in ps if p not in FUERTES]
-    while salida and salida[0] in RELLENO:
-        salida.pop(0)
-    return " ".join(salida)
-
-
-def _orden_despues_de(ps, indice):
-    return _orden_de(ps[indice + 1:])
+def _extraer_orden_posicional(ps, indice, es_debil=False):
+    antes = [p for p in ps[:indice] if p not in VARIANTES]
+    despues = [p for p in ps[indice + 1:] if p not in VARIANTES]
+    while antes and antes[0] in RELLENO:
+        antes.pop(0)
+    while despues and despues[0] in RELLENO:
+        despues.pop(0)
+    if es_debil and not despues:
+        return ""
+    return " ".join(despues if despues else antes).strip()
 
 
 def _esta_bailando(app):
-    """Verifica si la cara o el motor de baile están actualmente activos."""
     if app is None:
         return False
     try:
@@ -50,11 +50,9 @@ def _esta_bailando(app):
         if gb and getattr(gb, "activo", False):
             return True
         import baile_audio
-        if getattr(baile_audio, "_AUDIO_ACTIVO", False):
-            return True
+        return bool(getattr(baile_audio, "_AUDIO_ACTIVO", False))
     except Exception:
-        pass
-    return False
+        return False
 
 
 def detectar(texto, en_baile=False):
@@ -75,7 +73,7 @@ def detectar(texto, en_baile=False):
     # 1. Palabras fuertes (lyris, viris, liris, lyrys...)
     for i, p in enumerate(ps):
         if p in FUERTES:
-            return True, p, _orden_despues_de(ps, i)
+            return True, p, _extraer_orden_posicional(ps, i)
 
     # 2. Confusiones fonéticas débiles ("libres", "liernes", "luis"):
     # Válidas SOLO al inicio de la frase, como invocación aislada o en modo baile
@@ -84,16 +82,16 @@ def detectar(texto, en_baile=False):
 
     # Si está al inicio ("libres para de bailar") o al final, o si está bailando
     if ps[0] in DEBILES:
-        return True, ps[0], _orden_despues_de(ps, 0)
+        return True, ps[0], _extraer_orden_posicional(ps, 0, es_debil=True)
 
     if en_baile:
         for i, p in enumerate(ps):
             if p in DEBILES:
-                return True, p, _orden_despues_de(ps, i)
+                return True, p, _extraer_orden_posicional(ps, i, es_debil=False)
 
     if ps[-1] in DEBILES:
         indice = len(ps) - 1
-        return True, ps[indice], _orden_despues_de(ps, indice)
+        return True, ps[indice], _extraer_orden_posicional(ps, indice, es_debil=True)
 
     return False, "", ""
 
@@ -341,9 +339,9 @@ class GestorInvocacion:
             print(f"[invocacion] detectada='{variante}' -> orden='{orden}'", flush=True)
             if bailando and (variante == "baile_stop" or any(p in orden.lower() for p in ("para", "stop", "detente"))):
                 try:
-                    cara = getattr(self.app, "cara", None)
-                    if cara and getattr(cara, "gestor_baile", None):
-                        cara.gestor_baile.detener(app=self.app)
+                    c = getattr(self.app, "cara", None)
+                    if c and getattr(c, "gestor_baile", None):
+                        c.gestor_baile.detener(app=self.app)
                     import baile_audio
                     baile_audio.detener_musica_baile()
                 except Exception:

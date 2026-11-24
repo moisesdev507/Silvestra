@@ -81,7 +81,7 @@ def transcribir(wav_bytes):
         return None
     modelo = str(getattr(config, "DEEPGRAM_MODEL", "")
                  or os.environ.get("DEEPGRAM_MODEL", "nova-3")).strip() or "nova-3"
-    idioma = str(os.environ.get("LYRIS_DEEPGRAM_LANG", "es")).strip() or "es"
+    idioma = str(os.environ.get("LYRIS_DEEPGRAM_LANG", "es-419")).strip() or "es-419"
     parametros = {"model": modelo, "language": idioma, "smart_format": "true",
                   "keyterm": KEYTERM}
     comun = {"headers": {"Authorization": f"Token {clave}",

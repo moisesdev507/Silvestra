@@ -13,7 +13,7 @@ import time
 import config
 import oido_deepgram
 
-URL_WS = "wss://api.deepgram.com/v1/listen?model=nova-3&language=es&smart_format=true&encoding=linear16&sample_rate=16000"
+URL_WS = "wss://api.deepgram.com/v1/listen?model=nova-3&language=es-419&smart_format=true&encoding=linear16&sample_rate=16000"
 
 
 class DeepgramStreamer:

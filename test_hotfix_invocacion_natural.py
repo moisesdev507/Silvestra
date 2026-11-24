@@ -41,7 +41,7 @@ class TestInvocacionNatural(unittest.TestCase):
             ("Lyris, qué hora es", "qué hora es"),
             ("Haciendo venda ustedes, Lyris. Después. ¿Y el núcleo?",
              "después y el núcleo"),
-            ("Oye, cómo va la batería, Lyris", ""),
+            ("Oye, cómo va la batería, Lyris", "cómo va la batería"),
             ("Por cierto Lyris dime la hora", "dime la hora"),
         ]
         for frase, orden in casos:

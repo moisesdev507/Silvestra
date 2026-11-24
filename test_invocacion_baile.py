@@ -60,6 +60,63 @@ class TestInvocacionBaile(unittest.TestCase):
         dispara_detente, var_d, _ = il.detectar("detente", en_baile=True)
         self.assertTrue(dispara_detente)
 
+    def test_orden_antes_y_despues_de_lyris(self):
+        """Verifica que la orden se capture correctamente esté antes, después o rodeando a Lyris."""
+        # 1. Orden ANTES de la invocación
+        dispara1, var1, orden1 = il.detectar("Preséntate, Lyris")
+        self.assertTrue(dispara1)
+        self.assertEqual(var1, "lyris")
+        self.assertIn("presentate", orden1.lower().replace("é", "e"))
+
+        dispara2, var2, orden2 = il.detectar("Baila salsa, Lyris")
+        self.assertTrue(dispara2)
+        self.assertEqual(var2, "lyris")
+        self.assertEqual(orden2, "baila salsa")
+
+        dispara3, var3, orden3 = il.detectar("Qué hora es, Lyris")
+        self.assertTrue(dispara3)
+        self.assertEqual(var3, "lyris")
+        self.assertIn("hora", orden3)
+
+        # 2. Lyris sola -> orden vacía (dispara "¿Sí?" en el flujo)
+        dispara_sola, var_s, orden_s = il.detectar("Lyris")
+        self.assertTrue(dispara_sola)
+        self.assertEqual(var_s, "lyris")
+        self.assertEqual(orden_s, "")
+
+        # 3. Orden después de Lyris
+        dispara_post, var_p, orden_p = il.detectar("Lyris, cuéntame un chiste")
+        self.assertTrue(dispara_post)
+        self.assertEqual(var_p, "lyris")
+        self.assertIn("chiste", orden_p)
+
+    def test_deepgram_y_whisper_configuracion(self):
+        """Verifica que Deepgram use es-419 y Whisper incluya el prompt contextual."""
+        import oido
+        import oido_deepgram
+        import oido_stream
+        from unittest.mock import patch, MagicMock
+
+        # Verificar URL_WS de oido_stream
+        self.assertIn("language=es-419", oido_stream.URL_WS)
+
+        # Verificar parámetros HTTP en oido_deepgram
+        llamadas_post = []
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"results": {"channels": [{"alternatives": [{"transcript": "hola"}]}]}}
+
+        with patch("httpx.post", return_value=mock_resp) as mock_post:
+            with patch("config.DEEPGRAM_API_KEY", "fake_key", create=True):
+                oido_deepgram.transcribir(b"fake_wav_data")
+                self.assertTrue(mock_post.called)
+                params = mock_post.call_args[1].get("params", {})
+                self.assertEqual(params.get("language"), "es-419")
+
+        # Verificar prompt enriquecido de Whisper
+        self.assertIn("español latinoamericano", oido.PROMPT_WHISPER)
+        self.assertIn("preséntate", oido.PROMPT_WHISPER)
+
 
 if __name__ == "__main__":
     unittest.main()

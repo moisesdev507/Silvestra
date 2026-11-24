@@ -23,8 +23,12 @@ from oido_flujo import (
 from oido_vad import DetectorVozSilero
 
 
-# Solo nombres propios neutros: las listas de comandos/preguntas inducen bucles.
-PROMPT_WHISPER = "Lyris, Visual Studio Code."
+# Contexto y vocabulario para guiar a Whisper evitando deformaciones o alucinaciones.
+PROMPT_WHISPER = (
+    "Conversación en español latinoamericano con la asistente Lyris. "
+    "Órdenes comunes: Lyris, preséntate, baila, para de bailar, mira mi pantalla, "
+    "Visual Studio Code, qué hora es, busca en internet."
+)
 
 
 def _barge_in_habilitado():
