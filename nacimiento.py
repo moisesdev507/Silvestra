@@ -82,7 +82,11 @@ def preguntar_proposito(app):
 
 def saludar(app):
     """Encola el saludo inicial de inmediato, sin bloquear el hilo de la GUI."""
-    threading.Thread(target=generar_saludo, args=(app,), daemon=True).start()
+    try:
+        import habla_espontanea
+        habla_espontanea.generar_saludo_espontaneo(app)
+    except Exception:
+        threading.Thread(target=generar_saludo, args=(app,), daemon=True).start()
 
 
 def generar_saludo(app_o_creador=None, creador=None):

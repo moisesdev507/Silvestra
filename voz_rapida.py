@@ -83,7 +83,7 @@ def sintetizar_edge(frase, emocion="neutral"):
 
 
 def sintetizar_cadena(frase, emocion="neutral"):
-    """Cadena: Cache -> Edge-TTS (Salomé por defecto) -> Respaldo rápido (Local/Aura) -> Respaldo final."""
+    """Cadena: Cache -> Aura-2 (Celeste) -> Edge-TTS (Salomé respaldo) -> Respaldo local."""
     en_cache = voz_cache.obtener_audio_cache(frase, emocion)
     if en_cache:
         return en_cache
@@ -93,14 +93,15 @@ def sintetizar_cadena(frase, emocion="neutral"):
         if audio_local:
             return audio_local
 
-    # Motor principal por defecto: edge-tts (Salomé)
+    # Motor principal: Deepgram Aura-2 (Celeste)
+    audio_dg = sintetizar_deepgram(frase)
+    if audio_dg:
+        return audio_dg
+
+    # Respaldo 1: edge-tts (Salomé) ante falta de clave o fallo de red
     audio_edge = sintetizar_edge(frase, emocion)
     if audio_edge:
         return audio_edge
 
-    # Respaldo si edge-tts falla o no hay conexión: Kokoro local / Deepgram Aura-2
-    audio_rapido = sintetizar_rapido(frase, emocion)
-    if audio_rapido:
-        return audio_rapido
-
+    # Respaldo 2: motor local final
     return voz_local.fallback_local(frase, emocion) or b""

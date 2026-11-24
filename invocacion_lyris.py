@@ -7,10 +7,8 @@ TIEMPO_ORDEN = 20.0
 TIEMPO_RESPUESTA = 12.0
 TIEMPO_SEGUIMIENTO = 18.0
 DURACION_ECO = 0.4
-FUERTES = {"lyris", "liris", "lirys", "iris", "lyres", "lirez",
-           "lyra", "liria", "lyries", "siris",
-           "lira", "lirio", "lirios", "silvestra", "silvestre", "viris", "lyrys"}
-DEBILES = {"luis", "serious", "liernes", "libres"}
+FUERTES = {"kaya", "kaia", "caya", "kalla", "lyris", "liris", "lirys", "iris", "viris", "silvestra"}
+DEBILES = {"calla", "luis", "libres"}
 VARIANTES = FUERTES | DEBILES
 RELLENO = {"oye", "oiga", "hola", "hey", "bueno", "pues", "entonces", "buenas"}
 ORDENES_PARAR_BAILE = (
@@ -69,6 +67,15 @@ def detectar(texto, en_baile=False):
     ps = palabras(texto)
     if not ps:
         return False, "", ""
+
+    # Detección delegada a identidad_kaya (Kaya, Kaia, Caya, Kalla, Calla vocativo y alias previos)
+    try:
+        import identidad_kaya
+        ok_k, alias_k, ord_k = identidad_kaya.detectar_invocacion(texto)
+        if ok_k:
+            return True, alias_k, ord_k
+    except Exception:
+        pass
 
     # 1. Palabras fuertes (lyris, viris, liris, lyrys...)
     for i, p in enumerate(ps):
@@ -160,7 +167,6 @@ def _sonido(nombre="activar"):
 
 
 def _micro_voz(app):
-    """Confirma la invocación con la voz de Salomé, nunca con un pitido."""
     try:
         import micro_voz
         micro_voz.sonar_invocacion(app)

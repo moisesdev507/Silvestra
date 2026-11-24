@@ -18,7 +18,7 @@ import estado
 
 # Umbral mínimo para coincidencias difusas; las variantes conocidas van por lista exacta.
 UMBRAL_RATIO = 0.55
-OBJETIVO = "lyris"
+OBJETIVO = "kaya"
 OBJETIVO_SECUNDARIO = "silvestra"
 
 # Palabras que nunca deben coincidir con la palabra clave para evitar bucles o falsos disparos
@@ -30,6 +30,15 @@ PALABRAS_EXCLUIDAS = {
 
 # Lista de palabras candidatas para verificar contra el modelo Vosk
 CANDIDATAS = [
+    "calla",
+    "calle",
+    "caia",
+    "callas",
+    "callar",
+    "kaya",
+    "kaia",
+    "caya",
+    "kalla",
     "lyris",
     "liris",
     "iris",
@@ -39,23 +48,19 @@ CANDIDATAS = [
     "lirios",
     "liria",
     "lyra",
-    "sris",
-    "srisla",
     "silvestra",
     "silvestre",
-    "silvestri",
-    "sylvestre",
     "silvia",
     "silvio",
-    "silves",
     "silba",
-    "vestra",
-    "vestre",
     "sil",
     "estra",
 ]
 
-# Variantes reales que Vosk small-es produce al oír "Lyris" o "Silvestra".
+# Variantes de Kaya y alias previos
+VARIANTES_KAYA = {
+    "kaya", "kaia", "caya", "kalla", "calla", "calle", "caia",
+}
 VARIANTES_LYRIS = {
     "lyris", "liris", "iris", "lira", "liras", "lirio", "lirios",
     "liria", "lyra", "sris", "srisla",
@@ -87,7 +92,7 @@ def _es_candidata(palabra, objetivo, umbral):
         return False
     if len(palabra) < 3:
         return False
-    if palabra in VARIANTES_LYRIS or palabra in VARIANTES_SILVESTRA:
+    if palabra in VARIANTES_KAYA or palabra in VARIANTES_LYRIS or palabra in VARIANTES_SILVESTRA:
         return True
     if palabra == objetivo:
         return True
