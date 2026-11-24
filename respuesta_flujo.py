@@ -214,6 +214,14 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     directo = atender_turno(cerebro, texto)
     if directo:
         return directo
+    try:
+        import agente_herramientas as ag
+        respuesta_ag = ag.responder_directo(texto)
+        if respuesta_ag:
+            _reg_turno(cerebro, texto, respuesta_ag, al_frase)
+            return respuesta_ag, None, "neutral"
+    except Exception:
+        pass
     cerebro.historial.append({"role": "user", "content": texto})
     # Ventana ampliada a 12 mensajes para razonamiento técnico multi-turno.
     mensajes = [{"role": "system", "content": cerebro.instrucciones(texto)}]
@@ -288,6 +296,12 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     except Exception as e:
         print(f"[respuesta_flujo] Error en separar(crudo): {e}", flush=True)
         respuesta, accion, recuerdo, emocion = str(crudo or ""), None, None, "neutral"
+
+    try:
+        import agente_herramientas as ag
+        respuesta = ag.post_llm(crudo, respuesta, al_frase)
+    except Exception:
+        pass
 
     try:
         import cerebro_mentor

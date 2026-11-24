@@ -141,6 +141,13 @@ class Cerebro:
                     contexto_adicional = (contexto_adicional + "\n" + recuerdos).strip()
             except Exception:
                 pass
+            try:
+                import agente_herramientas as agente_herr
+                datos_herr = agente_herr.contexto_para_cerebro(texto_actual)
+                if datos_herr:
+                    contexto_adicional = (contexto_adicional + "\n" + datos_herr).strip()
+            except Exception:
+                pass
         return construir_prompt(self.memoria, texto_actual, self._obtener_historial_podado(),
             es_invitado=es_invitado, contexto_adicional=contexto_adicional,
             paquete_memoria=paquete_memoria, contexto_engine=contexto_engine)
