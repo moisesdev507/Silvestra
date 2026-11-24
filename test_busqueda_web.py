@@ -38,15 +38,34 @@ class TestBusquedaWeb(unittest.TestCase):
         res = busqueda_web.buscar_web("   ")
         self.assertIn("No indicaste ninguna consulta", res)
 
-    def test_respuesta_exitosa_sin_urls(self):
-        """Respuesta exitosa de Tavily se formatea sin URLs ni markdown."""
+    def test_recorte_oraciones_limpio_sin_mutilar_palabras(self):
+        """Verifica que el recorte de oraciones termine en punto o palabra completa sin '...'."""
+        texto_largo = (
+            "La misión espacial despegó con éxito esta mañana desde Cabo Cañaveral. "
+            "El objetivo principal es recopilar muestras geológicas en órbita baja durante tres semanas. "
+            "Los ingenieros confirmaron que todos los subsistemas de telemetría y energía operan con total normalidad."
+        )
+        recortado = busqueda_web._recortar_oraciones(texto_largo, max_oraciones=2, max_chars=180)
+        self.assertTrue(recortado.endswith("."))
+        self.assertNotIn("...", recortado)
+        self.assertIn("Cabo Cañaveral.", recortado)
+
+        # Sin puntuación previa debe cortar en espacio completo y terminar con punto
+        texto_sin_puntos = "Este es un texto continuo de prueba sin signos ortográficos intermedios para probar el recorte"
+        recortado_sp = busqueda_web._recortar_oraciones(texto_sin_puntos, max_oraciones=1, max_chars=40)
+        self.assertNotIn("...", recortado_sp)
+        self.assertTrue(recortado_sp.endswith("."))
+        self.assertFalse(recortado_sp.endswith(" ortográficos."))
+
+    def test_respuesta_exitosa_usa_solo_answer_sin_snippets(self):
+        """Cuando 'answer' tiene contenido, NO concatena snippets con tablas o datos redundantes."""
         mock_resp_data = {
             "answer": "La temperatura en Bogotá es de 18°C con cielo nublado [1].",
             "results": [
                 {
                     "title": "Clima Bogotá",
                     "url": "https://weather.com/bogota",
-                    "content": "Pronóstico extendido de lluvia para Bogotá https://weather.com/detalles.",
+                    "content": "Tabla técnica: Radiación UV 5, Nieve 0 cm, Viento 12 km/h https://weather.com/detalles.",
                 }
             ],
         }
@@ -60,6 +79,9 @@ class TestBusquedaWeb(unittest.TestCase):
                 self.assertIn("temperatura en Bogotá es de 18°C", res)
                 self.assertNotIn("https://", res)
                 self.assertNotIn("[1]", res)
+                # No debe incluir snippets de 'results' cuando 'answer' está disponible
+                self.assertNotIn("Radiación UV", res)
+                self.assertNotIn("Nieve 0 cm", res)
 
     def test_timeout_y_error_red(self):
         """Timeout o fallo de red se manejan de forma silenciosa y elegante."""

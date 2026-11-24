@@ -1,7 +1,7 @@
 """Búsqueda web en vivo para Lyris usando Tavily API.
 
 Procesa búsquedas rápidas con include_answer=True y search_depth='basic',
-formateando y limpiando los resultados para lectura por voz (cero URLs ni markdown).
+priorizando la síntesis directa de Tavily y recortando por oraciones completas.
 """
 import json
 import re
@@ -15,17 +15,51 @@ TAVILY_URL = "https://api.tavily.com/search"
 def _limpiar_para_voz(texto: str) -> str:
     """Elimina URLs, markdown, corchetes, citas numéricas y saltos redundantes."""
     t = str(texto or "")
-    # Quitar URLs tipo http:// o https://
     t = re.sub(r"https?://\S+", "", t)
-    # Quitar corchetes y citas numéricas tipo [1], [2], [fuente]
     t = re.sub(r"\[\s*[^\]]*\s*\]", "", t)
-    # Quitar marcas de markdown (negritas, cursivas, encabezados, viñetas)
     t = re.sub(r"[*_#`~>|]", " ", t)
-    # Quitar paréntesis residuales con texto técnico o vacíos
     t = re.sub(r"\(\s*\)", "", t)
-    # Unificar espacios y saltos de línea
     t = " ".join(t.split())
     return t.strip()
+
+
+def _recortar_oraciones(texto: str, max_oraciones: int = 3, max_chars: int = 320) -> str:
+    """Recorta texto al final de una oración completa o en el último espacio sin truncar palabras."""
+    t = str(texto or "").strip()
+    if not t:
+        return ""
+
+    # Dividir oraciones manteniendo el delimitador
+    patron = re.compile(r"([^.!?]+[.!?]+)")
+    coincidencias = patron.findall(t)
+    if coincidencias:
+        acumulado = []
+        caracteres = 0
+        for oracion in coincidencias[:max_oraciones]:
+            o_limpia = oracion.strip()
+            if not o_limpia:
+                continue
+            if caracteres + len(o_limpia) + 1 <= max_chars or not acumulado:
+                acumulado.append(o_limpia)
+                caracteres += len(o_limpia) + 1
+            else:
+                break
+        if acumulado:
+            return " ".join(acumulado).strip()
+
+    # Si no hay delimitador de oración o excede max_chars
+    if len(t) <= max_chars:
+        return t
+
+    recorte = t[:max_chars]
+    idx_espacio = recorte.rfind(" ")
+    if idx_espacio > int(max_chars * 0.5):
+        recorte = recorte[:idx_espacio].rstrip(" ,;:-")
+
+    # Si no termina en puntuación, asegurar punto final limpio sin '...'
+    if recorte and recorte[-1] not in ".!?":
+        recorte += "."
+    return recorte
 
 
 def buscar_web(consulta: str, max_resultados: int = 3) -> str:
@@ -64,25 +98,24 @@ def buscar_web(consulta: str, max_resultados: int = 3) -> str:
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=4.0) as resp:
-            raw = resp.read().decode("utf-8")
-            data = json.loads(raw)
+            data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         return f"No se pudo completar la búsqueda web: servicio no disponible ({e.code})."
-    except (urllib.error.URLError, TimeoutError) as e:
+    except (urllib.error.URLError, TimeoutError):
         return "No se pudo conectar a la búsqueda web por tiempo de espera o fallo de red."
     except Exception:
         return "Ocurrió un error inesperado al consultar la búsqueda web."
 
-    # Priorizar la respuesta sintetizada de Tavily si está presente
-    partes = []
-    respuesta_directa = data.get("answer")
-    if respuesta_directa and isinstance(respuesta_directa, str):
+    # 1. Priorizar EXCLUSIVAMENTE la síntesis 'answer' si contiene texto útil
+    respuesta_directa = data.get("answer") if isinstance(data, dict) else ""
+    if respuesta_directa and isinstance(respuesta_directa, str) and respuesta_directa.strip():
         limpia_ans = _limpiar_para_voz(respuesta_directa)
-        if limpia_ans:
-            partes.append(limpia_ans)
+        if limpia_ans and len(limpia_ans) >= 10:
+            return _recortar_oraciones(limpia_ans, max_oraciones=3, max_chars=320)
 
-    # Añadir snippets relevantes de los resultados
-    resultados = data.get("results")
+    # 2. Si 'answer' no existe o está vacío, usar snippets de 'results'
+    partes = []
+    resultados = data.get("results") if isinstance(data, dict) else []
     if isinstance(resultados, list):
         for item in resultados[:max_resultados]:
             if not isinstance(item, dict):
@@ -95,12 +128,8 @@ def buscar_web(consulta: str, max_resultados: int = 3) -> str:
     if not partes:
         return f"No encontré resultados recientes para {q}."
 
-    resumen = " ".join(partes)
-    # Limitar a ~650 caracteres para no abrumar al sintetizador de voz
-    if len(resumen) > 650:
-        resumen = resumen[:647].rstrip() + "..."
-
-    return resumen
+    unido = " ".join(partes)
+    return _recortar_oraciones(unido, max_oraciones=3, max_chars=320)
 
 
-__all__ = ["buscar_web", "_limpiar_para_voz"]
+__all__ = ["buscar_web", "_limpiar_para_voz", "_recortar_oraciones"]

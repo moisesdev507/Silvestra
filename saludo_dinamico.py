@@ -1,7 +1,7 @@
 """Generador de saludo inicial espontáneo con memoria real y anti-repetición.
 
 Usa personalidad F.R.I.D.A.Y., hilos abiertos, diario y hábitos locales.
-Prioriza Groq (llama-3.1-8b-instant y qwen) con respaldo Cloudflare y fallback natural variado.
+Inyecta la hora y franja horaria real del sistema como verdad inamovible para evitar alucinaciones.
 """
 import concurrent.futures
 import datetime
@@ -33,32 +33,73 @@ MULETILLAS_PROHIBIDAS = (
     "¡hola! aquí",
 )
 
-FALLBACKS_NATURALES = (
-    "De vuelta al puesto, Moisés; dime por dónde arrancamos hoy.",
-    "Todo en orden por aquí, Moisés; ¿qué atacamos primero?",
-    "Aquí estoy contigo, Moisés; listo el entorno para avanzar.",
-    "Sistemas activos; cuando quieras retomamos lo que traías entre manos.",
-    "Todo despejado por acá, Moisés; dime qué tenemos en radar.",
-    "En línea y atenta; tú mandas con qué abrimos el turno.",
-    "Sistemas listos, Moisés; continuamos con el código cuando digas.",
-    "Buenas horas para concentrarse; dime en qué nos enfocamos hoy.",
-)
+FALLBACKS_FRANJAS = {
+    "madrugada": (
+        "De vuelta al puesto en plena madrugada, Moisés; dime por dónde arrancamos.",
+        "Buenas horas para concentrarse en silencio; ¿qué atacamos primero?",
+        "Veo que seguimos despiertos, Moisés; listo el entorno para avanzar.",
+        "Sistemas activos a esta hora de la noche; cuando quieras continuamos.",
+    ),
+    "mañana": (
+        "Buen inicio de jornada, Moisés; dime con qué abrimos el turno.",
+        "Todo despejado por acá esta mañana; dime qué tenemos en radar.",
+        "Listo el entorno para empezar el día, Moisés; tú mandas.",
+        "Sistemas activos y listos para la jornada; ¿por dónde arrancamos?",
+    ),
+    "tarde": (
+        "De vuelta al puesto esta tarde, Moisés; ¿qué atacamos primero?",
+        "Todo en orden por aquí, Moisés; continuamos con el código cuando digas.",
+        "Sistemas listos para la tarde; dime qué tenemos pendiente.",
+        "En línea y atenta; tú mandas con qué seguimos hoy.",
+    ),
+    "noche": (
+        "Todo en orden por aquí esta noche, Moisés; ¿retomamos lo pendiente?",
+        "Sistemas activos para cerrar la jornada; dime qué atacamos.",
+        "Aquí estoy contigo esta noche; listo el entorno para avanzar.",
+        "De vuelta al puesto, Moisés; dime por dónde seguimos.",
+    ),
+}
 
 
 def _log_saludo(mensaje):
     """Registra trazabilidad del saludo en consola y en silvestra.log."""
     print(f"[saludo] {mensaje}", flush=True)
     try:
-        ruta_log = os.path.join(os.path.dirname(os.path.abspath(__file__)), "silvestra.log")
-        momento = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with open(ruta_log, "a", encoding="utf-8") as f:
-            f.write(f"[{momento}] [saludo] {mensaje}\n")
+        with open("silvestra.log", "a", encoding="utf-8") as f:
+            t = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"[{t}] [SALUDO] {mensaje}\n")
     except Exception:
         pass
 
 
+def _determinar_franja(hora: int) -> str:
+    """Calcula la franja horaria exacta según la hora local (00-23)."""
+    if 0 <= hora < 6:
+        return "madrugada"
+    if 6 <= hora < 12:
+        return "mañana"
+    if 12 <= hora < 19:
+        return "tarde"
+    return "noche"
+
+
+def _es_coherente_con_franja(texto: str, franja: str) -> bool:
+    """Verifica defensivamente que el texto no contradiga la franja horaria real."""
+    t = str(texto or "").lower()
+    if franja in ("madrugada", "noche"):
+        if any(x in t for x in ("buenas tardes", "esta tarde", "de la tarde", "al mediodía", "al mediodia", "buenos días")):
+            return False
+    elif franja == "mañana":
+        if any(x in t for x in ("buenas tardes", "esta tarde", "buenas noches", "esta noche", "de la madrugada")):
+            return False
+    elif franja == "tarde":
+        if any(x in t for x in ("buenos días", "esta mañana", "de la madrugada", "buenas noches")):
+            return False
+    return True
+
+
 def _dato_calendario(timeout=0.45):
-    """Consulta rápida a Google Calendar (<0.5s); devuelve evento breve o vacío."""
+    """Consulta la agenda de hoy con timeout estricto (< 0.45s)."""
     try:
         import google_workspace
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
@@ -92,23 +133,19 @@ def recopilar_memoria_saludo():
 
     try:
         import aprendizaje
-        resumen_p = aprendizaje.resumen_para_prompt()
-        if resumen_p:
-            lineas = [l.strip() for l in resumen_p.splitlines() if l.strip()]
-            for linea in lineas:
-                if any(k in linea for k in ("Tema abierto:", "Referencias:", "Costumbres:")):
-                    datos["perfil_estilo"] = linea[:180]
-                    break
+        res_perfil = aprendizaje.resumen_para_prompt()
+        if res_perfil and res_perfil.strip():
+            datos["perfil_estilo"] = res_perfil.strip()[:200]
     except Exception:
         pass
 
     try:
         import diario
         if os.path.exists(diario.RUTA_DIARIO):
-            with open(diario.RUTA_DIARIO, "r", encoding="utf-8", errors="replace") as f:
-                contenido = f.read().strip()
-                if contenido:
-                    datos["ultimo_diario"] = " ".join(contenido[-220:].split())
+            with open(diario.RUTA_DIARIO, "r", encoding="utf-8") as f:
+                lineas = [ln.strip() for ln in f if ln.strip()]
+                if lineas:
+                    datos["diario_reciente"] = lineas[-1][:180]
     except Exception:
         pass
 
@@ -127,21 +164,20 @@ def recopilar_memoria_saludo():
     return datos
 
 
-def fallback_natural_memoria(creador, memoria, ultimos_saludos=None):
-    """Genera un fallback variado usando memoria real sin repetir los últimos 5."""
+def fallback_natural_memoria(creador, memoria, ultimos_saludos=None, franja=None):
+    """Genera un fallback variado usando franja horaria y memoria sin repetir los últimos 5."""
     if ultimos_saludos is None:
         ultimos_saludos = _obtener_ultimos_saludos()
-    candidatos = list(FALLBACKS_NATURALES)
+    if franja is None:
+        franja = _determinar_franja(datetime.datetime.now().hour)
+
+    candidatos = list(FALLBACKS_FRANJAS.get(franja) or FALLBACKS_FRANJAS["tarde"])
 
     hilos_act = memoria.get("hilos_abiertos") or []
     if hilos_act:
         ultimo_hilo = hilos_act[-1]
-        candidatos.append(f"Moisés, listo el entorno; cuando quieras retomamos lo de {ultimo_hilo[:50]}.")
-        candidatos.append(f"De vuelta al código, Moisés; ¿seguimos con {ultimo_hilo[:45]}?")
-
-    recuerdos = memoria.get("recuerdos_recientes") or []
-    if recuerdos:
-        candidatos.append("Todo listo por acá, Moisés; ¿retomamos lo que teníamos pendiente?")
+        candidatos.append(f"Moisés, listo el entorno; cuando quieras retomamos lo de {ultimo_hilo[:45]}.")
+        candidatos.append(f"De vuelta al código, Moisés; ¿seguimos con {ultimo_hilo[:40]}?")
 
     no_repetidos = [s for s in candidatos if s not in ultimos_saludos]
     return random.choice(no_repetidos or candidatos)
@@ -165,18 +201,18 @@ def _guardar_ultimo_saludo(saludo):
         u.append(str(saludo))
         est["ultimos_saludos"] = u[-5:]
         est["ultimo_saludo"] = str(saludo)
-        est["ultima_vez"] = time.time()
         estado.guardar(est)
     except Exception:
         pass
 
 
 def generar_saludo_dinamico(creador="Moisés", timeout=3.0):
-    """Genera saludo espontáneo con Groq (llama-3.1 / qwen) o Cloudflare."""
+    """Genera saludo espontáneo con Groq o Cloudflare asegurando coherencia temporal."""
     ahora = datetime.datetime.now()
     dia_sem = DIAS_SEMANA[ahora.weekday()]
     mes_nom = MESES[ahora.month - 1]
     hora_str = ahora.strftime("%I:%M %p").lstrip("0")
+    franja = _determinar_franja(ahora.hour)
     fecha_str = f"{dia_sem} {ahora.day} de {mes_nom}"
 
     mem = recopilar_memoria_saludo()
@@ -195,24 +231,25 @@ def generar_saludo_dinamico(creador="Moisés", timeout=3.0):
     ctx_texto = " | ".join(bloques_memoria) if bloques_memoria else "Sin temas específicos pendientes."
     no_repetir_txt = " | ".join(f'"{s}"' for s in ultimos) if ultimos else "Ninguno aún."
 
-    momento = "madrugada" if ahora.hour < 6 else ("mañana" if ahora.hour < 12 else ("tarde" if ahora.hour < 19 else "noche"))
-
     sys_prompt = (
         f"Eres Lyris, la asistente personal de {creador}. Habla con la actitud de F.R.I.D.A.Y.: "
-        "inteligente, perspicaz, relajada, directa y cómplice, como una colega cercana en el taller. "
-        "Tu misión es dar un saludo inicial espontáneo y genuino en EXACTAMENTE 1 sola oración corta (de 8 a 18 palabras). "
+        "inteligente, perspicaz, relajada, directa y cómplice. "
+        "Tu misión es dar un saludo inicial espontáneo y genuino en EXACTAMENTE 1 sola oración corta (8 a 18 palabras). "
+        "VERDAD ACTUAL INAMOVIBLE DEL SISTEMA: "
+        f"La hora local real exacta es {hora_str} y la franja actual es ESTRICTAMENTE '{franja}'. "
         "REGLAS CRÍTICAS: "
-        "- PROHIBIDO empezar con fórmulas fijas como 'Buenos días/tardes/noches, Moisés' o anunciar la hora exacta como un reloj ('Son las...'). "
-        f"- Usa el momento del día ({momento}) solo como contexto de fondo sutil. "
-        "- Elige un ángulo fresco y natural usando la memoria: retoma casualmente un hilo de trabajo, o haz un comentario espontáneo. "
-        "- PROHIBIDO usar muletillas de robot como: '¿En qué te puedo ayudar?', 'Aquí tienes', 'Por supuesto', 'Estoy lista para ayudarte'. "
+        "- NUNCA inventes otra hora ni contradigas la franja actual (si es madrugada, jamás menciones tarde, mediodía o tardes). "
+        "- Si un recuerdo antiguo menciona otra hora, NO la trates como la hora actual. "
+        "- PROHIBIDO empezar con fórmulas fijas como 'Buenos días/tardes/noches, Moisés' o recitar la hora como un reloj ('Son las...'). "
+        f"- Usa la franja '{franja}' solo como contexto sutil si encaja, o enfócate directamente en retomar hilos activos. "
+        "- PROHIBIDO usar muletillas de robot: '¿En qué te puedo ayudar?', 'Aquí tienes', 'Por supuesto', 'Estoy lista para ayudarte'. "
         f"- PROHIBIDO repetir o parafrasear estos saludos recientes: {no_repetir_txt}. "
-        "- Devuelve ÚNICAMENTE la oración hablada, sin comillas, sin explicaciones ni etiquetas."
+        "- Devuelve ÚNICAMENTE la oración hablada, sin comillas ni explicaciones."
     )
 
     usr_prompt = (
         f"Usuario: {creador}. "
-        f"Contexto temporal: {fecha_str}, {momento}. "
+        f"Hora real y franja: {hora_str} ({franja}, {fecha_str}). "
         f"Memoria activa: {ctx_texto}. "
         "Genera tu saludo espontáneo ahora."
     )
@@ -231,7 +268,7 @@ def generar_saludo_dinamico(creador="Moisés", timeout=3.0):
                         {"role": "user", "content": usr_prompt},
                     ],
                     "max_tokens": 50,
-                    "temperature": 0.9,
+                    "temperature": 0.8,
                 }
                 resp = httpx.post(url_groq, headers=headers_groq, json=payload, timeout=timeout)
                 if resp.status_code == 200:
@@ -241,9 +278,11 @@ def generar_saludo_dinamico(creador="Moisés", timeout=3.0):
                         texto = texto.split("\n")[0].strip()
                     t_low = texto.lower()
                     if texto and len(texto.split()) >= 4 and not any(m in t_low for m in MULETILLAS_PROHIBIDAS):
-                        _log_saludo(f"origen=modelo proveedor=Groq modelo={mod} texto='{texto}'")
-                        _guardar_ultimo_saludo(texto)
-                        return texto
+                        if _es_coherente_con_franja(texto, franja):
+                            _log_saludo(f"origen=modelo proveedor=Groq modelo={mod} texto='{texto}'")
+                            _guardar_ultimo_saludo(texto)
+                            return texto
+                        motivo_fallo = f"Groq ({mod}) descartado por incoherencia de franja ({franja})"
                 else:
                     motivo_fallo = f"Groq HTTP {resp.status_code} ({mod})"
             except Exception as e:
@@ -262,7 +301,7 @@ def generar_saludo_dinamico(creador="Moisés", timeout=3.0):
                     {"role": "user", "content": usr_prompt},
                 ],
                 "max_tokens": 50,
-                "temperature": 0.9,
+                "temperature": 0.8,
             }
             resp_cf = httpx.post(url_cf, headers=headers_cf, json=payload_cf, timeout=timeout)
             if resp_cf.status_code == 200:
@@ -272,15 +311,27 @@ def generar_saludo_dinamico(creador="Moisés", timeout=3.0):
                     texto_cf = texto_cf.split("\n")[0].strip()
                 t_low = texto_cf.lower()
                 if texto_cf and len(texto_cf.split()) >= 4 and not any(m in t_low for m in MULETILLAS_PROHIBIDAS):
-                    _log_saludo(f"origen=modelo proveedor=Cloudflare modelo=llama-3.3-70b texto='{texto_cf}'")
-                    _guardar_ultimo_saludo(texto_cf)
-                    return texto_cf
+                    if _es_coherente_con_franja(texto_cf, franja):
+                        _log_saludo(f"origen=modelo proveedor=Cloudflare modelo=llama-3.3-70b texto='{texto_cf}'")
+                        _guardar_ultimo_saludo(texto_cf)
+                        return texto_cf
+                    motivo_fallo = f"Cloudflare descartado por incoherencia de franja ({franja})"
             else:
                 motivo_fallo = f"Cloudflare HTTP {resp_cf.status_code}"
         except Exception as e:
             motivo_fallo = f"Cloudflare error: {type(e).__name__}"
 
-    saludo_fb = fallback_natural_memoria(creador, mem, ultimos)
+    saludo_fb = fallback_natural_memoria(creador, mem, ultimos, franja=franja)
     _log_saludo(f"origen=fallback motivo='{motivo_fallo or 'sin_respuesta_modelo'}' texto='{saludo_fb}'")
     _guardar_ultimo_saludo(saludo_fb)
     return saludo_fb
+
+
+__all__ = [
+    "generar_saludo_dinamico",
+    "fallback_natural_memoria",
+    "recopilar_memoria_saludo",
+    "MULETILLAS_PROHIBIDAS",
+    "_es_coherente_con_franja",
+    "_determinar_franja",
+]

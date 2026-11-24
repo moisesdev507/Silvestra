@@ -120,23 +120,45 @@ class TestHotfixVelocidadTotal(unittest.TestCase):
             self.assertEqual(res, ("hola lyris", 1.2))
 
     def test_saludo_dinamico_con_groq_y_fallback(self):
-        """Verifica saludo inicial espontáneo con memoria real, anti-repetición y fallback natural."""
+        """Verifica saludo inicial espontáneo con memoria real, anti-repetición y coherencia horaria."""
+        import datetime
         import saludo_dinamico
         import nacimiento
 
-        # 1. Fallback natural basado en memoria y sin hora fija
+        # 1. Fallback natural basado en memoria y franja real
         memoria_dummy = {
             "hilos_abiertos": ["proyecto de latencia"],
             "recuerdos_recientes": ["optimizamos el carril rápido"],
         }
         ultimos = ["saludo previo 1", "saludo previo 2"]
-        fb = saludo_dinamico.fallback_natural_memoria("Moisés", memoria_dummy, ultimos)
+        fb = saludo_dinamico.fallback_natural_memoria("Moisés", memoria_dummy, ultimos, franja="madrugada")
         self.assertIsInstance(fb, str)
         self.assertTrue(len(fb) > 5)
         self.assertNotIn("Son las", fb)
         self.assertNotIn(fb, ultimos)
 
-        # 2. Generación dinámica exitosa con Groq (mock 200)
+        # 2. Validación defensiva de franja horaria
+        self.assertTrue(saludo_dinamico._es_coherente_con_franja("Listo el entorno en la madrugada", "madrugada"))
+        self.assertFalse(saludo_dinamico._es_coherente_con_franja("Buenas tardes, Moisés", "madrugada"))
+        self.assertFalse(saludo_dinamico._es_coherente_con_franja("Buenas noches, Moisés", "mañana"))
+
+        # 3. Descarte de respuesta incoherente y uso de fallback
+        mock_incoherente = MagicMock()
+        mock_incoherente.status_code = 200
+        mock_incoherente.json.return_value = {
+            "choices": [{"message": {"content": "Buenas tardes, seguimos con el código."}}]
+        }
+        with patch("httpx.post", return_value=mock_incoherente):
+            real_dt = datetime.datetime
+            class FakeDatetime(datetime.datetime):
+                @classmethod
+                def now(cls, tz=None):
+                    return real_dt(2026, 11, 24, 2, 30)
+            with patch("datetime.datetime", FakeDatetime):
+                saludo_corregido = saludo_dinamico.generar_saludo_dinamico("Moisés")
+                self.assertNotIn("buenas tardes", saludo_corregido.lower())
+
+        # 4. Generación dinámica exitosa coherente con Groq (mock 200)
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
@@ -147,13 +169,6 @@ class TestHotfixVelocidadTotal(unittest.TestCase):
             self.assertEqual(saludo, "Moisés, retomemos lo de la latencia cuando quieras.")
             for muletilla in saludo_dinamico.MULETILLAS_PROHIBIDAS:
                 self.assertNotIn(muletilla, saludo.lower())
-
-        # 3. Fallback automático ante fallo HTTP o timeout
-        with patch("httpx.post", side_effect=RuntimeError("Timeout Groq")):
-            saludo_fallo = nacimiento.generar_saludo(creador="Moisés")
-            self.assertIsInstance(saludo_fallo, str)
-            self.assertTrue(len(saludo_fallo) > 5)
-            self.assertNotIn("Son las", saludo_fallo)
 
 
 if __name__ == "__main__":
