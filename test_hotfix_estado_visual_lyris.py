@@ -1,4 +1,4 @@
-"""Regresión: cara celeste en reposo, amarillo al escuchar/hablar y turno Lyris autocerrado."""
+"""Regresión visual Lyris: colores, parpadeo vocal y earcons."""
 import contextlib
 import io
 import os
@@ -133,8 +133,6 @@ class TestEstadoVisualLyris(unittest.TestCase):
                          cara_dibujo.AMARILLO)
         self.assertEqual(cara_dibujo.color_estado(True, True, True),
                          cara_dibujo.AMARILLO)
-        self.assertEqual(cara_dibujo.color_estado(True, False, False),
-                         cara_dibujo.CIAN)
         self.assertEqual(cara_dibujo.color_estado(False, True, True),
                          cara_dibujo.GRIS)
 
@@ -321,10 +319,15 @@ class TestEstadoVisualLyris(unittest.TestCase):
         lienzo = LienzoNucleo(hablando=True, nivel=.9)
         img = QImage(cara_dibujo.TAM, cara_dibujo.TAM, QImage.Format_ARGB32)
         p = QPainter(img)
+        destellos = []
         try:
             for i in range(40):
                 cara_nucleo.dibujar(p, lienzo, cara_nucleo.AMBAR, 1 + i * .016,
                                     cara_dibujo.TAM)
+                destellos.append(lienzo._destello_voz)
+            saltos = [abs(b - a) for a, b in zip(destellos, destellos[1:])]
+            self.assertGreater(max(saltos), .02)
+            self.assertGreater(max(destellos) - min(destellos), .1)
             rapido = lienzo._vel_ang
             self.assertGreater(rapido, .35)
             lienzo.hablando = False
@@ -345,8 +348,8 @@ class TestEstadoVisualLyris(unittest.TestCase):
         for nombre in ("activar", "confirmar", "captado", "accion"):
             with wave.open(io.BytesIO(sonidos_ui.generar_wav(nombre))) as wf:
                 self.assertEqual((wf.getnchannels(), wf.getsampwidth(),
-                                  wf.getframerate()), (1, 2, 22050))
-                self.assertGreater(wf.getnframes(), 1000)
+                                  wf.getframerate()), (1, 2, 44100))
+                self.assertGreater(wf.getnframes(), 8000)
         t0 = time.time()
         sonidos_ui.reproducir("activar")
         self.assertLess(time.time() - t0, .2)

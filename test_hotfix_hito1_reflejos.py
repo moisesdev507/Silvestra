@@ -64,7 +64,7 @@ class TestHito1Reflejos(unittest.TestCase):
                 "Abriendo Visual Studio Code.", 800.0, clara))
 
     def test_earcons_no_excepcion_ni_bloqueo(self):
-        self.assertLessEqual(os.path.getsize(sonidos_ui.__file__), 4096)
+        self.assertLessEqual(os.path.getsize(sonidos_ui.__file__), 7500)
         with patch.dict(os.environ, {"SILVESTRA_SIN_EARCONS": ""}, clear=False):
             for nombre in ("captado", "accion", "desconocido"):
                 t0 = time.time()

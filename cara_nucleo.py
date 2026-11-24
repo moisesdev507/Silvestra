@@ -10,12 +10,16 @@ import time
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QPainter, QPen, QRadialGradient
 
+from cara_destello import mezcla as _mezcla, pulso_silaba as _pulso_silaba
+
 CELESTE = QColor(34, 211, 238)
 CELESTE_CLARO = QColor(56, 189, 248)
 AMBAR = QColor(245, 158, 11)
 AMBAR_CLARO = QColor(251, 191, 36)
 GRIS = QColor(100, 116, 139)
 ROSA = QColor(244, 114, 182)
+DORADO = QColor(253, 230, 138)
+BLANCO_DORADO = QColor(255, 251, 235)
 
 
 def registrar_cuadro(cara, dt):
@@ -101,6 +105,7 @@ def _inicializar(cara):
     """Estados de animación bajo demanda; no altera la API de la cara."""
     valores = {
         "_ultimo_t": None, "_vel_ang": 0.35, "_fase_anillos": 0.0,
+        "_fase_silaba": 0.0, "_destello_voz": 0.0,
         "_nivel_previo": 0.0, "_ultima_onda": 0.0, "_ondas": [],
     }
     for clave, valor in valores.items():
@@ -133,14 +138,14 @@ def _dinamica(cara, estado, energia, nivel_actual, t):
         pico = nivel_actual - float(getattr(cara, "_nivel_previo", 0.0))
         armonico = 0.5 + 0.5 * math.sin(t * 9.0)
         if ((pico > 0.05 and armonico > 0.5)
-                or (t - float(getattr(cara, "_ultima_onda", 0.0))) > 0.42):
+                or (t - float(getattr(cara, "_ultima_onda", 0.0))) > 0.24):
             ondas.append({"t0": t, "fuerza": 0.55 + 0.45 * min(1.0, nivel_actual)})
             cara._ultima_onda = t
             if len(ondas) > 5:
                 ondas.pop(0)
     cara._nivel_previo = nivel_actual
     cara._ondas = [o for o in ondas if t - o["t0"] < 0.85]
-    return vel, cara._fase_anillos
+    return vel, cara._fase_anillos, dt
 
 
 def _halo(p, color, energia, silenciada, t, respiracion):
@@ -157,20 +162,23 @@ def _halo(p, color, energia, silenciada, t, respiracion):
     for k in range(12):
         ang = t * (0.45 + 0.12 * (k % 3)) + k * 2.39996
         r = 112 + (k % 5) * 6 + 6 * energia
-        punto = QPointF(r * math.cos(ang), r * math.sin(ang))
         p.setBrush(alpha(CELESTE_CLARO if energia < 0.3 else AMBAR_CLARO,
                          40 + int(65 * energia)))
-        p.drawEllipse(punto, 1.2, 1.2)
+        p.drawEllipse(QPointF(r * math.cos(ang), r * math.sin(ang)), 1.2, 1.2)
 
 
-def _anillos(p, color, estado, energia, fase, vel):
+def _anillos(p, color, estado, energia, fase, vel, destello=0.0):
     silenciada = estado == "silenciada"
-    anillos = ((116, 2.8, 1.0, 112), (101, 1.9, -0.78, 86), (132, 1.5, 0.55, 62))
+    d = destello if estado == "hablando" else 0.0
+    tono = _mezcla(color, BLANCO_DORADO, 0.55 * d)
+    anillos = ((116, 2.8 + 2.2 * d, 1.0, 112),
+               (101, 1.9 + 1.4 * d, -0.78, 86), (132, 1.5, 0.55, 62))
     if silenciada:
         anillos = ((116, 2.0, 0.0, 340), (101, 1.4, 0.0, 340))
     for indice, (radio, grosor, factor, largo) in enumerate(anillos):
-        pluma = QPen(alpha(color, (70 if silenciada else 135) + int(70 * energia)),
-                     grosor)
+        radio += (6.0 if indice < 2 else 2.0) * d
+        pluma = QPen(alpha(tono, (70 if silenciada else 135)
+                           + int(70 * energia) + int(75 * d)), grosor)
         pluma.setCapStyle(Qt.RoundCap)
         p.setPen(pluma)
         p.setBrush(Qt.NoBrush)
@@ -181,6 +189,9 @@ def _anillos(p, color, estado, energia, fase, vel):
             continue
         p.drawArc(rect, int((ini + 140) * 16), int(largo * 16))
         p.drawArc(rect, int((ini + 265) * 16), int(largo * 16))
+        if indice == 0 and d > 0.02:
+            p.setPen(QPen(alpha(BLANCO_DORADO, int(150 * d)), 1.0 + 1.6 * d))
+            p.drawArc(rect, int((ini + 18) * 16), int(largo * 0.55 * 16))
         # Puntos de telemetría recorriendo el anillo.
         for m in range(12):
             a = math.radians(m * 30 + ini * 0.7)
@@ -195,45 +206,51 @@ def _anillos(p, color, estado, energia, fase, vel):
                 p.drawEllipse(QPointF(radio * x, radio * y), 1.6, 1.6)
 
 
-def _espectro(p, color, estado, energia, t, fase):
+def _espectro(p, color, estado, energia, t, fase, destello=0.0):
     if estado == "silenciada":
         return
-    tono = AMBAR_CLARO if estado == "hablando" else CELESTE_CLARO
-    base = 78
+    d = destello if estado == "hablando" else 0.0
+    tono = _mezcla(AMBAR_CLARO if estado == "hablando" else CELESTE_CLARO,
+                   BLANCO_DORADO, 0.6 * d)
+    base = 78 + 8 * d
     for i in range(48):
         if i % 2 and energia < 0.2:
             continue
         ang = i * math.tau / 48.0 + math.radians(fase) * 0.5
         var = abs(math.sin(t * (4.2 + i * 0.06) + i * 0.71))
         armonico = 0.5 + 0.5 * math.sin(t * 8.0 + i * 0.33)
-        largo = 2 + 17 * energia * (0.6 * var + 0.4 * armonico)
+        largo = 2 + 17 * energia * (0.6 * var + 0.4 * armonico) + 7 * d
         c, s = math.cos(ang), math.sin(ang)
-        p.setPen(QPen(alpha(tono, 32 + int(100 * energia * var)), 1.15))
+        p.setPen(QPen(alpha(tono, 32 + int(100 * energia * var)
+                            + int(80 * d)), 1.15 + 0.5 * d))
         p.drawLine(QPointF(base * c, base * s),
                    QPointF((base + largo) * c, (base + largo) * s))
+    tono_aros = _mezcla(color, DORADO, 0.5 * d)
     for k in range(3):
-        radio = 88 + k * 14 + 6 * energia * math.sin(t * 5 + k)
-        p.setPen(QPen(alpha(color, 60 + int(45 * energia) - k * 12), 1.4))
+        radio = 88 + k * 14 + 6 * energia * math.sin(t * 5 + k) + 5 * d
+        p.setPen(QPen(alpha(tono_aros, 60 + int(45 * energia)
+                            + int(50 * d) - k * 12), 1.4))
         p.setBrush(Qt.NoBrush)
         p.drawEllipse(QRectF(-radio, -radio, radio * 2, radio * 2))
 
 
-def _ondas_choque(p, ondas, t):
-    """Ondas concéntricas expansivas disparadas por los picos de voz."""
+def _ondas_choque(p, ondas, t, destello=0.0):
+    """Ondas expansivas por picos de voz."""
+    tono = _mezcla(AMBAR_CLARO, BLANCO_DORADO, 0.5 * destello)
     for onda in ondas:
         edad = t - onda["t0"]
         if not 0.0 <= edad < 0.85:
             continue
         avance = edad / 0.85
         radio = 58 + 110 * avance
-        a = int((1.0 - avance) ** 1.6 * 165 * onda["fuerza"])
-        p.setPen(QPen(alpha(AMBAR_CLARO, a), 1.7))
+        a = int((1.0 - avance) ** 1.6 * (165 + 90 * destello) * onda["fuerza"])
+        p.setPen(QPen(alpha(tono, a), 1.7 + 0.8 * destello))
         p.setBrush(Qt.NoBrush)
         p.drawEllipse(QRectF(-radio, -radio, radio * 2, radio * 2))
 
 
 def _radar(p, energia, fase, t):
-    """Barrido orbital ámbar con estela luminosa y eco reactivo al micrófono."""
+    """Barrido orbital ámbar reactivo al micrófono."""
     ang = math.radians((fase * 1.6) % 360)
     rect = QRectF(-112, -112, 224, 224)
     for k in range(8):
@@ -289,13 +306,15 @@ def dibujar(p, cara, color, t, tam):
         0.25 + 0.75 * nivel_actual if estado in ("escuchando", "hablando") else 0.12)
     energia = _lerp(cara, "_energia_suave", objetivo, 0.10)
     color_suave = color_suavizado(cara, color)
-    vel, fase = _dinamica(cara, estado, energia, nivel_actual, t)
+    vel, fase, dt = _dinamica(cara, estado, energia, nivel_actual, t)
+    destello = _pulso_silaba(cara, _lerp, estado, nivel_actual, t, dt)
+    d = destello if estado == "hablando" else 0.0
     respiracion = _respiracion(t) if not silenciada else 0.0
     pulso = 0.0 if silenciada else (
         respiracion if estado == "reposo" else 0.35 + 0.65 * energia)
     radio = _lerp(cara, "_radio_suave",
                   52 + ((2.0 * respiracion) if estado == "reposo" else 6.0 * energia)
-                  + (1.5 * energia if estado == "hablando" else 0.0), 0.12)
+                  + (1.5 * energia + 4.5 * d if estado == "hablando" else 0.0), 0.12)
     ahora = time.time()
     feliz = ahora < getattr(cara, "feliz_hasta", 0.0) or ahora < getattr(cara, "baile_hasta", 0.0)
     objetivo_sonrisa = 0.0 if silenciada else (
@@ -310,23 +329,32 @@ def dibujar(p, cara, color, t, tam):
     p.scale(esc, esc)
 
     _halo(p, color_suave, energia, silenciada, t, respiracion)
-    _anillos(p, color_suave, estado, energia, fase, vel)
+    _anillos(p, color_suave, estado, energia, fase, vel, d)
     if not silenciada:
         _particulas(p, energia, t)
     if estado == "escuchando":
         _radar(p, energia, fase, t)
-    _espectro(p, color_suave, estado, energia, t, fase)
+    _espectro(p, color_suave, estado, energia, t, fase, d)
     if estado == "hablando":
-        _ondas_choque(p, getattr(cara, "_ondas", []), t)
+        _ondas_choque(p, getattr(cara, "_ondas", []), t, d)
 
+    nucleo = _mezcla(CELESTE_CLARO if estado == "reposo" else color_suave,
+                     BLANCO_DORADO, 0.7 * d)
+    medio = _mezcla(color_suave, DORADO, 0.65 * d)
     orbe = QRadialGradient(QPointF(-radio * 0.18, -radio * 0.2), radio)
-    orbe.setColorAt(0.0, alpha(CELESTE_CLARO if estado == "reposo" else color_suave, 255))
-    orbe.setColorAt(0.45, alpha(color_suave, 225))
+    orbe.setColorAt(0.0, alpha(nucleo, 255))
+    orbe.setColorAt(0.45, alpha(medio, min(255, 225 + int(30 * d))))
     orbe.setColorAt(1.0, alpha(color_suave, 55))
-    p.setPen(QPen(alpha(color_suave, 80 if silenciada else 170), 1.8))
+    brillo = _mezcla(color_suave, BLANCO_DORADO, 0.8 * d)
+    p.setPen(QPen(alpha(brillo, 80 if silenciada else 170 + int(80 * d)),
+                  1.8 + 1.8 * d))
     p.setBrush(QBrush(orbe))
     p.drawEllipse(QPointF(0, 0), radio, radio)
     _iris(p, color_suave, sonrisa, energia, estado, t)
+    if d > 0.01:
+        p.setPen(Qt.NoPen)
+        p.setBrush(alpha(BLANCO_DORADO, int(85 * d)))
+        p.drawEllipse(QPointF(0, 0), 9 + 7 * d, 9 + 7 * d)
 
     p.setPen(Qt.NoPen)
     p.setBrush(alpha(QColor(255, 255, 255), 55 if silenciada else 150 + int(60 * pulso)))
