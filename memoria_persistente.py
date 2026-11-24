@@ -82,7 +82,14 @@ def guardar_recuerdo(categoria, clave, valor, ruta_db=None):
                 "VALUES(?,?,?,?)", (cat, clave, texto, ahora))
         con.commit()
         fila = con.execute("SELECT * FROM recuerdos WHERE clave=?", (clave,)).fetchone()
-    return _fila(fila) if fila else None
+    res = _fila(fila) if fila else None
+    if res and not os.environ.get("DESACTIVAR_EMBEDDINGS"):
+        try:
+            import memoria_semantica
+            memoria_semantica.indexar_en_segundo_plano(f"rec_{res['id']}", res["valor"], ruta_db=ruta_db)
+        except Exception:
+            pass
+    return res
 
 
 def buscar_recuerdos(consulta, limite=6, ruta_db=None):
@@ -104,6 +111,27 @@ def buscar_recuerdos(consulta, limite=6, ruta_db=None):
     if terminos:
         filas = [f for f in filas if peso(f) > 0]
         filas.sort(key=lambda f: (-peso(f), -f["actualizado_en"]))
+
+    # Búsqueda semántica complementaria (sin duplicar ni bloquear ante fallos)
+    try:
+        import memoria_semantica
+        sem = memoria_semantica.buscar_semantico(consulta, limite=limite, umbral=0.55, ruta_db=ruta_db)
+        if sem:
+            sem_map = {int(s[0].replace("rec_", "")): s[2] for s in sem if s[0].startswith("rec_") and s[0][4:].isdigit()}
+            if sem_map:
+                with _bloqueo, closing(_conectar(ruta_db)) as con:
+                    q_ids = ",".join(str(i) for i in sem_map.keys())
+                    f_sem = con.execute(f"SELECT * FROM recuerdos WHERE id IN ({q_ids})").fetchall()
+                    filas_sem = [_fila(f) for f in f_sem]
+                # Unir sin duplicados: primero los de coincidencia exacta/lexical, luego semánticos
+                ids_existentes = {f["id"] for f in filas}
+                for fs in filas_sem:
+                    if fs["id"] not in ids_existentes:
+                        filas.append(fs)
+                        ids_existentes.add(fs["id"])
+    except Exception:
+        pass
+
     return filas[:max(0, int(limite or 6))]
 
 

@@ -37,7 +37,7 @@ class VozFalsa:
 class TestMemoriaPersistente(unittest.TestCase):
     def setUp(self):
         temporal = tempfile.TemporaryDirectory()
-        self.addCleanup(temporal.cleanup)
+        self.addCleanup(lambda: [time.sleep(0.05), getattr(temporal, "cleanup", lambda: None)()])
         self.ruta = os.path.join(temporal.name, "memoria_jarvis.db")
         parche = patch.object(mp, "RUTA_DB", self.ruta)
         parche.start()
