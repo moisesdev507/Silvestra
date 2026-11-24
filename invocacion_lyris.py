@@ -3,8 +3,9 @@ import re
 import threading
 import time
 
-TIEMPO_ORDEN = 8.0
+TIEMPO_ORDEN = 10.0
 TIEMPO_RESPUESTA = 12.0
+DURACION_ECO = 0.4
 FUERTES = {"lyris", "liris", "iris", "lyra", "liria", "lyries", "siris",
            "lira", "lirio", "lirios", "silvestra", "silvestre"}
 DEBILES = {"luis", "serious"}
@@ -77,10 +78,10 @@ def permitir_transcripcion(app):
             or bool(uv.get("es_dueno", True)))
 
 
-def _sonido():
+def _sonido(nombre="activar"):
     try:
         import sonidos_ui
-        sonidos_ui.reproducir("captado")
+        sonidos_ui.reproducir(nombre)
     except Exception:
         pass
 
@@ -97,8 +98,13 @@ def interceptar(app, tipo, texto):
             or getattr(gestor, "esperando_orden", False)):
         gestor.fin_voz()
         return True
-    if tipo == "oido" and getattr(gestor, "en_turno", False):
-        gestor.atender_oido(texto)
+    if tipo == "oido" and (getattr(gestor, "en_turno", False)
+                           or getattr(gestor, "esperando_orden", False)):
+        if (getattr(gestor, "esperando_orden", False)
+                and not getattr(gestor, "en_turno", False)):
+            gestor._procesar(texto)
+        else:
+            gestor.atender_oido(texto)
         return True
     return False
 
@@ -205,14 +211,22 @@ class GestorInvocacion:
                 continue
             try:
                 texto = self.app.oido.escuchar(corto=True, app=self.app)
+                duracion = getattr(self.app.oido, "duracion_ultimo_audio", None)
             except Exception as e:
                 print(f"[invocacion] captura: {str(e)[:80]}", flush=True)
                 self._reposo()
                 time.sleep(0.25)
                 continue
-            self._procesar(texto)
+            self._procesar(texto, duracion)
 
-    def _procesar(self, texto):
+    def _procesar(self, texto, duracion=None):
+        if duracion is None:
+            duracion = getattr(getattr(self.app, "oido", None),
+                               "duracion_ultimo_audio", None)
+        try:
+            corto = duracion is not None and 0.0 < float(duracion) < DURACION_ECO
+        except (TypeError, ValueError):
+            corto = False
         if not texto:
             with self.bloqueo:
                 if self.esperando_orden and time.monotonic() >= self.limite_orden:
@@ -221,10 +235,11 @@ class GestorInvocacion:
         dispara, variante, orden = detectar(texto)
         if dispara:
             print(f"[invocacion] detectada='{variante}' -> orden='{orden}'", flush=True)
-            _sonido()
             if tiene_orden(orden):
+                _sonido("confirmar")
                 self._iniciar_turno(orden)
             else:
+                _sonido("activar")
                 with self.bloqueo:
                     self.esperando_orden = True
                     self.limite_orden = time.monotonic() + TIEMPO_ORDEN
@@ -233,6 +248,9 @@ class GestorInvocacion:
         with self.bloqueo:
             esperando = self.esperando_orden
         if esperando:
+            # Eco/fragmento corto: se ignora sin cerrar la ventana de 10 s.
+            if corto or len(str(texto).strip()) < 3 or not texto_valido(texto):
+                return
             self._iniciar_turno(texto)
 
     def _iniciar_turno(self, orden):

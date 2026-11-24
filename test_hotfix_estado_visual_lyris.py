@@ -1,9 +1,12 @@
 """Regresión: cara celeste en reposo, amarillo al escuchar/hablar y turno Lyris autocerrado."""
+import contextlib
+import io
 import os
 import queue
 import threading
 import time
 import unittest
+import wave
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -20,7 +23,7 @@ import estado
 import eventos
 import eventos_rearme
 import palabra_clave
-
+import sonidos_ui
 
 class CaraFalsa:
     """Doble mínimo de la cara: refleja los indicadores que decidían el color."""
@@ -47,7 +50,6 @@ class CaraFalsa:
 
     def programar_retorno_neutral(self, *_a):
         pass
-
 
 class LienzoNucleo(QWidget):
     """Widget mínimo para renderizar el núcleo sin arrancar la aplicación completa."""
@@ -76,7 +78,6 @@ class LienzoNucleo(QWidget):
 
     def paintEvent(self, _evento):
         cara_dibujo.pintar(self)
-
 
 class TestEstadoVisualLyris(unittest.TestCase):
     def _app(self, en_conversacion=False, escuchando=False):
@@ -132,7 +133,6 @@ class TestEstadoVisualLyris(unittest.TestCase):
                          cara_dibujo.AMARILLO)
         self.assertEqual(cara_dibujo.color_estado(True, True, True),
                          cara_dibujo.AMARILLO)
-        # Vuelta inmediata a celeste al caer ambos indicadores.
         self.assertEqual(cara_dibujo.color_estado(True, False, False),
                          cara_dibujo.CIAN)
         self.assertEqual(cara_dibujo.color_estado(False, True, True),
@@ -176,7 +176,6 @@ class TestEstadoVisualLyris(unittest.TestCase):
             return (color.red(), color.green(), color.blue())
 
         lienzo = LienzoNucleo()
-        # Primer frame: sigue cerca de celeste, nunca salta a ámbar.
         primer = cara_nucleo.color_suavizado(lienzo, cara_nucleo.AMBAR)
         self.assertNotEqual(canales(primer), canales(cara_nucleo.AMBAR))
         self.assertLess(primer.red(), cara_nucleo.AMBAR.red())
@@ -184,7 +183,6 @@ class TestEstadoVisualLyris(unittest.TestCase):
             actual = cara_nucleo.color_suavizado(lienzo, cara_nucleo.AMBAR)
         self.assertEqual(canales(actual), canales(cara_nucleo.AMBAR))
 
-        # La vuelta a reposo y a silenciada también es progresiva.
         vuelta = cara_nucleo.color_suavizado(lienzo, cara_nucleo.CELESTE)
         self.assertNotEqual(canales(vuelta), canales(cara_nucleo.CELESTE))
         for _ in range(80):
@@ -194,7 +192,6 @@ class TestEstadoVisualLyris(unittest.TestCase):
             actual = cara_nucleo.color_suavizado(lienzo, cara_dibujo.GRIS)
         self.assertEqual(canales(actual), canales(cara_dibujo.GRIS))
 
-        # Energía y radio aumentan por frames, no de golpe al activar escucha.
         lienzo.escuchando = True
         lienzo.nivel_volumen = 0.9
         imagen = QImage(cara_dibujo.TAM, cara_dibujo.TAM, QImage.Format_ARGB32)
@@ -226,7 +223,6 @@ class TestEstadoVisualLyris(unittest.TestCase):
             self.assertTrue(app.turno_wakeword_esperando_orden)
             self.assertEqual(self._color(app), cara_dibujo.AMARILLO)
 
-            # El fin del saludo no cierra: todavía espera la orden.
             eventos.atender_evento(app, "fin_voz", None)
             self.assertTrue(app.conversacion)
 
@@ -234,7 +230,6 @@ class TestEstadoVisualLyris(unittest.TestCase):
             self.assertFalse(app.turno_wakeword_esperando_orden)
             app.cara.decir("Son las diez.", None)
 
-            # Termina la respuesta: se cierra el turno y la cara vuelve a celeste.
             eventos.atender_evento(app, "fin_voz", None)
 
         self.assertFalse(app.conversacion)
@@ -287,6 +282,74 @@ class TestEstadoVisualLyris(unittest.TestCase):
         self.assertFalse(detector.debe_escuchar())
         self.assertEqual(self._color(app), cara_dibujo.CIAN)
 
+    def test_frames_dinamicos_cuatro_estados(self):
+        QApplication.instance() or QApplication([])
+        img = QImage(cara_dibujo.TAM, cara_dibujo.TAM, QImage.Format_ARGB32)
+        p = QPainter(img)
+        casos = (("reposo", {}, cara_nucleo.CELESTE, "_particulas"),
+                 ("escuchando", {"escuchando": True}, cara_nucleo.AMBAR, "_radar"),
+                 ("hablando", {"hablando": True, "nivel": .9},
+                  cara_nucleo.AMBAR, "_ondas_choque"),
+                 ("silenciada", {"silenciada": True}, cara_dibujo.GRIS, None))
+        try:
+            for nombre, kw, color, fn in casos:
+                with self.subTest(estado=nombre):
+                    lienzo = LienzoNucleo(**kw)
+                    ctx = (patch.object(cara_nucleo, fn,
+                                        wraps=getattr(cara_nucleo, fn))
+                           if fn else contextlib.nullcontext())
+                    huellas = set()
+                    with ctx as espia:
+                        for i in range(5):
+                            lienzo.nivel_volumen = .2 + .16 * i
+                            img.fill(Qt.transparent)
+                            cara_nucleo.dibujar(p, lienzo, color, 1 + i * .12,
+                                                cara_dibujo.TAM)
+                            huellas.add(bytes(img.constBits()))
+                        if fn:
+                            self.assertTrue(espia.called)
+                    self.assertGreater(len(huellas), 1)
+                    if nombre == "hablando":
+                        self.assertTrue(lienzo._ondas)
+                    if nombre == "silenciada":
+                        self.assertEqual(lienzo._ondas, [])
+        finally:
+            p.end()
+
+    def test_inercia_y_quietud_gris(self):
+        QApplication.instance() or QApplication([])
+        lienzo = LienzoNucleo(hablando=True, nivel=.9)
+        img = QImage(cara_dibujo.TAM, cara_dibujo.TAM, QImage.Format_ARGB32)
+        p = QPainter(img)
+        try:
+            for i in range(40):
+                cara_nucleo.dibujar(p, lienzo, cara_nucleo.AMBAR, 1 + i * .016,
+                                    cara_dibujo.TAM)
+            rapido = lienzo._vel_ang
+            self.assertGreater(rapido, .35)
+            lienzo.hablando = False
+            for i in range(40):
+                cara_nucleo.dibujar(p, lienzo, cara_nucleo.CELESTE, 2 + i * .016,
+                                    cara_dibujo.TAM)
+            self.assertLess(lienzo._vel_ang, rapido)
+            lienzo.voz_silenciada = True
+            for i in range(80):
+                cara_nucleo.dibujar(p, lienzo, cara_dibujo.GRIS, 3 + i * .016,
+                                    cara_dibujo.TAM)
+            self.assertLess(lienzo._vel_ang, .08)
+            self.assertEqual(lienzo._ondas, [])
+        finally:
+            p.end()
+
+    def test_earcon_hud_valido(self):
+        for nombre in ("activar", "confirmar", "captado", "accion"):
+            with wave.open(io.BytesIO(sonidos_ui.generar_wav(nombre))) as wf:
+                self.assertEqual((wf.getnchannels(), wf.getsampwidth(),
+                                  wf.getframerate()), (1, 2, 22050))
+                self.assertGreater(wf.getnframes(), 1000)
+        t0 = time.time()
+        sonidos_ui.reproducir("activar")
+        self.assertLess(time.time() - t0, .2)
 
 if __name__ == "__main__":
     unittest.main()
