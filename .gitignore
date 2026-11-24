@@ -18,6 +18,10 @@ config.py
 *.env
 *token*
 *secret*
+credentials.json
+token.json
+google_token.json
+client_secret*.json
 
 # Modelos pesados de IA y reconocimiento facial
 modelos/

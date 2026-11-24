@@ -8,6 +8,7 @@ import re
 import unicodedata
 
 import dev_copiloto as dev
+import google_workspace as google
 import memoria_persistente as memoria
 
 LIMITE = 1600
@@ -30,6 +31,15 @@ def _guardar_memoria(argumento):
     return "Guardado: " + (fila["valor"] if fila else "no se pudo guardar")
 
 
+def _crear_evento(argumento):
+    """Crea un evento: ``titulo|fecha_iso|duracion`` (fecha opcional)."""
+    partes = str(argumento or "").split("|", 2)
+    titulo = partes[0].strip()
+    fecha = partes[1].strip() if len(partes) > 1 else ""
+    duracion = partes[2].strip() if len(partes) > 2 else 60
+    return google.crear_evento_calendario(titulo, fecha, duracion)
+
+
 CATALOGO = {
     "estado_git": dev.estado_git,
     "descubrir_proyectos": dev.descubrir_proyectos,
@@ -39,6 +49,10 @@ CATALOGO = {
     "buscar_memoria": memoria.buscar_recuerdos,
     "guardar_memoria": _guardar_memoria,
     "telemetria_pc": dev.telemetria_pc,
+    "agenda_hoy": google.agenda_hoy,
+    "crear_evento": _crear_evento,
+    "resumen_correos": google.resumen_correos,
+    "buscar_drive": google.buscar_drive,
 }
 
 
@@ -106,6 +120,15 @@ def detectar_intencion(consulta):
         acciones.append(("buscar_codigo", _clave_busqueda(consulta)))
     if "abrir" in texto and any(x in texto for x in ("vscode", "visual studio", "codigo")):
         acciones.append(("abrir_en_vscode", _nombre_de(consulta)))
+    if any(x in texto for x in ("agendar", "agenda una", "crear evento",
+                               "crear un evento", "programar entrega")):
+        acciones.append(("crear_evento", str(consulta)))
+    elif any(x in texto for x in ("agenda", "calendario", "reunion", "reuniones")):
+        acciones.append(("agenda_hoy", ""))
+    if any(x in texto for x in ("correo", "correos", "gmail", "bandeja")):
+        acciones.append(("resumen_correos", ""))
+    if any(x in texto for x in ("drive", "documento", "documentos")):
+        acciones.append(("buscar_drive", str(consulta)))
     return acciones[:3]
 
 

@@ -148,6 +148,13 @@ class Cerebro:
                     contexto_adicional = (contexto_adicional + "\n" + datos_herr).strip()
             except Exception:
                 pass
+            try:
+                import vigilante_proactivo as vigilante
+                aviso_vig = vigilante.contexto_para_prompt(texto_actual)
+                if aviso_vig:
+                    contexto_adicional = (contexto_adicional + "\n" + aviso_vig).strip()
+            except Exception:
+                pass
         return construir_prompt(self.memoria, texto_actual, self._obtener_historial_podado(),
             es_invitado=es_invitado, contexto_adicional=contexto_adicional,
             paquete_memoria=paquete_memoria, contexto_engine=contexto_engine)
