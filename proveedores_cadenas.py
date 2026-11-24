@@ -236,10 +236,7 @@ def _ajustar_carril_rapido_groq():
                 for campo in ("modelos", "modelos_charla", "modelos_razonamiento"):
                     existentes = list(p.get(campo) or [])
                     sin_qwen = [m for m in existentes if "qwen" not in str(m).lower() and m not in rapidos]
-                    if campo == "modelos_razonamiento":
-                        p[campo] = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"] + sin_qwen
-                    else:
-                        p[campo] = list(rapidos) + sin_qwen
+                    p[campo] = list(rapidos) + sin_qwen
     except Exception:
         pass
 
@@ -273,15 +270,14 @@ def obtener_modelos_tarea(prov_dict, tarea):
     modelos = _modelos_configurados(prov_dict, tarea)
     nombre = prov_dict.get("nombre", "")
     if nombre == "Groq":
-        rapidos_tarea = (
-            ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
-            if tarea == "razonamiento"
-            else MODELOS_RAPIDOS_GROQ
-        )
+        rapidos_tarea = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"]
         if not modelos and not _tiene_modelos_configurados(prov_dict):
             return list(rapidos_tarea)
         rapidos = [m for m in rapidos_tarea if m in modelos]
-        return rapidos + [m for m in modelos if m not in rapidos]
+        restantes = [m for m in modelos if m not in rapidos]
+        sin_qwen = [m for m in restantes if "qwen" not in str(m).lower()]
+        con_qwen = [m for m in restantes if "qwen" in str(m).lower()]
+        return rapidos + sin_qwen + con_qwen
     if nombre == "Google":
         rapidos = [m for m in MODELOS_RAPIDOS_GOOGLE if m in modelos]
         if rapidos:

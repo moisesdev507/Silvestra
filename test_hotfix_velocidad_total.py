@@ -68,8 +68,8 @@ class TestHotfixVelocidadTotal(unittest.TestCase):
         groq_raz = next((c for c in cands_raz if c["nombre"] == "Groq"), None)
         self.assertIsNotNone(groq_raz)
         activos_raz = groq_raz["modelos_activos"]
-        self.assertEqual(activos_raz[0], "llama-3.3-70b-versatile")
-        self.assertIn("llama-3.1-8b-instant", activos_raz)
+        self.assertEqual(activos_raz[0], "llama-3.1-8b-instant")
+        self.assertIn("llama-3.3-70b-versatile", activos_raz)
 
     def test_voz_rapida_y_fallback(self):
         """Verifica edge-tts por defecto, fallback a local/Aura si falla y callback al_terminar."""
