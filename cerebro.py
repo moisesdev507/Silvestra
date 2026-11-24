@@ -65,7 +65,13 @@ class Cerebro:
         contexto_adicional = ""
         datos_multimodales = {}
         contexto_engine = paquete_memoria = None
-        if puente is not None and consulta:
+        import cerebro_perfil
+        perfil = cerebro_perfil.obtener_perfil()
+        if perfil:
+            perfil.marcar_pre_enrutado()
+        es_ultrarrapido = cerebro_perfil.es_frase_ultrarrapida(texto_actual)
+
+        if puente is not None and consulta and not es_ultrarrapido:
             try:
                 datos = puente.consultar_entorno_actual(texto_actual) or {}
                 datos_multimodales = datos
@@ -92,7 +98,7 @@ class Cerebro:
             self._seguimiento_visual_pendiente = False
         from planificacion_motor import es_solicitud_explicita
         solicitud_plan = es_solicitud_explicita(texto_actual)
-        if (len(pregunta) >= 18 or solicitud_plan) and not es_invitado and hasattr(self.memoria, "razonar"):
+        if (len(pregunta) >= 18 or solicitud_plan) and not es_invitado and not es_ultrarrapido and hasattr(self.memoria, "razonar"):
             try:
                 import contexto_motor
                 contexto_engine = contexto_motor.obtener_motor_contexto(app).obtener_contexto()
@@ -133,7 +139,7 @@ class Cerebro:
                     contexto_adicional = (contexto_adicional + "\n" + formatear_plan(plan)).strip()[:2800]
             except Exception as exc:
                 print(f"[cerebro] razonamiento de memoria no disponible ({type(exc).__name__})", flush=True)
-        if not es_invitado:
+        if not es_invitado and not es_ultrarrapido:
             try:
                 import memoria_persistente as memoria_guardada
                 recuerdos = memoria_guardada.contexto_para_prompt(texto_actual)
@@ -155,14 +161,17 @@ class Cerebro:
                     contexto_adicional = (contexto_adicional + "\n" + aviso_vig).strip()
             except Exception:
                 pass
-        try:
-            import enrutador_expertos
-            clasif = enrutador_expertos.clasificar_consulta(texto_actual)
-            cartucho = clasif.get("prompt_experto")
-            if cartucho:
-                contexto_adicional = (contexto_adicional + "\n" + cartucho).strip()
-        except Exception:
-            pass
+        if not es_ultrarrapido:
+            try:
+                import enrutador_expertos
+                clasif = enrutador_expertos.clasificar_consulta(texto_actual)
+                cartucho = clasif.get("prompt_experto")
+                if cartucho:
+                    contexto_adicional = (contexto_adicional + "\n" + cartucho).strip()
+            except Exception:
+                pass
+        if perfil:
+            perfil.marcar_memoria()
         return construir_prompt(self.memoria, texto_actual, self._obtener_historial_podado(),
             es_invitado=es_invitado, contexto_adicional=contexto_adicional,
             paquete_memoria=paquete_memoria, contexto_engine=contexto_engine)

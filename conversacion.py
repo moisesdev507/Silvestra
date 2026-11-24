@@ -223,10 +223,11 @@ def enviar(app, texto):
         app.flujo = None
         app._fragmentos_voz = False
         app._flujo_cerrado = False
-    t_habla = getattr(getattr(app, "oido", None), "t_fin_habla", getattr(getattr(app, "oido", None), "t_fin_escucha", time.time()))
-    t_txt = getattr(getattr(app, "oido", None), "t_texto", time.time())
-    app.t_fin_habla = t_habla
-    app.metricas_turno = {"t_fin_habla": t_habla, "t_texto": t_txt, "t_primer_token": None}
+    try:
+        import cerebro_perfil
+        cerebro_perfil.inicializar_metricas_turno(app, texto)
+    except Exception:
+        app.metricas_turno = {"t_fin_habla": None, "t_texto": time.time(), "t_primer_token": None}
 
     try:
         import naturalidad
@@ -367,9 +368,13 @@ def pensar(app, texto):
         def _on_token():
             if timer_espera:
                 timer_espera.cancel()
-            if hasattr(app, "metricas_turno") and isinstance(app.metricas_turno, dict):
-                if app.metricas_turno.get("t_primer_token") is None:
-                    app.metricas_turno["t_primer_token"] = time.time()
+            try:
+                import cerebro_perfil
+                cerebro_perfil.notificar_primer_token(app)
+            except Exception:
+                if hasattr(app, "metricas_turno") and isinstance(app.metricas_turno, dict):
+                    if app.metricas_turno.get("t_primer_token") is None:
+                        app.metricas_turno["t_primer_token"] = time.time()
 
         resultado = respuesta_flujo.responder_flujo(
             app.cerebro, texto, lambda f: _poner_frases(app, f), on_primer_token=_on_token

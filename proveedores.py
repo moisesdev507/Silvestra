@@ -154,6 +154,13 @@ def completar(mensajes, tarea="charla", timeout=20, max_tokens=None):
 
 def completar_flujo(mensajes, al_frase, tarea="charla", timeout_paralelo=2.5, on_primer_token=None, on_emocion=None):
     """Interfaz unificada para streaming con conmutación limpia y control de calidad."""
+    try:
+        import cerebro_perfil
+        p = cerebro_perfil.obtener_perfil()
+        if p:
+            p.marcar_despacho_llm()
+    except Exception:
+        pass
     candidatos = proveedores_disponibles(tarea)
     texto, prov_g, mod_g = ps.completar_flujo(
         mensajes,
