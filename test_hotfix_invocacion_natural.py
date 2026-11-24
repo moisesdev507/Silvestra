@@ -164,7 +164,7 @@ class TestInvocacionNatural(unittest.TestCase):
 
     def test_orden_dos_tiempos_y_eco_corto(self):
         self.assertEqual((invocacion_lyris.TIEMPO_ORDEN,
-                          invocacion_lyris.DURACION_ECO), (10.0, 0.4))
+                          invocacion_lyris.DURACION_ECO), (20.0, 0.4))
         app, enviados, _ = self._app()
         sonidos = []
         with patch.object(invocacion_lyris, "_sonido",
@@ -175,7 +175,7 @@ class TestInvocacionNatural(unittest.TestCase):
             self.assertTrue(app.invocacion.esperando_orden)
             self.assertTrue(app.cara.escuchando)
             self.assertAlmostEqual(app.invocacion.limite_orden - time.monotonic(),
-                                   10.0, delta=0.3)
+                                   20.0, delta=0.3)
             app.invocacion._procesar("mm", duracion=0.2)  # eco: no cierra
             self._drenar(app)
             self.assertTrue(app.invocacion.esperando_orden)

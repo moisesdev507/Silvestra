@@ -202,6 +202,7 @@ class Oido:
 
             self._vad.reset()
             t_inicio = time.time()
+            self.t_captura_inicio = time.monotonic()
             t_habla_inicio = None
             hablo = False
 
@@ -318,6 +319,8 @@ class Oido:
         r = None
         t0 = time.time()
         dg = oido_deepgram.transcribir(buffer.getvalue())
+        if dg and str(dg[0] or "").strip():
+            print("[oido] Deepgram valido: sin Whisper", flush=True)
         if dg:
             texto = dg[0]
         else:

@@ -112,11 +112,16 @@ def transcribir(wav_bytes):
     try:
         datos = respuesta.json()
         canales = datos.get("results", {}).get("channels", [])
-        texto = canales[0]["alternatives"][0].get("transcript", "")
+        alternativa = canales[0]["alternatives"][0]
+        texto = alternativa.get("transcript", "")
         segundos = float(datos.get("metadata", {}).get("duration") or 0.0)
     except Exception:
         return None
     texto = " ".join(str(texto or "").split())
+    if not texto:
+        palabras = alternativa.get("words") or []
+        texto = " ".join(str(w.get("word", "")) for w in palabras
+                         if isinstance(w, dict)).strip()
     if texto:
         return (texto, segundos)
     if segundos <= CLIP_CORTO_MAX:
@@ -125,4 +130,5 @@ def transcribir(wav_bytes):
         print(f"[oido] Deepgram 200 vacío en clip corto ({segundos:.2f}s): sin Whisper",
               flush=True)
         return ("", segundos)
+    print(f"[oido] Deepgram 200 sin texto ({segundos:.2f}s): usando Whisper", flush=True)
     return None

@@ -3,7 +3,7 @@ import re
 import threading
 import time
 
-TIEMPO_ORDEN = 10.0
+TIEMPO_ORDEN = 20.0
 TIEMPO_RESPUESTA = 12.0
 TIEMPO_SEGUIMIENTO = 18.0
 DURACION_ECO = 0.4
@@ -14,6 +14,12 @@ DEBILES = {"luis", "serious"}
 VARIANTES = FUERTES | DEBILES
 RELLENO = {"oye", "oiga", "hola", "hey", "bueno", "pues", "entonces", "buenas"}
 _SEPARADOR = re.compile(r"[^\wáéíóúñü]+", re.UNICODE)
+
+
+def _inicio_captura(app):
+    """Ancla la ventana al inicio de captura, no al fin de la transcripción."""
+    inicio = getattr(getattr(app, "oido", None), "t_captura_inicio", None)
+    return inicio if inicio is not None else time.monotonic()
 
 
 def palabras(texto):
@@ -64,8 +70,8 @@ def texto_valido(texto):
     if not str(texto or "").strip():
         return False
     try:
-        import oido_flujo
-        return not oido_flujo.es_bucle_alucinacion(texto)
+        import oido_filtro
+        return not oido_filtro.es_bucle_degenerado(texto)
     except Exception:
         return True
 
@@ -293,7 +299,7 @@ class GestorInvocacion:
                 _micro_voz(self.app)
                 with self.bloqueo:
                     self.esperando_orden = True
-                    self.limite_orden = time.monotonic() + TIEMPO_ORDEN
+                    self.limite_orden = _inicio_captura(self.app) + TIEMPO_ORDEN
                 self.app.cola.put(("invocacion", "amarillo"))
             return
         if directo and dueno_verificado(self.app):
@@ -303,6 +309,7 @@ class GestorInvocacion:
         if esperando or seguimiento:
             # Eco/fragmento corto: se ignora sin cerrar la ventana activa.
             if corto or len(str(texto).strip()) < 3 or not texto_valido(texto):
+                print(f"[invocacion] transcripcion ignorada motivo=eco_o_bucle: '{texto}'", flush=True)
                 return
             self._iniciar_turno(texto)
 
@@ -327,6 +334,7 @@ class GestorInvocacion:
 
     def atender_oido(self, texto):
         if not texto_valido(texto):
+            print(f"[invocacion] orden descartada motivo=bucle_o_vacio: '{texto}'", flush=True)
             self.fin_voz()
             return
         self.app._t_accion_llm = 0
@@ -339,8 +347,10 @@ class GestorInvocacion:
             uv = getattr(vd, "ultima_verificacion", {})
             if (getattr(vd, "modo_solo_dueno", False)
                     and not uv.get("es_dueno", True)):
+                print(f"[invocacion] orden descartada motivo=no_dueno: '{texto}'", flush=True)
                 self.fin_voz()
                 return
+        print(f"[invocacion] orden despachada: '{texto}'", flush=True)
         self.app.enviar(texto)
 
     def fin_voz(self):
