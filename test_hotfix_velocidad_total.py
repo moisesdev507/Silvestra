@@ -120,38 +120,40 @@ class TestHotfixVelocidadTotal(unittest.TestCase):
             self.assertEqual(res, ("hola lyris", 1.2))
 
     def test_saludo_dinamico_con_groq_y_fallback(self):
-        """Verifica saludo inicial espontáneo con hora real y fallback ante fallo/timeout."""
-        import datetime
+        """Verifica saludo inicial espontáneo con memoria real, anti-repetición y fallback natural."""
+        import saludo_dinamico
         import nacimiento
 
-        # 1. Fallback formatea con la hora real
-        ahora = datetime.datetime(2026, 11, 24, 8, 30)
-        fb_manana = nacimiento.fallback_saludo_hora("Moisés", "8:30 AM", ahora)
-        self.assertIn("Buenos días, Moisés.", fb_manana)
-        self.assertIn("8:30 AM", fb_manana)
-
-        ahora_tarde = datetime.datetime(2026, 11, 24, 15, 10)
-        fb_tarde = nacimiento.fallback_saludo_hora("Moisés", "3:10 PM", ahora_tarde)
-        self.assertIn("Buenas tardes, Moisés.", fb_tarde)
-        self.assertIn("3:10 PM", fb_tarde)
+        # 1. Fallback natural basado en memoria y sin hora fija
+        memoria_dummy = {
+            "hilos_abiertos": ["proyecto de latencia"],
+            "recuerdos_recientes": ["optimizamos el carril rápido"],
+        }
+        ultimos = ["saludo previo 1", "saludo previo 2"]
+        fb = saludo_dinamico.fallback_natural_memoria("Moisés", memoria_dummy, ultimos)
+        self.assertIsInstance(fb, str)
+        self.assertTrue(len(fb) > 5)
+        self.assertNotIn("Son las", fb)
+        self.assertNotIn(fb, ultimos)
 
         # 2. Generación dinámica exitosa con Groq (mock 200)
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
-            "choices": [{"message": {"content": "Hola Moisés, son las 8:30 y el día recién empieza."}}]
+            "choices": [{"message": {"content": "Moisés, retomemos lo de la latencia cuando quieras."}}]
         }
         with patch("httpx.post", return_value=mock_resp):
-            saludo = nacimiento.generar_saludo_dinamico(creador="Moisés", timeout=2.0)
-            self.assertEqual(saludo, "Hola Moisés, son las 8:30 y el día recién empieza.")
-            for muletilla in nacimiento.MULETILLAS_PROHIBIDAS:
+            saludo = nacimiento.generar_saludo(creador="Moisés")
+            self.assertEqual(saludo, "Moisés, retomemos lo de la latencia cuando quieras.")
+            for muletilla in saludo_dinamico.MULETILLAS_PROHIBIDAS:
                 self.assertNotIn(muletilla, saludo.lower())
 
         # 3. Fallback automático ante fallo HTTP o timeout
         with patch("httpx.post", side_effect=RuntimeError("Timeout Groq")):
-            saludo_fallo = nacimiento.generar_saludo_dinamico(creador="Moisés", timeout=2.0)
-            self.assertIn("Moisés", saludo_fallo)
-            self.assertTrue(any(x in saludo_fallo for x in ("Buenos días", "Buenas tardes", "Buenas noches")))
+            saludo_fallo = nacimiento.generar_saludo(creador="Moisés")
+            self.assertIsInstance(saludo_fallo, str)
+            self.assertTrue(len(saludo_fallo) > 5)
+            self.assertNotIn("Son las", saludo_fallo)
 
 
 if __name__ == "__main__":
