@@ -12,6 +12,17 @@ import vision_pantalla
 class TestVisionPantalla(unittest.TestCase):
     """Pruebas de captura en memoria, llamadas REST a Gemini, limpieza y herramientas."""
 
+    def test_cadena_modelos_ignora_no_gemini_y_prioriza_lite(self):
+        """Verifica que modelos no-gemini o de audio se ignoren y gemini-flash-lite-latest sea primero."""
+        with patch("config.MODELOS_VISION", ["qwen/qwen3.8-27b", "gemini-tts-1", "llama-3.2-11b", "gemini-1.5-pro"], create=True):
+            modelos = vision_pantalla._obtener_modelos_candidatos()
+            self.assertEqual(modelos[0], "gemini-flash-lite-latest")
+            self.assertIn("gemini-3.1-flash-lite", modelos)
+            self.assertIn("gemini-1.5-pro", modelos)
+            self.assertNotIn("qwen/qwen3.8-27b", modelos)
+            self.assertNotIn("llama-3.2-11b", modelos)
+            self.assertNotIn("gemini-tts-1", modelos)
+
     def test_clave_vacia(self):
         """Sin clave de Google Gemini devuelve mensaje claro sin lanzar excepción."""
         with patch("config.CLAVE_GOOGLE", "", create=True):
@@ -33,16 +44,22 @@ class TestVisionPantalla(unittest.TestCase):
         mock_cm.__enter__.return_value = mock_cm
 
         with patch("config.CLAVE_GOOGLE", "google-gemini-testkey", create=True):
-            with patch("vision_pantalla.capturar_pantalla_b64", return_value="base64dummy"):
+            with patch("vision_pantalla.capturar_pantalla_b64", return_value="base64dummy") as mock_cap:
                 with patch("urllib.request.urlopen", return_value=mock_cm):
                     res = vision_pantalla.analizar_pantalla("qué error sale aquí")
                     self.assertIn("Tienes abierto VS Code", res)
                     self.assertNotIn("https://", res)
                     self.assertNotIn("[1]", res)
                     self.assertNotIn("`", res)
+                    mock_cap.assert_called_with(ancho_max=960, calidad=60)
 
-    def test_fallback_segundo_modelo(self):
-        """Si el primer modelo falla con HTTP 404, continúa al segundo exitosamente."""
+    def test_fallback_respuesta_sin_parts_o_http_error(self):
+        """Si un modelo responde sin 'parts' o da HTTP 404/429/503, pasa al siguiente sin fallar."""
+        mock_sin_parts = {"candidates": [{"content": {}}]}
+        mock_cm_sin_parts = MagicMock()
+        mock_cm_sin_parts.read.return_value = json.dumps(mock_sin_parts).encode("utf-8")
+        mock_cm_sin_parts.__enter__.return_value = mock_cm_sin_parts
+
         mock_data_ok = {
             "candidates": [{
                 "content": {
@@ -54,17 +71,25 @@ class TestVisionPantalla(unittest.TestCase):
         mock_cm_ok.read.return_value = json.dumps(mock_data_ok).encode("utf-8")
         mock_cm_ok.__enter__.return_value = mock_cm_ok
 
+        intentos = []
+
         def urlopen_side_effect(req, timeout=None):
-            if "gemini-2.5-flash" in req.full_url:
-                raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, io.BytesIO())
+            intentos.append(req.full_url)
+            if "gemini-flash-lite-latest" in req.full_url:
+                # Primer modelo responde sin parts
+                return mock_cm_sin_parts
+            if "gemini-3.1-flash-lite" in req.full_url:
+                # Segundo modelo da error HTTP 429
+                raise urllib.error.HTTPError(req.full_url, 429, "Too Many Requests", {}, io.BytesIO())
+            # Tercer modelo responde OK
             return mock_cm_ok
 
         with patch("config.CLAVE_GOOGLE", "google-gemini-testkey", create=True):
-            with patch("config.MODELOS_VISION", ["gemini-2.5-flash", "gemini-2.0-flash"], create=True):
-                with patch("vision_pantalla.capturar_pantalla_b64", return_value="base64dummy"):
-                    with patch("urllib.request.urlopen", side_effect=urlopen_side_effect):
-                        res = vision_pantalla.analizar_pantalla("mira mi pantalla")
-                        self.assertIn("proceso de compilación terminó correctamente", res)
+            with patch("vision_pantalla.capturar_pantalla_b64", return_value="base64dummy"):
+                with patch("urllib.request.urlopen", side_effect=urlopen_side_effect):
+                    res = vision_pantalla.analizar_pantalla("mira mi pantalla")
+                    self.assertIn("proceso de compilación terminó correctamente", res)
+                    self.assertTrue(len(intentos) >= 3)
 
     def test_timeout_seguro(self):
         """Timeout de red se maneja de forma limpia sin romper el flujo."""

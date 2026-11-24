@@ -24,6 +24,7 @@ class TestCerebroVision(unittest.TestCase):
     def _cerebro(self):
         return SimpleNamespace(
             historial=[], app=SimpleNamespace(escuchando=False),
+            memoria=SimpleNamespace(creador="Moisés", nombre="Lyris"),
             instrucciones=lambda _t: "Eres Lyris.",
             _podar_historial=lambda: None,
         )

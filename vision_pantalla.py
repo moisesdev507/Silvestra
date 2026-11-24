@@ -1,12 +1,7 @@
-"""Módulo de visión de pantalla real bajo demanda para Silvestra / Lyris.
-
-Captura la pantalla en memoria (mss / Pillow), comprime a JPEG base64 (sin archivos en disco),
-respeta el modo Privado y consulta a Gemini Flash vía API REST directa (urllib).
-"""
+"""Visión de pantalla real bajo demanda para Silvestra / Lyris vía Gemini Flash REST."""
 import base64
 import io
 import json
-import os
 import re
 import threading
 import urllib.error
@@ -14,10 +9,15 @@ import urllib.parse
 import urllib.request
 
 _bloqueo = threading.RLock()
+MODELOS_DEFAULT = (
+    "gemini-flash-lite-latest",
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-flash-lite",
+    "gemini-3-flash-preview",
+)
 
 
 def es_modo_privado(app=None):
-    """Verifica si el modo privado está activo en app o estado.json."""
     if app:
         if getattr(app, "modo_privado", False):
             return True
@@ -38,8 +38,7 @@ def es_modo_privado(app=None):
     return False
 
 
-def capturar_pantalla_b64(ancho_max=1280, calidad=70):
-    """Captura el monitor principal en memoria y lo devuelve como JPEG base64 (< 150 KB)."""
+def capturar_pantalla_b64(ancho_max=960, calidad=60):
     with _bloqueo:
         img = None
         try:
@@ -55,128 +54,114 @@ def capturar_pantalla_b64(ancho_max=1280, calidad=70):
                 img = ImageGrab.grab()
             except Exception:
                 return None
-
         if not img:
             return None
-
         from PIL import Image
         if img.width > ancho_max:
             ratio = float(ancho_max) / float(img.width)
-            nuevo_alto = max(1, int(img.height * ratio))
-            img = img.resize((ancho_max, nuevo_alto), Image.LANCZOS)
-
+            img = img.resize((ancho_max, max(1, int(img.height * ratio))), Image.LANCZOS)
         buf = io.BytesIO()
         img.convert("RGB").save(buf, format="JPEG", quality=calidad)
         return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
 def _limpiar_para_voz(texto: str) -> str:
-    """Elimina markdown, URLs, listas y asteriscos para voz hablada fluida."""
     t = str(texto or "")
     t = re.sub(r"https?://\S+", "", t)
     t = re.sub(r"\[\s*[^\]]*\s*\]", "", t)
     t = re.sub(r"[*_#`~>|]", " ", t)
     t = re.sub(r"^\s*[-•\d+\.]+\s+", "", t, flags=re.M)
-    t = " ".join(t.split())
-    return t.strip()
+    return " ".join(t.split()).strip()
 
 
-def _llamar_gemini(modelo: str, clave: str, b64_img: str, prompt_texto: str, timeout: float = 8.0) -> str:
-    """Envía la imagen a Gemini REST generateContent con timeout controlado."""
+def _llamar_gemini(modelo: str, clave: str, b64_img: str, prompt: str, timeout: float = 8.0) -> str:
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{modelo}:generateContent?key={clave}"
     payload = {
-        "contents": [{
-            "parts": [
-                {"text": prompt_texto},
-                {"inline_data": {"mime_type": "image/jpeg", "data": b64_img}},
-            ]
-        }],
-        "generationConfig": {"maxOutputTokens": 250, "temperature": 0.4},
+        "contents": [{"parts": [
+            {"text": prompt},
+            {"inline_data": {"mime_type": "image/jpeg", "data": b64_img}},
+        ]}],
+        "generationConfig": {"maxOutputTokens": 200, "temperature": 0.2},
     }
-    cuerpo = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
-        url,
-        data=cuerpo,
-        headers={"Content-Type": "application/json"},
-        method="POST",
+        url, data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"}, method="POST",
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         datos = json.loads(resp.read().decode("utf-8"))
-    cands = datos.get("candidates", [])
-    if cands:
+    cands = datos.get("candidates", []) if isinstance(datos, dict) else []
+    if cands and isinstance(cands, list) and isinstance(cands[0], dict):
         parts = cands[0].get("content", {}).get("parts", [])
-        if parts and "text" in parts[0] and parts[0]["text"].strip():
-            return parts[0]["text"].strip()
+        if parts and isinstance(parts, list) and isinstance(parts[0], dict):
+            txt = parts[0].get("text", "")
+            if str(txt).strip():
+                return str(txt).strip()
     return ""
 
 
+def _obtener_modelos_candidatos():
+    candidatos = list(MODELOS_DEFAULT)
+    extras = []
+    try:
+        import config
+        cfgs = []
+        m_cfg = getattr(config, "MODELOS_VISION", None)
+        if isinstance(m_cfg, (list, tuple)):
+            cfgs.extend(m_cfg)
+        m_s = getattr(config, "MODELO_VISION", "")
+        if m_s:
+            cfgs.append(m_s)
+        for m in cfgs:
+            if isinstance(m, str) and m.strip().lower().startswith("gemini-"):
+                m_low = m.strip().lower()
+                if not any(x in m_low for x in ("audio", "tts", "image", "imagen")):
+                    nom = m.strip()
+                    if nom not in candidatos and nom not in extras:
+                        extras.append(nom)
+    except Exception:
+        pass
+    return candidatos + extras
+
+
 def analizar_pantalla(pregunta: str = "") -> str:
-    """Analiza la pantalla principal con Gemini Flash y devuelve respuesta hablada estilo F.R.I.D.A.Y."""
     if es_modo_privado():
         return "No puedo mirar la pantalla mientras el modo Privado está activo."
-
-    b64_img = capturar_pantalla_b64(ancho_max=1280, calidad=70)
+    b64_img = capturar_pantalla_b64(ancho_max=960, calidad=60)
     if not b64_img:
         return "No pude capturar la pantalla en este momento."
-
     clave = ""
     try:
         import config
         clave = getattr(config, "CLAVE_GOOGLE", "") or ""
     except Exception:
         clave = ""
-
     if not clave or not str(clave).strip():
         return "La visión de pantalla no está configurada: falta la clave de Google Gemini."
 
-    # Modelos configurados o fallback seguro a Gemini Flash
-    modelos_candidatos = []
-    try:
-        import config
-        m_cfg = getattr(config, "MODELOS_VISION", None)
-        if isinstance(m_cfg, (list, tuple)):
-            modelos_candidatos.extend(m_cfg)
-        m_single = getattr(config, "MODELO_VISION", "")
-        if m_single and m_single not in modelos_candidatos:
-            modelos_candidatos.append(m_single)
-    except Exception:
-        pass
-
-    for m_def in ("gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"):
-        if m_def not in modelos_candidatos:
-            modelos_candidatos.append(m_def)
-
-    peticion = str(pregunta or "").strip()
-    if not peticion:
-        peticion = "Describe lo principal que ves en la pantalla, enfocándote en errores o contenido activo."
-
+    peticion = str(pregunta or "").strip() or "Describe lo principal que ves en la pantalla, errores o contenido activo."
     prompt = (
         f"Petición del usuario: {peticion}\n"
         "Instrucción: Eres Lyris, asistente inteligente tipo F.R.I.D.A.Y. "
-        "Observa la captura de pantalla y responde de forma directa en español en máximo 2 oraciones cortas "
-        "(entre 15 y 35 palabras en total). No uses markdown, no uses listas con viñetas, no leas URLs ni código "
-        "kilométrico: sintetiza exactamente lo que el usuario necesita saber para ser leído en voz alta."
+        "Observa la captura y responde en español en máximo 2 oraciones cortas (15 a 35 palabras). "
+        "Sin markdown, sin listas con viñetas, sin URLs ni código kilométrico."
     )
-
-    for mod in modelos_candidatos:
+    for mod in _obtener_modelos_candidatos():
         try:
             texto = _llamar_gemini(mod, clave, b64_img, prompt, timeout=8.0)
             if texto:
                 limpio = _limpiar_para_voz(texto)
                 if limpio:
                     return limpio
-        except urllib.error.HTTPError as e:
+        except urllib.error.HTTPError:
             continue
         except (urllib.error.URLError, TimeoutError):
             continue
         except Exception:
             continue
-
     return "No pude obtener una respuesta visual de Gemini en este momento."
 
 
 def capturar_y_analizar_pantalla(pregunta, app=None):
-    """Punto de entrada compatible con respuesta_flujo.py y tests existentes."""
     if es_modo_privado(app):
         return False, "No puedo mirar la pantalla mientras el modo Privado está activo."
     res = analizar_pantalla(pregunta)
@@ -185,7 +170,6 @@ def capturar_y_analizar_pantalla(pregunta, app=None):
 
 
 def detectar_peticion_vision(texto):
-    """Detecta peticiones naturales de inspección visual de pantalla."""
     if not texto or len(str(texto).strip()) < 4:
         return False
     t = str(texto).lower()
@@ -207,10 +191,7 @@ def detectar_peticion_vision(texto):
 
 
 __all__ = [
-    "analizar_pantalla",
-    "capturar_y_analizar_pantalla",
-    "detectar_peticion_vision",
-    "capturar_pantalla_b64",
-    "es_modo_privado",
-    "_limpiar_para_voz",
+    "analizar_pantalla", "capturar_y_analizar_pantalla",
+    "detectar_peticion_vision", "capturar_pantalla_b64",
+    "es_modo_privado", "_limpiar_para_voz", "_obtener_modelos_candidatos",
 ]
