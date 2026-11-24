@@ -4,8 +4,10 @@ import threading
 import time
 
 TIEMPO_ORDEN = 8.0
-VARIANTES = {"lyris", "liris", "iris", "lyra", "liria", "lira", "lirio",
-             "lirios", "silvestra", "silvestre"}
+FUERTES = {"lyris", "liris", "iris", "lyra", "liria", "lyries", "siris",
+           "lira", "lirio", "lirios", "silvestra", "silvestre"}
+DEBILES = {"luis", "serious"}
+VARIANTES = FUERTES | DEBILES
 RELLENO = {"oye", "oiga", "hola", "hey", "bueno", "pues", "entonces", "buenas"}
 _SEPARADOR = re.compile(r"[^\wáéíóúñü]+", re.UNICODE)
 
@@ -14,19 +16,45 @@ def palabras(texto):
     return [p for p in _SEPARADOR.split(str(texto or "").lower()) if p]
 
 
-def contiene_lyris(texto):
-    return any(p in VARIANTES for p in palabras(texto))
-
-
-def extraer_orden(texto):
-    salida = [p for p in palabras(texto) if p not in VARIANTES]
+def _orden_de(ps):
+    salida = [p for p in ps if p not in FUERTES]
     while salida and salida[0] in RELLENO:
         salida.pop(0)
     return " ".join(salida)
 
 
+def detectar(texto):
+    """(dispara, variante, orden); Luis/Serious solo como vocativo de borde."""
+    ps = palabras(texto)
+    if not ps:
+        return False, "", ""
+    for p in ps:
+        if p in FUERTES:
+            return True, p, _orden_de(ps)
+    if len(ps) == 1 and ps[0] in DEBILES:
+        return True, ps[0], ""
+    if ps[0] in DEBILES or ps[-1] in DEBILES:
+        variante = ps[0] if ps[0] in DEBILES else ps[-1]
+        restantes = list(ps)
+        if restantes[0] in DEBILES:
+            restantes.pop(0)
+        if restantes and restantes[-1] in DEBILES:
+            restantes.pop()
+        return True, variante, _orden_de(restantes)
+    return False, "", ""
+
+
+def contiene_lyris(texto):
+    return detectar(texto)[0]
+
+
+def extraer_orden(texto):
+    return detectar(texto)[2]
+
+
 def tiene_orden(texto):
-    return any(len(p) >= 2 and p not in RELLENO for p in palabras(texto))
+    return any(len(p) >= 2 and p not in RELLENO and p not in DEBILES
+               for p in palabras(texto))
 
 
 def permitir_transcripcion(app):
@@ -177,8 +205,10 @@ class GestorInvocacion:
                 if self.esperando_orden and time.monotonic() >= self.limite_orden:
                     self._reposo()
             return
-        if contiene_lyris(texto):
-            orden = extraer_orden(texto)
+        dispara, variante, orden = detectar(texto)
+        if dispara:
+            print(f"[invocacion] detectada='{variante}' -> orden='{orden}'", flush=True)
+            _sonido()
             if tiene_orden(orden):
                 self._iniciar_turno(orden)
             else:
@@ -186,7 +216,6 @@ class GestorInvocacion:
                     self.esperando_orden = True
                     self.limite_orden = time.monotonic() + TIEMPO_ORDEN
                 self.app.cola.put(("invocacion", "amarillo"))
-                _sonido()
             return
         with self.bloqueo:
             esperando = self.esperando_orden
@@ -200,7 +229,6 @@ class GestorInvocacion:
         self.app.conversacion = True
         self.app.silencios = 0
         self.app.cola.put(("invocacion", "amarillo"))
-        _sonido()
         self.app.cola.put(("oido", orden))
 
     def atender_evento(self, texto):

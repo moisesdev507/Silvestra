@@ -10,6 +10,7 @@ import config
 import httpx
 
 URL = "https://api.deepgram.com/v1/listen"
+KEYTERM = "Lyris:5"
 TIMEOUT = 6.0
 _bloqueo = threading.RLock()
 _desactivado = False
@@ -43,15 +44,18 @@ def transcribir(wav_bytes):
         return None
     modelo = str(getattr(config, "DEEPGRAM_MODEL", "")
                  or os.environ.get("DEEPGRAM_MODEL", "nova-3")).strip() or "nova-3"
+    parametros = {"model": modelo, "language": "multi", "smart_format": "true",
+                  "keyterm": KEYTERM}
+    comun = {"headers": {"Authorization": f"Token {clave}",
+                         "Content-Type": "audio/wav"},
+             "content": wav_bytes, "timeout": TIMEOUT}
     t0 = time.time()
     try:
-        respuesta = httpx.post(
-            URL,
-            params={"model": modelo, "language": "multi", "smart_format": "true"},
-            headers={"Authorization": f"Token {clave}", "Content-Type": "audio/wav"},
-            content=wav_bytes,
-            timeout=TIMEOUT,
-        )
+        respuesta = httpx.post(URL, params=parametros, **comun)
+        if respuesta.status_code == 400:
+            print("[oido] Deepgram 400 con keyterm; reintentando sin impulso", flush=True)
+            parametros = {k: v for k, v in parametros.items() if k != "keyterm"}
+            respuesta = httpx.post(URL, params=parametros, **comun)
     except httpx.TimeoutException:
         print("[tiempo] deepgram=timeout", flush=True)
         return None

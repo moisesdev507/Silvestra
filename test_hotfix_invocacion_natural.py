@@ -1,14 +1,28 @@
 """Regresión: invocación natural Lyris, sin frases hechas y con reenganche N turnos."""
+import contextlib
+import io
+import os
 import queue
 import threading
 import time
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import conversacion
 import eventos
 import invocacion_lyris
+
+
+class RespuestaDG:
+    def __init__(self, codigo, texto="Lyris, abre el bloc", duracion=1.0):
+        self.status_code = codigo
+        self._texto, self._duracion = texto, duracion
+
+    def json(self):
+        return {"metadata": {"duration": self._duracion},
+                "results": {"channels": [{"alternatives": [
+                    {"transcript": self._texto}]}]}}
 
 
 class CaraFalsa:
@@ -177,6 +191,81 @@ class TestInvocacionNatural(unittest.TestCase):
             self.assertTrue(app.invocacion.activo)
             self.assertTrue(app.invocacion_ambiental)
             self.assertTrue(app.invocacion._puede_capturar())
+
+    def test_confusiones_foneticas_y_vocativo_luis_serious(self):
+        sonidos = []
+        casos = [
+            ("Luis ¿Cómo va la laptop?", "luis", "cómo va la laptop"),
+            ("¿Cómo va la laptop, Luis?", "luis", "cómo va la laptop"),
+            ("Serious, dime la hora", "serious", "dime la hora"),
+            ("Iris, dime la hora", "iris", "dime la hora"),
+            ("Lyra, dime la hora", "lyra", "dime la hora"),
+            ("Liria, dime la hora", "liria", "dime la hora"),
+            ("Siris, dime la hora", "siris", "dime la hora"),
+            ("Lyries, dime la hora", "lyries", "dime la hora"),
+        ]
+        with patch.object(invocacion_lyris, "_sonido", lambda: sonidos.append(1)), \
+                contextlib.redirect_stdout(io.StringIO()) as salida:
+            for frase, variante, orden in casos:
+                with self.subTest(frase=frase):
+                    sonidos.clear()
+                    app, enviados, _hablado = self._app()
+                    app.invocacion._procesar(frase)
+                    self._drenar(app)
+                    self.assertEqual(enviados, [orden])
+                    self.assertEqual(len(sonidos), 1)
+                    self.assertIn(
+                        f"[invocacion] detectada='{variante}' -> orden='{orden}'",
+                        salida.getvalue())
+
+            # "Serious." solo: amarillo, sin orden ni locución.
+            sonidos.clear()
+            app, enviados, _hablado = self._app()
+            app.invocacion._procesar("Serious.")
+            self._drenar(app)
+            self.assertTrue(app.invocacion.esperando_orden)
+            self.assertEqual(enviados, [])
+            self.assertEqual(len(sonidos), 1)
+
+            # Narrativa con Luis en medio: se ignora sin sonido ni disparo.
+            sonidos.clear()
+            app, enviados, _hablado = self._app()
+            app.invocacion._procesar("Conocí a Luis ayer en clase")
+            self._drenar(app)
+            self.assertEqual(enviados, [])
+            self.assertEqual(sonidos, [])
+            self.assertTrue(self._reposo_celeste(app))
+            self.assertTrue(app.invocacion._puede_capturar())
+
+    def test_impulso_keyterm_en_deepgram_y_reintento_sin_el(self):
+        import oido_deepgram
+        oido_deepgram.reiniciar()
+        self.addCleanup(oido_deepgram.reiniciar)
+        parches = [
+            patch.object(oido_deepgram.config, "DEEPGRAM_API_KEY", "", create=True),
+            patch.object(oido_deepgram.config, "DEEPGRAM_MODEL", "", create=True),
+            patch.dict(os.environ, {"DEEPGRAM_API_KEY": "prueba-keyterm",
+                                    "DEEPGRAM_MODEL": "nova-3"}),
+        ]
+        for parche in parches:
+            parche.start()
+            self.addCleanup(parche.stop)
+
+        with patch.object(oido_deepgram.httpx, "post",
+                          Mock(return_value=RespuestaDG(200))) as post:
+            resultado = oido_deepgram.transcribir(b"RIFFfalso")
+        self.assertEqual(resultado[0], "Lyris, abre el bloc")
+        self.assertEqual(post.call_args.kwargs["params"]["model"], "nova-3")
+        self.assertEqual(post.call_args.kwargs["params"]["keyterm"], "Lyris:5")
+
+        post = Mock(side_effect=[RespuestaDG(400), RespuestaDG(200)])
+        with patch.object(oido_deepgram.httpx, "post", post):
+            resultado = oido_deepgram.transcribir(b"RIFFfalso")
+        self.assertEqual(resultado[0], "Lyris, abre el bloc")
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(post.call_args_list[0].kwargs["params"]["keyterm"], "Lyris:5")
+        self.assertNotIn("keyterm", post.call_args_list[1].kwargs["params"])
+        self.assertTrue(oido_deepgram.esta_activo())
 
     def test_instalar_apaga_vosk_y_filtro_campp(self):
         app, _enviados, _hablado = self._app()
