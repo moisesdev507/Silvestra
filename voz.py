@@ -112,6 +112,11 @@ class Voz:
             import voz_cache
 
             voz_cache.precargar_audios_frecuentes(self._audio)
+            try:
+                import tts_aura_stream
+                tts_aura_stream.precalentar_conexion()
+            except Exception:
+                pass
         except Exception:
             self.pg = None
             self.reproductor = None
@@ -285,6 +290,19 @@ class Voz:
 
                 inicio_audio, set_nivel = self.sincronia_labial.callbacks(
                     self, generacion, version, _reportar_primera_palabra)
+
+                # 1. Intentar streaming directo con Deepgram Aura-2 PCM
+                if not audio:
+                    try:
+                        import tts_aura_stream
+                        if tts_aura_stream.intentar_stream_frase(
+                            self, frase, generacion, version, inicio_audio, set_nivel
+                        ):
+                            if version != self.version:
+                                return
+                            continue
+                    except Exception:
+                        pass
 
                 if audio and self.reproductor is not None:
                     try:

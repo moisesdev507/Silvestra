@@ -1,0 +1,164 @@
+"""Streaming de voz en tiempo real con Deepgram Aura-2 (PCM linear16 @ 24kHz).
+
+Proporciona baja latencia (~280 ms TTFB) reproduciendo trozos PCM en streaming
+mediante sounddevice.RawOutputStream, manteniendo viva la animación labial.
+"""
+import atexit
+import math
+import os
+import struct
+import threading
+import time
+from typing import Callable, Optional
+
+import config
+import httpx
+
+_CLIENTE_LOCK = threading.RLock()
+_CLIENTE_HTTP: Optional[httpx.Client] = None
+URL_AURA_SPEAK = "https://api.deepgram.com/v1/speak"
+MODELO_DEFECTO = "aura-2-celeste-es"
+SAMPLE_RATE = 24000
+CHANNELS = 1
+
+
+def _obtener_cliente() -> httpx.Client:
+    global _CLIENTE_HTTP
+    with _CLIENTE_LOCK:
+        if _CLIENTE_HTTP is None or _CLIENTE_HTTP.is_closed:
+            _CLIENTE_HTTP = httpx.Client(
+                timeout=httpx.Timeout(connect=2.5, read=15.0, write=5.0, pool=10.0),
+                limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+            )
+        return _CLIENTE_HTTP
+
+
+def _cerrar_cliente():
+    global _CLIENTE_HTTP
+    with _CLIENTE_LOCK:
+        if _CLIENTE_HTTP is not None and not _CLIENTE_HTTP.is_closed:
+            try:
+                _CLIENTE_HTTP.close()
+            except Exception: pass
+            _CLIENTE_HTTP = None
+
+
+atexit.register(_cerrar_cliente)
+
+
+def precalentar_conexion():
+    """Precalentamiento no bloqueante de TLS en segundo plano."""
+    def _tarea():
+        try:
+            cli = _obtener_cliente()
+            cli.get("https://api.deepgram.com", timeout=2.0)
+        except Exception: pass
+    threading.Thread(target=_tarea, daemon=True, name="aura-warmup").start()
+
+
+def _calcular_rms_pcm(pcm_bytes: bytes) -> float:
+    n_muestras = len(pcm_bytes) // 2
+    if n_muestras == 0: return 0.0
+    try:
+        muestras = struct.unpack(f"<{n_muestras}h", pcm_bytes[:n_muestras * 2])
+        rms = math.sqrt(sum(s * s for s in muestras) / n_muestras)
+        return min(1.0, (rms / 32768.0) * 2.5)
+    except Exception: return 0.0
+
+
+def reproducir_stream_aura(
+    texto: str,
+    cancelar_fn: Optional[Callable[[], bool]] = None,
+    al_iniciar: Optional[Callable[[], None]] = None,
+    al_nivel: Optional[Callable[[float], None]] = None,
+    timeout: float = 3.5,
+) -> bool:
+    txt = (texto or "").strip()
+    if not txt: return False
+
+    clave = str(getattr(config, "DEEPGRAM_API_KEY", "") or os.environ.get("DEEPGRAM_API_KEY", "")).strip()
+    if not clave: return False
+    if cancelar_fn and cancelar_fn(): return True
+
+    modelo = str(os.environ.get("LYRIS_AURA_MODELO") or getattr(config, "MODELO_AURA", "") or MODELO_DEFECTO).strip()
+    url = f"{URL_AURA_SPEAK}?model={modelo}&encoding=linear16&sample_rate={SAMPLE_RATE}&container=none"
+    headers = {"Authorization": f"Token {clave}", "Content-Type": "application/json"}
+
+    try:
+        import sounddevice as sd
+    except Exception as e:
+        print(f"[voz] sounddevice no disponible ({e}), usando fallback", flush=True)
+        return False
+
+    t0 = time.time()
+    cli = _obtener_cliente()
+    empezo_audio = False
+    sobrante = b""
+
+    try:
+        req = cli.build_request("POST", url, headers=headers, json={"text": txt}, timeout=timeout)
+        resp = cli.send(req, stream=True)
+        if resp.status_code != 200:
+            print(f"[voz] deepgram tts HTTP {resp.status_code}, usando fallback", flush=True)
+            resp.close()
+            return False
+
+        with sd.RawOutputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16", blocksize=1024) as stream:
+            for trozo in resp.iter_bytes():
+                if cancelar_fn and cancelar_fn():
+                    resp.close()
+                    if al_nivel: al_nivel(0.0)
+                    return True
+                if not trozo: continue
+                datos = sobrante + trozo
+                if len(datos) % 2 != 0:
+                    sobrante, datos = datos[-1:], datos[:-1]
+                else:
+                    sobrante = b""
+                if not datos: continue
+
+                if not empezo_audio:
+                    empezo_audio = True
+                    ttfb = int((time.time() - t0) * 1000)
+                    print(f"[voz] motor=deepgram_aura_stream modelo={modelo} ttfb={ttfb}ms", flush=True)
+                    if al_iniciar:
+                        try: al_iniciar()
+                        except Exception: pass
+
+                if al_nivel:
+                    try: al_nivel(_calcular_rms_pcm(datos))
+                    except Exception: pass
+
+                stream.write(datos)
+
+        resp.close()
+        if al_nivel:
+            try: al_nivel(0.0)
+            except Exception: pass
+        return empezo_audio
+    except Exception as e:
+        if empezo_audio:
+            print(f"[voz] aura stream interrumpido ({e})", flush=True)
+            if al_nivel: al_nivel(0.0)
+            return True
+        print(f"[voz] fallo en aura stream ({e}), usando fallback", flush=True)
+        return False
+
+
+def intentar_stream_frase(voz_obj, frase, generacion, version, al_iniciar, al_nivel) -> bool:
+    """Envoltorio desacoplado para no inflar voz.py."""
+    import voz_local
+    if voz_local.debe_ir_local_primero():
+        return False
+    try:
+        ok = reproducir_stream_aura(frase, lambda: version != voz_obj.version, al_iniciar, al_nivel)
+        if ok:
+            if version != voz_obj.version:
+                print(f"[voz] cancelada motivo=interrupcion frase='{frase}'", flush=True)
+            else:
+                voz_obj.sincronia_labial.finalizar(generacion)
+                print(f"[voz] terminó='{frase}'", flush=True)
+            return True
+    except Exception as e:
+        print(f"[voz] error intentando aura stream: {e}", flush=True)
+    return False
