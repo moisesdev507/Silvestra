@@ -8,15 +8,21 @@ import unicodedata
 from expertos import obtener_cartucho
 
 # Patrones para programación / arquitectura / software
+# Notar límites especiales (?<!\w) y (?!\w) para lenguajes con símbolos como C++ y C#
 _PATRON_PROGRAMACION = re.compile(
-    r"\b(def\b|class\b|import\b|function\b|const\b|var\b|let\b|select\b|from\b|"
-    r"where\b|```|<html>|<\?php|==|!=|=>|->|\.py\b|\.js\b|\.html\b|\.json\b|"
-    r"error\b|traceback\b|excepcion\b|exception\b|bug\b|debugging\b|debug\b|"
-    r"refactorizar\b|optimizacion\b|optimizaci[oó]n\b|optimizar\b|optimizo\b|"
-    r"algoritmo\b|algoritmos\b|codigo\b|c[oó]digo\b|script\b|python\b|javascript\b|typescript\b|"
-    r"c\+\+\b|rust\b|sql\b|base de datos\b|diccionario\b|array\b|bucle\b|quicksort\b|mergesort\b|"
-    r"complejidad\b|compilacion\b|compilar\b|backend\b|frontend\b|endpoint\b|docker\b|"
-    r"pull request\b|git status\b|commit\b|concurrencia\b|asincrono\b|as[ií]ncrono\b)",
+    r"(?<!\w)(?:c\+\+|c#)(?!\w)|\b("
+    r"def|class|import|function|const|var|let|select|from|where|"
+    r"```|<html>|<\?php|==|!=|=>|->|\.py|\.js|\.html|\.json|"
+    r"error|traceback|excepcion|excepci[oó]n|exception|bug|debugging|debug|"
+    r"refactorizar|optimizacion|optimizaci[oó]n|optimizar|optimizo|"
+    r"algoritmo|algoritmos|codigo|c[oó]digo|script|python|javascript|typescript|"
+    r"rust|sql|base de datos|diccionario|array|bucle|quicksort|mergesort|"
+    r"complejidad|compilacion|compilaci[oó]n|compilar|compilador|"
+    r"backend|frontend|endpoint|docker|pull request|git status|commit|"
+    r"concurrencia|asincrono|as[ií]ncrono|"
+    r"puntero|punteros|referencia|arreglo|arreglos|vector|vectores|struct|"
+    r"scanf|printf|malloc|segfault|recursividad|recursivo|herencia|repositorio|"
+    r"git|consulta sql|supabase|api|variable|funcion|funci[oó]n)\b",
     re.I,
 )
 
@@ -39,9 +45,9 @@ _PATRON_RAZONAMIENTO_PESADO = re.compile(
 )
 
 MODELOS_PESADOS_DEFAULT = [
-    "llama-3.3-70b-versatile",
-    "qwen/qwen3.8-27b",
     "openai/gpt-oss-120b",
+    "qwen/qwen3.8-27b",
+    "openai/gpt-oss-20b",
 ]
 
 MODELO_RAPIDO_DEFAULT = "llama-3.1-8b-instant"
@@ -60,20 +66,34 @@ def clasificar_consulta(texto: str) -> dict:
 
     t_norm = _norm(t_orig)
 
-    # 1. Chequeo de Matemáticas
-    if _PATRON_MATEMATICAS.search(t_orig) or _PATRON_MATEMATICAS.search(t_norm):
+    es_prog = bool(_PATRON_PROGRAMACION.search(t_orig) or _PATRON_PROGRAMACION.search(t_norm))
+    es_mat = bool(_PATRON_MATEMATICAS.search(t_orig) or _PATRON_MATEMATICAS.search(t_norm))
+
+    # 1. Si hay términos explícitos de cálculo o álgebra (derivada, integral, matriz, ecuación),
+    # o si es puramente matemática, clasificar en matemáticas
+    if es_mat and not (
+        re.search(r"(?<!\w)(?:c\+\+|c#)(?!\w)|\b(python|javascript|typescript|c[oó]digo|codigo|script|sql|scanf|printf|malloc|struct|puntero|punteros|def|class|git)\b", t_orig, re.I)
+    ):
         return {
             "area": "matematicas",
             "carril": "pesado",
             "prompt_experto": obtener_cartucho("matematicas"),
         }
 
-    # 2. Chequeo de Programación
-    if _PATRON_PROGRAMACION.search(t_orig) or _PATRON_PROGRAMACION.search(t_norm):
+    # 2. Si contiene términos de programación, clasificar en programación
+    if es_prog:
         return {
             "area": "programacion",
             "carril": "pesado",
             "prompt_experto": obtener_cartucho("programacion"),
+        }
+
+    # 3. Resto de casos matemáticos
+    if es_mat:
+        return {
+            "area": "matematicas",
+            "carril": "pesado",
+            "prompt_experto": obtener_cartucho("matematicas"),
         }
 
     # 3. Razonamiento analítico pesado general

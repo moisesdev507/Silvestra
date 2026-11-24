@@ -271,7 +271,8 @@ def obtener_modelos_tarea(prov_dict, tarea):
     nombre = prov_dict.get("nombre", "")
     if nombre == "Groq":
         if tarea in ("razonamiento", "pesado"):
-            pesados_tarea = ["llama-3.3-70b-versatile", "qwen/qwen3.8-27b", "openai/gpt-oss-120b", "llama-3.1-8b-instant"]
+            from enrutador_expertos import MODELOS_PESADOS_DEFAULT
+            pesados_tarea = list(MODELOS_PESADOS_DEFAULT) + ["llama-3.1-8b-instant"]
             pesados = [m for m in pesados_tarea if m in modelos]
             restantes = [m for m in modelos if m not in pesados]
             return (pesados or pesados_tarea) + restantes

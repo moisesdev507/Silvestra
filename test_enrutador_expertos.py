@@ -33,6 +33,11 @@ class TestEnrutadorExpertos(unittest.TestCase):
             "Explícame cómo hacer un SELECT con JOIN en SQL",
             "¿Cuál es la complejidad temporal de quicksort?",
             "def procesar_datos(lista): return [x*2 for x in lista]",
+            "Explícame por qué falla mi puntero en C++",
+            "Cómo hacer un vector en C++ con scanf y printf",
+            "¿Cómo implementar una interfaz en C#?",
+            "Tengo un segfault con malloc en mi struct",
+            "Revisa este commit en el repositorio y la consulta sql en supabase",
         ]
         for q in consultas_prog:
             c = ee.clasificar_consulta(q)
@@ -67,12 +72,12 @@ class TestEnrutadorExpertos(unittest.TestCase):
         """El carril pesado prioriza modelos de razonamiento y deja el rápido como fallback final."""
         cfg_dummy = SimpleNamespace(
             MODELO_RAPIDO="llama-3.1-8b-instant",
-            MODELO_PESADO="llama-3.3-70b-versatile",
-            MODELOS_EXPERTO=["qwen/qwen3.8-27b"],
         )
         mods_pesado = ee.seleccionar_modelo_experto(cfg_dummy, carril="pesado")
-        self.assertIn("llama-3.3-70b-versatile", mods_pesado)
-        self.assertIn("qwen/qwen3.8-27b", mods_pesado)
+        self.assertEqual(mods_pesado[0], "openai/gpt-oss-120b")
+        self.assertEqual(mods_pesado[1], "qwen/qwen3.8-27b")
+        self.assertEqual(mods_pesado[2], "openai/gpt-oss-20b")
+        self.assertNotIn("llama-3.3-70b-versatile", mods_pesado[:3])
         # El rápido debe estar al final como salvaguarda
         self.assertEqual(mods_pesado[-1], "llama-3.1-8b-instant")
 
