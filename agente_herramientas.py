@@ -10,6 +10,7 @@ import unicodedata
 import dev_copiloto as dev
 import google_workspace as google
 import memoria_persistente as memoria
+import busqueda_web as web
 
 LIMITE = 1600
 _ETIQUETA = re.compile(
@@ -53,6 +54,7 @@ CATALOGO = {
     "crear_evento": _crear_evento,
     "resumen_correos": google.resumen_correos,
     "buscar_drive": google.buscar_drive,
+    "buscar_web": web.buscar_web,
 }
 
 
@@ -129,6 +131,12 @@ def detectar_intencion(consulta):
         acciones.append(("resumen_correos", ""))
     if any(x in texto for x in ("drive", "documento", "documentos")):
         acciones.append(("buscar_drive", str(consulta)))
+    if any(x in texto for x in ("busca en internet", "buscar en internet", "busca en la web",
+                                "buscar en la web", "busca en google", "noticias", "noticia",
+                                "clima", "tiempo en", "precio de", "precio del", "cotizacion",
+                                "quien gano", "partido de", "resultado de", "que paso con",
+                                "documentacion de", "ultimas noticias")):
+        acciones.append(("buscar_web", str(consulta)))
     return acciones[:3]
 
 
