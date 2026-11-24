@@ -5,6 +5,7 @@ import conversacion
 import eventos_voz
 import invocacion_lyris
 import sonidos_ui
+import voz_stream
 
 
 def es_confirmacion_rutinaria(texto):
@@ -135,16 +136,18 @@ def atender_evento(app, tipo, texto):
                 app.decir(frase_negativa, emocion="calida")
                 return
 
-        if app.flujo is not None:
+        texto_hablable = voz_stream.texto_hablable(respuesta)
+        hablado_fallback = voz_stream.garantizar_voz(app, texto_hablable, emocion)
+        if not hablado_fallback and app.flujo is not None:
             app.flujo.cerrar()
-            if str(respuesta or "").strip():
-                app.ultimo_dicho = respuesta
+            if texto_hablable:
+                app.ultimo_dicho = texto_hablable
                 if hasattr(app, "cara") and app.cara:
                     app.cara.fijar_emocion(emocion)
-                app.cara.decir(respuesta, None, emocion=emocion)
-        elif str(respuesta or "").strip():
-            app.decir(respuesta, emocion=emocion)
-        else:
+                app.cara.decir(texto_hablable, None, emocion=emocion)
+        elif not hablado_fallback and texto_hablable:
+            app.decir(texto_hablable, emocion=emocion)
+        elif not hablado_fallback:
             app.cola.put(("fin_voz", None))
         if accion:
             if respuesta and str(respuesta).strip():
@@ -232,7 +235,8 @@ def atender_evento(app, tipo, texto):
         emo = texto[1] if isinstance(texto, (list, tuple)) and len(texto) > 1 else None
 
         t_llm = getattr(app, "_t_accion_llm", 0)
-        if t_llm and (time.time() - t_llm < 4.0):
+        if (t_llm and (time.time() - t_llm < 4.0)
+                and getattr(app, "_fragmentos_voz", False)):
             if es_confirmacion_rutinaria(msg):
                 print(f"[eventos] Omitiendo confirmacion hablada duplicada de accion: '{msg}'", flush=True)
                 return
@@ -248,7 +252,8 @@ def atender_evento(app, tipo, texto):
             app.cara.decir(burbuja_txt, None)
         if voz_txt:
             t_llm = getattr(app, "_t_accion_llm", 0)
-            if t_llm and (time.time() - t_llm < 4.0):
+            if (t_llm and (time.time() - t_llm < 4.0)
+                    and getattr(app, "_fragmentos_voz", False)):
                 if es_confirmacion_rutinaria(voz_txt):
                     print(f"[eventos] Omitiendo voz duplicada en hablar_registro: '{voz_txt}'", flush=True)
                     return
@@ -283,6 +288,7 @@ def atender_evento(app, tipo, texto):
 
     elif tipo == "oido":
         app._t_accion_llm = 0
+        app._fragmentos_voz = False
         app._flujo_cerrado = False
         if hasattr(app, "iniciativa"):
             app.iniciativa.interaccion()
@@ -341,6 +347,7 @@ def atender_evento(app, tipo, texto):
             app.dispositivo_entrada_actual = (texto.get("device_id"), texto.get("tipo_dispositivo"))
             texto = texto.get("texto", "")
         app._t_accion_llm = 0
+        app._fragmentos_voz = False
         app._flujo_cerrado = False
         app.origen_entrada_actual = "chat"
         app.t_fin_habla, app.t_inicio_texto = None, time.time()

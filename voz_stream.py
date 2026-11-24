@@ -4,6 +4,7 @@ Una frase que llega completa al pipeline no debe esperar a que se sintetice
 todo un párrafo: se divide por oraciones y la primera entra de inmediato a la
 cola de ``Voz``, de modo que suene mientras se genera/sintetiza la siguiente.
 """
+from cerebro_parser import limpiar_etiquetas
 from voz import dividir_frases, normalizar_emocion
 
 
@@ -11,7 +12,9 @@ def oraciones(texto):
     """Devuelve la lista de oraciones, reutilizando el separador de ``voz.py``."""
     if not texto:
         return []
-    texto = str(texto).strip()
+    texto = limpiar_etiquetas(texto)
+    if not texto:
+        return []
     try:
         return [p for p in dividir_frases(texto) if p]
     except Exception:
@@ -47,6 +50,49 @@ def hablar_en_bloques(voz, texto, al_terminar=None, emocion=None,
     return flujo
 
 
+def texto_hablable(texto):
+    """Texto listo para TTS: sin etiquetas internas ni bloques ``<think>``."""
+    return limpiar_etiquetas(texto)
+
+
+def garantizar_voz(app, texto, emocion=None):
+    """Habla el texto final cuando el turno no emitió ningún fragmento.
+
+    Cierra un flujo vacío, limpia etiquetas y encola ``fin_voz`` al terminar,
+    de modo que la app nunca se quede con la voz ocupada ni en silencio.
+    """
+    limpio = limpiar_etiquetas(texto)
+    if not limpio or getattr(app, "_fragmentos_voz", False):
+        return False
+    flujo = getattr(app, "flujo", None)
+    if flujo is not None:
+        try:
+            flujo.cerrar()
+        except Exception:
+            pass
+        app.flujo = None
+    emo = emocion or "neutral"
+    app._fragmentos_voz = True
+    app.ultimo_dicho = limpio
+    cara = getattr(app, "cara", None)
+    if cara is not None:
+        try:
+            if hasattr(cara, "fijar_emocion"):
+                cara.fijar_emocion(emo)
+            cara.decir(limpio, None, emocion=emo)
+        except Exception:
+            pass
+    try:
+        fin = lambda: app.cola.put(("fin_voz", None))
+        app.voz.hablar(limpio, fin, emocion=emo)
+    except Exception:
+        try:
+            app.decir(limpio, emocion=emo)
+        except Exception:
+            pass
+    return True
+
+
 def iniciar_stream(voz, primera_frase, al_terminar=None, emocion=None, **opciones):
     """Arranca el flujo de streaming con su primera frase ya encolada."""
     emo = normalizar_emocion(emocion) if emocion else "neutral"
@@ -58,5 +104,6 @@ def iniciar_stream(voz, primera_frase, al_terminar=None, emocion=None, **opcione
 
 __all__ = [
     "oraciones", "primera_oracion", "agregar_bloques",
-    "hablar_en_bloques", "iniciar_stream",
+    "hablar_en_bloques", "iniciar_stream", "texto_hablable",
+    "garantizar_voz",
 ]

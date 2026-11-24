@@ -24,7 +24,9 @@ def _canon_etiqueta(etq):
 
 def limpiar_etiquetas(texto):
     """Quita etiquetas internas del modelo antes de sintetizar voz."""
-    txt = re.sub(r"\s+", " ", str(texto or "")).strip()
+    txt = re.sub(r"(?is)<think>.*?</think>", " ", str(texto or ""))
+    txt = re.sub(r"(?is)<think>.*$", "", txt)
+    txt = re.sub(r"\s+", " ", txt).strip()
     if not txt:
         return ""
     partes = _ETIQ_VOZ.split(txt)

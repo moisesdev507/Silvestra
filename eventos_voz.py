@@ -18,6 +18,7 @@ def _suelta(app, frase, emo, al_terminar):
         al_terminar()
         return
     voz_stream.hablar_en_bloques(app.voz, frase, al_terminar, emo or "neutral")
+    app._fragmentos_voz = True
     if getattr(app, "cara", None):
         app.cara.decir(frase, None, emocion=emo)
 
@@ -50,4 +51,5 @@ def frase(app, frase_txt, frase_emo=None):
         return
     app.texto_flujo = (app.texto_flujo + " " + frase_txt).strip()
     app.flujo.agregar(frase_txt, emocion=frase_emo)
+    app._fragmentos_voz = True
     app.cara.decir(app.texto_flujo, None, emocion=frase_emo)
