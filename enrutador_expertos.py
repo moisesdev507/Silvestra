@@ -20,18 +20,25 @@ _PATRON_PROGRAMACION = re.compile(
     r"complejidad|compilacion|compilaci[oó]n|compilar|compilador|"
     r"backend|frontend|endpoint|docker|pull request|git status|commit|"
     r"concurrencia|asincrono|as[ií]ncrono|"
-    r"puntero|punteros|referencia|arreglo|arreglos|vector|vectores|struct|"
+    r"puntero|punteros|arreglo|arreglos|vector|vectores|struct|"
     r"scanf|printf|malloc|segfault|recursividad|recursivo|herencia|repositorio|"
-    r"git|consulta sql|supabase|api|variable|funcion|funci[oó]n)\b",
+    r"git|consulta sql|supabase|api|"
+    r"paso por referencia|pasar por referencia|desreferenciar|referencias? en c\+\+|"
+    r"funci[oó]n (?:lambda|recursiva|flecha|async|as[ií]ncrona|pura|callback)|"
+    r"definir funci[oó]n|declarar funci[oó]n|"
+    r"variable (?:global|local|est[aá]tica|booleana)|declarar variable)\b",
     re.I,
 )
 
 # Patrones para matemáticas / cálculo / álgebra
 _PATRON_MATEMATICAS = re.compile(
     r"\b(derivada\b|derivadas\b|integral\b|integrales\b|matriz\b|matrices\b|"
-    r"vector\b|vectores\b|[aá]lgebra\b|calculo\b|c[aá]lculo\b|teorema\b|"
-    r"probabilidad\b|estadistica\b|estad[ií]stica\b|demuestra\b|demostracion\b|"
-    r"demostraci[oó]n\b|ecuacion\b|ecuaci[oó]n\b|polinomio\b|limite\b|l[ií]mite\b|"
+    r"vector unitario\b|vector propio\b|vector gradiente\b|[aá]lgebra\b|"
+    r"c[aá]lculo (?:diferencial|integral|vectorial|multivariable|num[eé]rico)|"
+    r"hacer c[aá]lculos|teorema\b|probabilidad\b|estadistica\b|estad[ií]stica\b|"
+    r"demuestra (?:el teorema|la conjetura|la identidad|que)\b|"
+    r"demostraci[oó]n matem[aá]tica\b|ecuacion\b|ecuaci[oó]n\b|polinomio\b|"
+    r"l[ií]mite (?:cuando|de|infinito|matem[aá]tico)\b|l[ií]mites de\b|"
     r"trigonometr[ií]a\b|logaritmo\b|seno\b|coseno\b|tangente\b|eigenvalor\b|"
     r"eigenvector\b|determinante\b|fraccion\b|fracci[oó]n\b)",
     re.I,
@@ -41,6 +48,17 @@ _PATRON_MATEMATICAS = re.compile(
 _PATRON_RAZONAMIENTO_PESADO = re.compile(
     r"\b(analiza a fondo\b|paso a paso\b|compara a fondo\b|demuestra que\b|"
     r"analisis profundo\b|an[aá]lisis detallado\b|razona a fondo\b|explica a profundidad\b)",
+    re.I,
+)
+
+# Patrones de charla casual, saludos y presentación (siempre carril rápido)
+_PATRON_CHARLA_CASUAL = re.compile(
+    r"^(?:hola|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches|"
+    r"qu[eé]\s+xopa|qu[eé]\s+tal|c[oó]mo\s+est[aá]s?|c[oó]mo\s+te\s+va|"
+    r"pres[eé]ntate|presentate|qui[eé]n\s+eres|c[oó]mo\s+te\s+llamas|"
+    r"cu[eé]ntame\s+de\s+ti|qu[eé]\s+opinas|qu[eé]\s+haces|qu[eé]\s+puedes\s+hacer|"
+    r"cu[aá]l\s+es\s+tu\s+funci[oó]n|dime\s+algo|h[aá]blame\s+de\s+ti|"
+    r"qu[eé]\s+sabes\s+hacer)\b",
     re.I,
 )
 
@@ -82,6 +100,16 @@ def clasificar_consulta(texto: str) -> dict:
         return {"area": "general", "carril": "rapido", "prompt_experto": ""}
 
     t_norm = _norm(t_orig)
+
+    # Si es saludo, presentación o charla casual sin código explícito, carril rápido inmediato
+    tiene_codigo_explicito = bool(
+        re.search(r"```|(?<!\w)(?:c\+\+|c#)(?!\w)|\b(def|class|import|select\s+.+\s+from|from\s+.+\s+import)\b", t_orig, re.I)
+    )
+    if not tiene_codigo_explicito and (
+        _PATRON_CHARLA_CASUAL.search(t_orig) or _PATRON_CHARLA_CASUAL.search(t_norm)
+    ):
+        _notificar_modo_experto(False)
+        return {"area": "general", "carril": "rapido", "prompt_experto": ""}
 
     es_prog = bool(_PATRON_PROGRAMACION.search(t_orig) or _PATRON_PROGRAMACION.search(t_norm))
     es_mat = bool(_PATRON_MATEMATICAS.search(t_orig) or _PATRON_MATEMATICAS.search(t_norm))

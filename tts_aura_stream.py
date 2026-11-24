@@ -28,7 +28,7 @@ def _obtener_cliente() -> httpx.Client:
         if _CLIENTE_HTTP is None or _CLIENTE_HTTP.is_closed:
             _CLIENTE_HTTP = httpx.Client(
                 timeout=httpx.Timeout(connect=2.5, read=15.0, write=5.0, pool=10.0),
-                limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+                limits=httpx.Limits(max_connections=4, max_keepalive_connections=2, keepalive_expiry=18.0),
             )
         return _CLIENTE_HTTP
 
@@ -68,7 +68,9 @@ def _calcular_rms_pcm(pcm_bytes: bytes) -> float:
     try:
         muestras = struct.unpack(f"<{n_muestras}h", pcm_bytes[:n_muestras * 2])
         rms = math.sqrt(sum(s * s for s in muestras) / n_muestras)
-        return min(1.0, (rms / 32768.0) * 2.5)
+        rms_norm = rms / 32768.0
+        if rms_norm <= 0.001: return 0.0
+        return min(1.0, (rms_norm ** 0.65) * 2.4)
     except Exception: return 0.0
 
 
@@ -96,59 +98,73 @@ def reproducir_stream_aura(
         print(f"[voz] sounddevice no disponible ({e}), usando fallback", flush=True)
         return False
 
-    t0 = time.time()
-    cli = _obtener_cliente()
-    empezo_audio = False
-    sobrante = b""
+    CHUNK_BYTES = 1920  # ~40 ms de audio linear16 a 24 kHz (25 updates/seg)
 
-    try:
+    def _ejecutar_transmision() -> tuple[bool, bool]:
+        t0 = time.time()
+        cli = _obtener_cliente()
+        empezo = False
+        sobrante = b""
         req = cli.build_request("POST", url, headers=headers, json={"text": txt}, timeout=timeout)
         resp = cli.send(req, stream=True)
         if resp.status_code != 200:
             print(f"[voz] deepgram tts HTTP {resp.status_code}, usando fallback", flush=True)
             resp.close()
-            return False
+            return False, False
 
-        with sd.RawOutputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16", blocksize=1024) as stream:
-            for trozo in resp.iter_bytes():
-                if cancelar_fn and cancelar_fn():
-                    resp.close()
-                    if al_nivel: al_nivel(0.0)
-                    return True
-                if not trozo: continue
-                datos = sobrante + trozo
-                if len(datos) % 2 != 0:
-                    sobrante, datos = datos[-1:], datos[:-1]
-                else:
-                    sobrante = b""
-                if not datos: continue
+        try:
+            with sd.RawOutputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16", blocksize=960) as stream:
+                for trozo in resp.iter_bytes(chunk_size=CHUNK_BYTES):
+                    if cancelar_fn and cancelar_fn():
+                        resp.close()
+                        return True, empezo
+                    if not trozo: continue
+                    datos = sobrante + trozo
+                    if len(datos) % 2 != 0:
+                        sobrante, datos = datos[-1:], datos[:-1]
+                    else:
+                        sobrante = b""
+                    if not datos: continue
 
-                if not empezo_audio:
-                    empezo_audio = True
-                    ttfb = int((time.time() - t0) * 1000)
-                    print(f"[voz] motor=deepgram_aura_stream modelo={modelo} ttfb={ttfb}ms", flush=True)
-                    if al_iniciar:
-                        try: al_iniciar()
+                    if not empezo:
+                        empezo = True
+                        ttfb = int((time.time() - t0) * 1000)
+                        print(f"[voz] motor=deepgram_aura_stream modelo={modelo} ttfb={ttfb}ms", flush=True)
+                        if al_iniciar:
+                            try: al_iniciar()
+                            except Exception: pass
+
+                    if al_nivel:
+                        try: al_nivel(_calcular_rms_pcm(datos))
                         except Exception: pass
 
-                if al_nivel:
-                    try: al_nivel(_calcular_rms_pcm(datos))
-                    except Exception: pass
+                    stream.write(datos)
+        finally:
+            resp.close()
+        return empezo, empezo
 
-                stream.write(datos)
-
-        resp.close()
+    try:
+        for intento in range(2):
+            try:
+                ok, empezo_audio = _ejecutar_transmision()
+                if ok or empezo_audio:
+                    return True
+                return False
+            except (httpx.RemoteProtocolError, httpx.ReadError, httpx.ConnectError) as err_red:
+                if intento == 0:
+                    print(f"[voz] socket aura cerrado ({err_red}), reiniciando cliente y reintentando...", flush=True)
+                    _cerrar_cliente()
+                    continue
+                print(f"[voz] reintento aura falló ({err_red}), usando fallback", flush=True)
+                return False
+            except Exception as e:
+                print(f"[voz] fallo en aura stream ({e}), usando fallback", flush=True)
+                return False
+        return False
+    finally:
         if al_nivel:
             try: al_nivel(0.0)
             except Exception: pass
-        return empezo_audio
-    except Exception as e:
-        if empezo_audio:
-            print(f"[voz] aura stream interrumpido ({e})", flush=True)
-            if al_nivel: al_nivel(0.0)
-            return True
-        print(f"[voz] fallo en aura stream ({e}), usando fallback", flush=True)
-        return False
 
 
 def procesar_frase_productor(voz_obj, frase, emo):

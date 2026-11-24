@@ -12,7 +12,7 @@ class FakeResponse:
         self.status_code = status_code
         self.closed = False
 
-    def iter_bytes(self):
+    def iter_bytes(self, chunk_size=None):
         for c in self.chunks:
             if self.closed:
                 break
@@ -163,6 +163,64 @@ class TestTtsAuraStream(unittest.TestCase):
             # El extractor CAM++ no debe llamarse una segunda vez
             self.assertEqual(mock_emb.call_count, 1)
             self.assertTrue(vd.ultima_verificacion["es_dueno"])
+
+    @patch("config.DEEPGRAM_API_KEY", "fake_key_12345")
+    def test_reintento_automatico_tras_desconexion_keepalive(self):
+        """Si el socket está muerto antes del primer chunk, reinicia cliente y reintenta 1 vez con éxito."""
+        import httpx
+        fake_resp = FakeResponse([self.pcm_16bit], status_code=200)
+        fake_stream = MagicMock()
+        fake_stream.__enter__.return_value = fake_stream
+
+        intentos = [0]
+        def fake_send(*args, **kwargs):
+            intentos[0] += 1
+            if intentos[0] == 1:
+                raise httpx.RemoteProtocolError("Server disconnected without sending a response")
+            return fake_resp
+
+        mock_client = MagicMock()
+        mock_client.send.side_effect = fake_send
+
+        with patch.object(tas, "_obtener_cliente", return_value=mock_client), \
+             patch.object(tas, "_cerrar_cliente") as mock_cerrar, \
+             patch("sounddevice.RawOutputStream", return_value=fake_stream):
+
+            ok = tas.reproducir_stream_aura("Hola Lyris tras inactividad")
+            self.assertTrue(ok)
+            self.assertEqual(intentos[0], 2)
+            self.assertTrue(mock_cerrar.called)
+
+    def test_rms_responsivo_perceptual_y_cierre_en_cero(self):
+        """Audio PCM normal produce RMS perceptual > 0.3 y al_nivel(0.0) se emite al terminar."""
+        import struct
+        # Generar onda senoidal moderada (~3500 de amplitud en int16, ~10.6% de escala completa)
+        muestras = [int(3500 * (1 if i % 2 == 0 else -1)) for i in range(960)]
+        pcm_conversacional = struct.pack(f"<{len(muestras)}h", *muestras)
+
+        rms = tas._calcular_rms_pcm(pcm_conversacional)
+        # Con la curva responsiva (rms_norm**0.65 * 2.4), 0.106 debe dar > 0.50
+        self.assertTrue(rms > 0.30, f"RMS esperado > 0.30, obtenido: {rms}")
+        self.assertTrue(rms <= 1.0)
+
+        # Probar emisión de al_nivel con final garantizado en 0.0
+        niveles = []
+        fake_resp = FakeResponse([pcm_conversacional], status_code=200)
+        fake_stream = MagicMock()
+        fake_stream.__enter__.return_value = fake_stream
+
+        with patch("config.DEEPGRAM_API_KEY", "fake_key_12345"), \
+             patch.object(tas, "_obtener_cliente") as mock_cli, \
+             patch("sounddevice.RawOutputStream", return_value=fake_stream):
+            mock_inst = MagicMock()
+            mock_inst.send.return_value = fake_resp
+            mock_cli.return_value = mock_inst
+
+            tas.reproducir_stream_aura("Prueba nivel", al_nivel=lambda n: niveles.append(n))
+
+            self.assertTrue(len(niveles) >= 2)
+            self.assertTrue(niveles[0] > 0.30)
+            self.assertEqual(niveles[-1], 0.0)
 
 
 if __name__ == "__main__":

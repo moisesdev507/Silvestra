@@ -11,18 +11,25 @@ class TestEnrutadorExpertos(unittest.TestCase):
     """Test suite para clasificación de áreas, carril pesado, cartuchos y modelos."""
 
     def test_clasificacion_general_charla(self):
-        """Charla cotidiana, saludos y preguntas comunes se quedan en general y rapido sin prompt experto."""
+        """Charla cotidiana, saludos, presentación y opiniones se quedan en general y carril rapido."""
         consultas_generales = [
             "Hola Lyris, ¿cómo estás?",
             "¿Qué hora es?",
             "Dime las noticias de hoy",
             "¿Va a llover esta tarde en la ciudad?",
             "Abre el bloc de notas",
+            "Preséntate, Lyris",
+            "preséntate",
+            "cuéntame de ti",
+            "qué opinas",
+            "¿cuál es tu función?",
+            "yo calculo que mañana llueve",
+            "dime tu opinión sin límite",
         ]
         for q in consultas_generales:
             c = ee.clasificar_consulta(q)
-            self.assertEqual(c["area"], "general", f"Fallo en: {q}")
-            self.assertEqual(c["carril"], "rapido")
+            self.assertEqual(c["area"], "general", f"Fallo en área para: {q}")
+            self.assertEqual(c["carril"], "rapido", f"Fallo en carril para: {q}")
             self.assertEqual(c["prompt_experto"], "")
 
     def test_clasificacion_programacion(self):
