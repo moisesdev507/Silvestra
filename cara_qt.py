@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 
 import acciones
 import cara_nucleo
+import menu_hud
 from burbuja import Burbuja, Entrada
 from cara_dibujo import TAM, pintar
 from cara_movimiento import CaraMovimientoMixin
@@ -102,6 +103,7 @@ class Cara(CaraMovimientoMixin, QWidget):
         self.move(ancho - TAM - 40, alto - TAM - 100)
 
         self.menu = QMenu()
+        self.menu.addAction("Opciones HUD...").triggered.connect(lambda *_: menu_hud.abrir(self))
         self.menu.addAction("Escribirle").triggered.connect(lambda *_: al_escribir())
         self.menu.addAction("Silenciar / reanudar voz").triggered.connect(
             lambda *_: al_conversar()
@@ -265,7 +267,7 @@ class Cara(CaraMovimientoMixin, QWidget):
 
     def mouseDoubleClickEvent(self, e):
         if e.button() == Qt.LeftButton:
-            self._al_escribir()
+            menu_hud.abrir(self)
 
     def contextMenuEvent(self, e):
         self._tocar()

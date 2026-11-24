@@ -34,6 +34,12 @@ def guardar_audio_cache(frase, audio_bytes, emocion="neutral"):
         _cache_audio[clave] = audio_bytes
 
 
+def limpiar():
+    """Invalida el caché cuando cambian la voz o el estilo (aplicación en caliente)."""
+    with _bloqueo:
+        _cache_audio.clear()
+
+
 def obtener_siguiente_muletilla():
     """Selecciona la siguiente muletilla de espera sin repetir la misma consecutivamente."""
     global _ultimo_sonido

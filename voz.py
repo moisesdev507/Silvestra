@@ -12,7 +12,7 @@ from cara_sincronia import SincroniaLabial
 
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 
-VOZ_EDGE = "es-PA-MargaritaNeural"
+VOZ_EDGE = "es-CO-SalomeNeural"
 
 # Diccionario de respaldo por si config no define EMOCIONES_VOZ
 EMOCIONES_DEFECTO = {
@@ -179,18 +179,17 @@ class Voz:
                 return audio_local
 
         import edge_tts
+        import voz_estilo
 
         emo = normalizar_emocion(emocion)
-        ajustes = EMOCIONES_VOZ.get(emo) or EMOCIONES_VOZ.get("neutral", {"rate": "+0%", "pitch": "+0Hz", "volume": "+0%"})
-        rate = ajustes.get("rate", "+0%")
-        pitch = ajustes.get("pitch", "+0Hz")
-        volume = ajustes.get("volume", "+0%")
-
-        print(f"[voz] motor=edge_tts emocion={emo} rate={rate} pitch={pitch}", flush=True)
+        a = voz_estilo.ajustes(emo, EMOCIONES_VOZ.get(emo))
+        rate, pitch, volume = a["rate"], a["pitch"], a["volume"]
+        voz = voz_estilo.voz_actual()
+        print(f"[voz] motor=edge_tts voz={voz} emocion={emo} rate={rate} pitch={pitch}", flush=True)
 
         async def crear():
             datos = bytearray()
-            async for trozo in edge_tts.Communicate(frase, VOZ_EDGE, rate=rate, pitch=pitch, volume=volume).stream():
+            async for trozo in edge_tts.Communicate(frase, voz, rate=rate, pitch=pitch, volume=volume).stream():
                 if trozo["type"] == "audio":
                     datos += trozo["data"]
             return bytes(datos)
