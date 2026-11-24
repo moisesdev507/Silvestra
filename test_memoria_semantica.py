@@ -111,9 +111,9 @@ class TestMemoriaSemantica(unittest.TestCase):
             )
             con.commit()
 
-        # Consulta con palabras que NO están en r1: "animal canino doméstico"
+        # Consulta con palabras que NO están en r1: "animal canino doméstico" (similitud > 0.8)
         with patch.object(memoria_semantica, "obtener_embedding", return_value=vec_canino):
-            sem_res = memoria_semantica.buscar_semantico("animal canino", limite=2, umbral=0.6, ruta_db=self.db_path)
+            sem_res = memoria_semantica.buscar_semantico("animal canino", limite=2, umbral=0.72, ruta_db=self.db_path)
             self.assertTrue(len(sem_res) > 0)
             self.assertEqual(sem_res[0][0], f"rec_{r1['id']}")
             self.assertIn("Firulais", sem_res[0][1])

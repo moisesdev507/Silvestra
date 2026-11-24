@@ -176,7 +176,7 @@ def indexar_en_segundo_plano(id_recuerdo: str, texto: str, ruta_db=None):
     t.start()
 
 
-def buscar_semantico(consulta: str, limite: int = 5, umbral: float = 0.55, ruta_db=None) -> list[tuple[str, str, float]]:
+def buscar_semantico(consulta: str, limite: int = 5, umbral: float = 0.72, ruta_db=None) -> list[tuple[str, str, float]]:
     """Calcula similitud coseno contra vectores guardados y devuelve (id, texto, score)."""
     q = " ".join(str(consulta or "").split()).strip()
     if not q:

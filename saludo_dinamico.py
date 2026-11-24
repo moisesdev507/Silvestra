@@ -1,18 +1,17 @@
-"""Generador de saludo inicial espontáneo con memoria real y anti-repetición.
+"""Generador de saludo inicial espontáneo con briefing proactivo y calidez en tono panameño sutil.
 
-Usa personalidad F.R.I.D.A.Y., hilos abiertos, diario y hábitos locales.
-Inyecta la hora y franja horaria real del sistema como verdad inamovible para evitar alucinaciones.
+Revisa en paralelo memoria, Gmail y Calendar sin bloquear el arranque.
+Respeta estrictamente la franja horaria real del sistema sin inventar horas.
 """
-import concurrent.futures
 import datetime
 import os
 import random
 import re
-import time
 
 import config
 import estado
 import httpx
+import briefing_proactivo as bp
 
 DIAS_SEMANA = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
 MESES = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
@@ -35,28 +34,24 @@ MULETILLAS_PROHIBIDAS = (
 
 FALLBACKS_FRANJAS = {
     "madrugada": (
-        "De vuelta al puesto en plena madrugada, Moisés; dime por dónde arrancamos.",
-        "Buenas horas para concentrarse en silencio; ¿qué atacamos primero?",
-        "Veo que seguimos despiertos, Moisés; listo el entorno para avanzar.",
-        "Sistemas activos a esta hora de la noche; cuando quieras continuamos.",
+        "Qué xopa Moisés, seguimos activos en la madrugada; dime por dónde le damos.",
+        "Buenas horas para avanzar en calma, Moisés; ¿qué atacamos primero?",
+        "Todo en orden a esta hora, Moisés; listo el entorno cuando quieras arrancar.",
     ),
     "mañana": (
-        "Buen inicio de jornada, Moisés; dime con qué abrimos el turno.",
-        "Todo despejado por acá esta mañana; dime qué tenemos en radar.",
-        "Listo el entorno para empezar el día, Moisés; tú mandas.",
-        "Sistemas activos y listos para la jornada; ¿por dónde arrancamos?",
+        "Buen día Moisés, qué xopa; todo despejado por acá para arrancar la jornada.",
+        "Listo el entorno esta mañana, Moisés; dime con qué abrimos el turno.",
+        "Todo listo por acá, Moisés; cuando digas nos ponemos en marcha.",
     ),
     "tarde": (
-        "De vuelta al puesto esta tarde, Moisés; ¿qué atacamos primero?",
-        "Todo en orden por aquí, Moisés; continuamos con el código cuando digas.",
-        "Sistemas listos para la tarde; dime qué tenemos pendiente.",
-        "En línea y atenta; tú mandas con qué seguimos hoy.",
+        "Qué xopa Moisés, de vuelta por acá esta tarde; ¿qué atacamos primero?",
+        "Todo en orden esta tarde, Moisés; continuamos con el código cuando quieras.",
+        "En línea y atenta esta tarde, Moisés; tú mandas con qué seguimos.",
     ),
     "noche": (
-        "Todo en orden por aquí esta noche, Moisés; ¿retomamos lo pendiente?",
-        "Sistemas activos para cerrar la jornada; dime qué atacamos.",
-        "Aquí estoy contigo esta noche; listo el entorno para avanzar.",
-        "De vuelta al puesto, Moisés; dime por dónde seguimos.",
+        "Qué xopa Moisés, todo en orden esta noche; ¿retomamos lo que teníamos pendiente?",
+        "Sistemas listos para cerrar la jornada, Moisés; dime qué tenemos en radar.",
+        "Aquí estoy contigo esta noche, Moisés; listos para avanzar cuando gustes.",
     ),
 }
 
@@ -98,86 +93,28 @@ def _es_coherente_con_franja(texto: str, franja: str) -> bool:
     return True
 
 
-def _dato_calendario(timeout=0.45):
-    """Consulta la agenda de hoy con timeout estricto (< 0.45s)."""
-    try:
-        import google_workspace
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            fut = ex.submit(google_workspace.agenda_hoy)
-            res = fut.result(timeout=timeout)
-            if isinstance(res, dict) and res.get("ok"):
-                eventos = res.get("eventos", [])
-                if eventos:
-                    ev = eventos[0]
-                    tit = ev.get("resumen") or ev.get("titulo") or "evento"
-                    ini = ev.get("inicio") or ev.get("hora") or ""
-                    return f"Evento hoy: {tit} ({ini})." if ini else f"Evento hoy: {tit}."
-    except Exception:
-        pass
-    return ""
-
-
-def recopilar_memoria_saludo():
-    """Recopila memoria real (< 50ms): hilos abiertos, perfil, diario y recuerdos."""
-    datos = {}
-    try:
-        import hilos
-        todos = hilos.cargar()
-        abiertos = [h.get("texto", "").strip() for h in todos
-                    if h.get("estado") == "abierto" and h.get("texto")
-                    and h.get("texto").strip() != "NINGUNO."]
-        if abiertos:
-            datos["hilos_abiertos"] = abiertos[-3:]
-    except Exception:
-        pass
-
-    try:
-        import aprendizaje
-        res_perfil = aprendizaje.resumen_para_prompt()
-        if res_perfil and res_perfil.strip():
-            datos["perfil_estilo"] = res_perfil.strip()[:200]
-    except Exception:
-        pass
-
-    try:
-        import diario
-        if os.path.exists(diario.RUTA_DIARIO):
-            with open(diario.RUTA_DIARIO, "r", encoding="utf-8") as f:
-                lineas = [ln.strip() for ln in f if ln.strip()]
-                if lineas:
-                    datos["diario_reciente"] = lineas[-1][:180]
-    except Exception:
-        pass
-
-    try:
-        import memoria_persistente as mp
-        recuerdos = mp.listar_recuerdos()
-        if recuerdos:
-            datos["recuerdos_recientes"] = [r.get("valor", "") for r in recuerdos[:3] if r.get("valor")]
-    except Exception:
-        pass
-
-    cal = _dato_calendario(timeout=0.45)
-    if cal:
-        datos["calendario"] = cal
-
-    return datos
-
-
-def fallback_natural_memoria(creador, memoria, ultimos_saludos=None, franja=None):
-    """Genera un fallback variado usando franja horaria y memoria sin repetir los últimos 5."""
+def fallback_natural_memoria(creador, briefing=None, ultimos_saludos=None, franja=None):
+    """Genera un fallback variado usando franja horaria y briefing sin repetir los últimos 5."""
     if ultimos_saludos is None:
         ultimos_saludos = _obtener_ultimos_saludos()
     if franja is None:
         franja = _determinar_franja(datetime.datetime.now().hour)
+    if briefing is None:
+        briefing = {}
 
     candidatos = list(FALLBACKS_FRANJAS.get(franja) or FALLBACKS_FRANJAS["tarde"])
 
-    hilos_act = memoria.get("hilos_abiertos") or []
-    if hilos_act:
-        ultimo_hilo = hilos_act[-1]
-        candidatos.append(f"Moisés, listo el entorno; cuando quieras retomamos lo de {ultimo_hilo[:45]}.")
-        candidatos.append(f"De vuelta al código, Moisés; ¿seguimos con {ultimo_hilo[:40]}?")
+    correo = briefing.get("correo")
+    if correo and isinstance(correo, dict):
+        candidatos.append(f"Qué xopa Moisés, vi un correo de {correo.get('remitente')}; cuando gustes le echamos un ojo.")
+
+    evento = briefing.get("evento")
+    if evento and isinstance(evento, dict):
+        candidatos.append(f"Moisés, acuérdate que hoy tienes {evento.get('titulo')} a las {evento.get('hora')}.")
+
+    hilo = briefing.get("hilo_activo")
+    if hilo:
+        candidatos.append(f"Qué xopa Moisés, todo listo; ¿retomamos lo de {hilo[:40]}?")
 
     no_repetidos = [s for s in candidatos if s not in ultimos_saludos]
     return random.choice(no_repetidos or candidatos)
@@ -207,51 +144,56 @@ def _guardar_ultimo_saludo(saludo):
 
 
 def generar_saludo_dinamico(creador="Moisés", timeout=3.0):
-    """Genera saludo espontáneo con Groq o Cloudflare asegurando coherencia temporal."""
+    """Genera saludo espontáneo y cálido con briefing proactivo de Gmail/Calendar/Memoria."""
     ahora = datetime.datetime.now()
-    dia_sem = DIAS_SEMANA[ahora.weekday()]
-    mes_nom = MESES[ahora.month - 1]
-    hora_str = ahora.strftime("%I:%M %p").lstrip("0")
     franja = _determinar_franja(ahora.hour)
-    fecha_str = f"{dia_sem} {ahora.day} de {mes_nom}"
+    hora_str = ahora.strftime("%I:%M %p").lstrip("0")
 
-    mem = recopilar_memoria_saludo()
+    briefing = bp.recopilar_briefing_arranque(timeout_total=1.2)
     ultimos = _obtener_ultimos_saludos()
 
-    bloques_memoria = []
-    if mem.get("hilos_abiertos"):
-        bloques_memoria.append("Hilos recientes: " + "; ".join(mem["hilos_abiertos"][:2]))
-    if mem.get("perfil_estilo"):
-        bloques_memoria.append("Estilo/hábitos: " + mem["perfil_estilo"])
-    if mem.get("calendario"):
-        bloques_memoria.append("Agenda próxima: " + mem["calendario"])
-    if mem.get("recuerdos_recientes"):
-        bloques_memoria.append("Recuerdos: " + "; ".join(mem["recuerdos_recientes"][:2]))
+    # Armar novedades destacadas
+    novedades = []
+    token_aviso = None
+    if briefing.get("correo"):
+        c = briefing["correo"]
+        novedades.append(f"Correo pendiente de {c['remitente']} sobre '{c['asunto']}'")
+        token_aviso = c.get("token")
+    elif briefing.get("evento"):
+        ev = briefing["evento"]
+        novedades.append(f"Evento próximo hoy: {ev['titulo']} ({ev['hora']})")
+        token_aviso = ev.get("token")
 
-    ctx_texto = " | ".join(bloques_memoria) if bloques_memoria else "Sin temas específicos pendientes."
+    if briefing.get("hilo_activo"):
+        novedades.append(f"Proyecto/hilo abierto: {briefing['hilo_activo']}")
+    elif briefing.get("recuerdo_reciente"):
+        novedades.append(f"Recuerdo de trabajo: {briefing['recuerdo_reciente']}")
+
+    novedades_txt = " | ".join(novedades) if novedades else "Sin avisos urgentes; continuar con normalidad."
     no_repetir_txt = " | ".join(f'"{s}"' for s in ultimos) if ultimos else "Ninguno aún."
 
     sys_prompt = (
-        f"Eres Lyris, la asistente personal de {creador}. Habla con la actitud de F.R.I.D.A.Y.: "
-        "inteligente, perspicaz, relajada, directa y cómplice. "
-        "Tu misión es dar un saludo inicial espontáneo y genuino en EXACTAMENTE 1 sola oración corta (8 a 18 palabras). "
+        f"Eres Lyris, la compañera y asistente personal de {creador}. "
+        "Habla en un tono cálido, cercano, relajado y natural con un toque sutil de español panameño "
+        "(puedes usar de forma natural un 'Qué xopa' casual, sin exagerar ni sonar forzada). "
+        "Tu misión es dar un saludo inicial en 1 o 2 oraciones habladas breves (máximo 28 palabras en total). "
         "VERDAD ACTUAL INAMOVIBLE DEL SISTEMA: "
         f"La hora local real exacta es {hora_str} y la franja actual es ESTRICTAMENTE '{franja}'. "
         "REGLAS CRÍTICAS: "
-        "- NUNCA inventes otra hora ni contradigas la franja actual (si es madrugada, jamás menciones tarde, mediodía o tardes). "
-        "- Si un recuerdo antiguo menciona otra hora, NO la trates como la hora actual. "
-        "- PROHIBIDO empezar con fórmulas fijas como 'Buenos días/tardes/noches, Moisés' o recitar la hora como un reloj ('Son las...'). "
-        f"- Usa la franja '{franja}' solo como contexto sutil si encaja, o enfócate directamente en retomar hilos activos. "
+        f"- NUNCA contradigas la franja actual '{franja}' (si es madrugada o noche, prohibido decir 'buenas tardes' o 'al mediodía'). "
+        "- Si hay un correo relevante o evento en el briefing, menciónalo con naturalidad brevemente. "
+        "- Si no hay avisos urgentes, saluda cálida y directamente invitando a retomar lo pendiente. "
+        "- Cero asteriscos, cero listas, cero citas numéricas. "
         "- PROHIBIDO usar muletillas de robot: '¿En qué te puedo ayudar?', 'Aquí tienes', 'Por supuesto', 'Estoy lista para ayudarte'. "
         f"- PROHIBIDO repetir o parafrasear estos saludos recientes: {no_repetir_txt}. "
-        "- Devuelve ÚNICAMENTE la oración hablada, sin comillas ni explicaciones."
+        "- Devuelve ÚNICAMENTE la frase hablada, sin comillas ni explicaciones."
     )
 
     usr_prompt = (
         f"Usuario: {creador}. "
-        f"Hora real y franja: {hora_str} ({franja}, {fecha_str}). "
-        f"Memoria activa: {ctx_texto}. "
-        "Genera tu saludo espontáneo ahora."
+        f"Franja: {franja} ({hora_str}). "
+        f"Briefing proactivo: {novedades_txt}. "
+        "Genera tu saludo cálido ahora."
     )
 
     clave_groq = str(getattr(config, "CLAVE", "") or os.environ.get("GROQ_API_KEY", "")).strip()
@@ -267,7 +209,7 @@ def generar_saludo_dinamico(creador="Moisés", timeout=3.0):
                         {"role": "system", "content": sys_prompt},
                         {"role": "user", "content": usr_prompt},
                     ],
-                    "max_tokens": 50,
+                    "max_tokens": 60,
                     "temperature": 0.8,
                 }
                 resp = httpx.post(url_groq, headers=headers_groq, json=payload, timeout=timeout)
@@ -275,12 +217,14 @@ def generar_saludo_dinamico(creador="Moisés", timeout=3.0):
                     raw = resp.json().get("choices", [{}])[0].get("message", {}).get("content", "")
                     texto = re.sub(r"(?is)<think>.*?</think>", "", str(raw or "")).strip(' "“»«\'')
                     if "\n" in texto:
-                        texto = texto.split("\n")[0].strip()
+                        texto = " ".join(texto.splitlines()).strip()
                     t_low = texto.lower()
                     if texto and len(texto.split()) >= 4 and not any(m in t_low for m in MULETILLAS_PROHIBIDAS):
                         if _es_coherente_con_franja(texto, franja):
                             _log_saludo(f"origen=modelo proveedor=Groq modelo={mod} texto='{texto}'")
                             _guardar_ultimo_saludo(texto)
+                            if token_aviso:
+                                bp.registrar_alerta_avisada(token_aviso)
                             return texto
                         motivo_fallo = f"Groq ({mod}) descartado por incoherencia de franja ({franja})"
                 else:
@@ -300,7 +244,7 @@ def generar_saludo_dinamico(creador="Moisés", timeout=3.0):
                     {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": usr_prompt},
                 ],
-                "max_tokens": 50,
+                "max_tokens": 60,
                 "temperature": 0.8,
             }
             resp_cf = httpx.post(url_cf, headers=headers_cf, json=payload_cf, timeout=timeout)
@@ -308,12 +252,14 @@ def generar_saludo_dinamico(creador="Moisés", timeout=3.0):
                 raw_cf = resp_cf.json().get("choices", [{}])[0].get("message", {}).get("content", "")
                 texto_cf = re.sub(r"(?is)<think>.*?</think>", "", str(raw_cf or "")).strip(' "“»«\'')
                 if "\n" in texto_cf:
-                    texto_cf = texto_cf.split("\n")[0].strip()
+                    texto_cf = " ".join(texto_cf.splitlines()).strip()
                 t_low = texto_cf.lower()
                 if texto_cf and len(texto_cf.split()) >= 4 and not any(m in t_low for m in MULETILLAS_PROHIBIDAS):
                     if _es_coherente_con_franja(texto_cf, franja):
                         _log_saludo(f"origen=modelo proveedor=Cloudflare modelo=llama-3.3-70b texto='{texto_cf}'")
                         _guardar_ultimo_saludo(texto_cf)
+                        if token_aviso:
+                            bp.registrar_alerta_avisada(token_aviso)
                         return texto_cf
                     motivo_fallo = f"Cloudflare descartado por incoherencia de franja ({franja})"
             else:
@@ -321,16 +267,17 @@ def generar_saludo_dinamico(creador="Moisés", timeout=3.0):
         except Exception as e:
             motivo_fallo = f"Cloudflare error: {type(e).__name__}"
 
-    saludo_fb = fallback_natural_memoria(creador, mem, ultimos, franja=franja)
+    saludo_fb = fallback_natural_memoria(creador, briefing, ultimos, franja=franja)
     _log_saludo(f"origen=fallback motivo='{motivo_fallo or 'sin_respuesta_modelo'}' texto='{saludo_fb}'")
     _guardar_ultimo_saludo(saludo_fb)
+    if token_aviso:
+        bp.registrar_alerta_avisada(token_aviso)
     return saludo_fb
 
 
 __all__ = [
     "generar_saludo_dinamico",
     "fallback_natural_memoria",
-    "recopilar_memoria_saludo",
     "MULETILLAS_PROHIBIDAS",
     "_es_coherente_con_franja",
     "_determinar_franja",

@@ -115,7 +115,7 @@ def buscar_recuerdos(consulta, limite=6, ruta_db=None):
     # Búsqueda semántica complementaria (sin duplicar ni bloquear ante fallos)
     try:
         import memoria_semantica
-        sem = memoria_semantica.buscar_semantico(consulta, limite=limite, umbral=0.55, ruta_db=ruta_db)
+        sem = memoria_semantica.buscar_semantico(consulta, limite=limite, umbral=0.72, ruta_db=ruta_db)
         if sem:
             sem_map = {int(s[0].replace("rec_", "")): s[2] for s in sem if s[0].startswith("rec_") and s[0][4:].isdigit()}
             if sem_map:
