@@ -7,6 +7,7 @@ import numpy as np
 import config
 import oido_deepgram
 import oido_filtro
+import oido_ws
 from config import MODELO_VOZ
 from oido_flujo import (
     CORTESIAS_AMBIGUAS,
@@ -29,55 +30,13 @@ except Exception:
     PROMPT_WHISPER = "Conversación en español con la asistente Kaya."
 
 
-def _barge_in_habilitado():
-    try:
-        import charla_continua
-        return charla_continua.barge_in_habilitado()
-    except Exception:
-        return True
-
-
-def _barge_in(app, datos, comandos_corte, rec_vosk):
-    try:
-        import charla_continua
-        if charla_continua.evaluar_barge_in_seguro(app, datos):
-            return True
-    except Exception:
-        pass
-    if rec_vosk is None or not (app and hasattr(app, "voz") and app.voz.ocupada()):
-        return False
-    try:
-        rec_vosk.AcceptWaveform(datos.tobytes())
-        m = re.search(r'"partial"\s*:\s*"([^"]+)"', rec_vosk.PartialResult())
-        if not m:
-            return False
-        limpio = re.sub(r"[^a-záéíóúñü\s]", " ", m.group(1).strip().lower())
-        palabras = limpio.split()
-        if len("".join(palabras)) < 2 or not any(c in palabras for c in comandos_corte):
-            return False
-        if hasattr(app.voz, "detener"):
-            app.voz.detener()
-        if hasattr(app, "cola"):
-            app.cola.put(("interrupcion", "comando"))
-        return True
-    except Exception:
-        return False
-
-
-def _es_eco_prompt(texto_original, texto, prompt, ultimo_dicho=""):
-    return oido_filtro.debe_descartar(texto_original, texto, prompt, ultimo_dicho)
-
-
-def motivo_descarte_transcripcion(texto, rms, r=None):
-    t_low = " ".join(str(texto or "").lower().split())
-    if es_cortesia_corta(texto):
-        if cortesia_descartada(texto, rms, r):
-            return f"cortesia_sin_voz_clara(rms={float(rms or 0.0):.1f})"
-        return None
-    for f in FALSAS + CORTESIAS_AMBIGUAS:
-        if f in t_low:
-            return f"alucinacion_whisper('{f}')"
-    return None
+from oido_helpers import (
+    barge_in as _barge_in,
+    barge_in_habilitado as _barge_in_habilitado,
+    cerrar_ws_al_salir,
+    es_eco_prompt as _es_eco_prompt,
+    motivo_descarte_transcripcion,
+)
 
 
 class Oido:
@@ -188,12 +147,15 @@ class Oido:
         print("[oido] Aviso: micrófono ocupado tras reintentar. Continuando sin colgar.", flush=True)
         return None
 
+    @cerrar_ws_al_salir
     def _escuchar(self, corto=False, app=None, generacion=None):
-        """Captura audio usando Silero VAD neuronal a 16 kHz y transcribe con Whisper/Vosk."""
+        """Captura con VAD y transcribe por WS continuo (HTTP/Whisper/Vosk tras fallo)."""
         rate = 16000
         ganancia = float(getattr(config, "GANANCIA_MICROFONO", 1.2))
         comandos_corte = ("espera", "ya", "para", "silencio", "callate", "alto", "stop")
         rec_vosk = None
+        self._sesion_ws_actual = oido_ws.SesionStreaming()
+        self._sesion_ws_actual.iniciar()
 
         tiempo_espera_max = 8.0 if not corto else 4.0
         max_habla_segundos = 15.0
@@ -255,6 +217,9 @@ class Oido:
                             rec_vosk = None
                     if _barge_in(app, datos, comandos_corte, rec_vosk):
                         continue
+
+                # Streaming: enviar el bloque apenas llega, sin esperar la frase completa
+                self._sesion_ws_actual.enviar(datos.tobytes())
 
                 # Alimentar bloques int16 al VAD neuronal
                 self._vad.alimentar(datos)
@@ -332,9 +297,9 @@ class Oido:
 
         r = None
         t0 = time.time()
-        dg = oido_deepgram.transcribir(buffer.getvalue())
+        dg = self._sesion_ws_actual.finalizar()
         if dg and str(dg[0] or "").strip():
-            print("[oido] Deepgram valido: sin Whisper", flush=True)
+            print("[oido] Deepgram streaming valido: sin Whisper", flush=True)
         if dg:
             texto = dg[0]
         else:

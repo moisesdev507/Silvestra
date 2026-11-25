@@ -3,6 +3,7 @@ from cerebro import separar
 import cerebro_enrutador
 import proveedores
 import proveedores_cadenas as pc
+import diario_intimo
 
 
 def _reg_turno(cerebro, u_txt, a_txt, al_frase=None):
@@ -78,6 +79,12 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         pass
 
     app = getattr(cerebro, "app", None)
+
+    res_diar = diario_intimo.atender(texto, app=app)
+    if res_diar:
+        _reg_turno(cerebro, texto_orig, res_diar[0], al_frase)
+        return res_diar[0], None, res_diar[1]
+
     import capacidades_extra as cap
     res_cap = cap.detectar_y_ejecutar(texto, app=app, incluir_portapapeles=False)
     if res_cap:

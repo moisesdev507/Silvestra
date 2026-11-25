@@ -61,6 +61,11 @@ def pintar(cara):
         import cara_orbe_hibrido
         cara_orbe_hibrido.dibujar_orbe_hibrido(p, cara, ahora - cara.t0,
                                                cara.width() or TAM)
+        try:
+            import cara_presentacion
+            cara_presentacion.dibujar(p, cara, ahora)
+        except Exception:
+            pass
     except Exception:
         # Fallback defensivo a cara_nucleo si ocurriera cualquier error
         feliz = ahora < cara.feliz_hasta or ahora < cara.baile_hasta

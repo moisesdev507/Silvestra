@@ -9,6 +9,7 @@ import time
 
 from voz_reproductor import ReproductorAudio, calcular_envolvente_rms
 from cara_sincronia import SincroniaLabial
+import voz_ws
 
 os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
 
@@ -132,8 +133,7 @@ class Voz:
             self.sincronia_labial.cancelar()
         self.nivel_volumen = 0.0
         try:
-            import tts_aura_stream
-            tts_aura_stream.detener_reproduccion_activa()
+            voz_ws.detener()
         except Exception:
             pass
         self._parar()
@@ -301,7 +301,9 @@ class Voz:
                 try:
                     import tts_aura_stream
                     ok_stream, audio = tts_aura_stream.procesar_frase_consumidor(
-                        self, frase, audio, emo, generacion, version, inicio_audio, set_nivel)
+                        self, frase, audio, emo, generacion, version, inicio_audio, set_nivel,
+                        reproductor=voz_ws.reproducir,
+                    )
                     if ok_stream:
                         if version != self.version: return
                         continue

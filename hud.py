@@ -10,7 +10,7 @@ import threading
 import time
 import urllib.request
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QEasingCurve, QPropertyAnimation, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 import acciones
+import cara_presentacion
 import estado
 import hud_orbe
 
@@ -178,6 +179,19 @@ class PanelHUD(QWidget):
         self._actualizar_reloj()
         self._actualizar_metricas()
         self.show()
+        self.setWindowOpacity(0.0)
+        self._anim_entrada = QPropertyAnimation(self, b"windowOpacity", self)
+        self._anim_entrada.setDuration(350)
+        self._anim_entrada.setStartValue(0.0)
+        self._anim_entrada.setEndValue(1.0)
+        self._anim_entrada.setEasingCurve(QEasingCurve.OutCubic)
+        self._anim_entrada.start()
+        cara = getattr(self.app, "cara", None)
+        if cara is not None:
+            try:
+                cara_presentacion.iniciar(cara)
+            except Exception:
+                pass
         self.timer_orbe.start(40)
         self.timer_reloj.start(1000)
         self.timer_metricas.start(2000)

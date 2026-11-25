@@ -1,25 +1,19 @@
 import math
 import random
 import time
-import unicodedata
 
 from PySide6.QtCore import Qt, QTimer, QEvent
-from PySide6.QtGui import QAction, QCursor
-from PySide6.QtWidgets import QApplication, QInputDialog, QMenu, QMessageBox, QWidget
+from PySide6.QtGui import QCursor
+from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox, QWidget
 
 import acciones
 import cara_nucleo
-import menu_hud
+import cara_presentacion
 from burbuja import Burbuja, Entrada
 from cara_dibujo import TAM, pintar
 from cara_movimiento import CaraMovimientoMixin
 
-AMABLES = ("gracias","linda","bonita","hermosa","preciosa","guapa","te quiero","te amo","genial","eres la mejor","tierna","bien hecho","felicidades","increible")
-
-
-def _normal(texto):
-    t = unicodedata.normalize("NFD", texto.lower())
-    return "".join(c for c in t if unicodedata.category(c) != "Mn")
+AMABLES = cara_presentacion.AMABLES
 
 
 class _Raiz:
@@ -88,6 +82,7 @@ class Cara(CaraMovimientoMixin, QWidget):
         self._fps_t0 = time.time()
         self._tiempo_dibujo_acum = 0.0
         self._en_reposo = False
+        cara_presentacion.preparar(self)
 
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -96,30 +91,9 @@ class Cara(CaraMovimientoMixin, QWidget):
         ancho, alto = self._pantalla()
         self.move(ancho - TAM - 40, alto - TAM - 100)
 
-        self.menu = QMenu()
-        self.menu.addAction("Opciones HUD...").triggered.connect(lambda *_: menu_hud.abrir(self))
-        self.menu.addAction("Escribirle").triggered.connect(lambda *_: al_escribir())
-        self.menu.addAction("Silenciar / reanudar voz").triggered.connect(
-            lambda *_: al_conversar()
+        cara_presentacion.crear_menu(
+            self, al_escribir, al_conversar, al_renacer, al_descansar
         )
-        self.accion_paseo = QAction("Pasearse por la pantalla", self.menu)
-        self.accion_paseo.setCheckable(True)
-        self.accion_paseo.setChecked(True)
-        self.accion_paseo.triggered.connect(lambda *_: self._tocar())
-        self.menu.addAction(self.accion_paseo)
-        import qt_estabilidad_ui
-        self.accion_descansar = qt_estabilidad_ui.crear_accion_segura(
-            self.menu,
-            "Descansar (desaparece hasta que la llames)", "¿Confirmar descanso? (3s)", al_descansar
-        )
-        self.accion_renacer = qt_estabilidad_ui.crear_accion_segura(
-            self.menu,
-            "Renacer (borrar su memoria)",
-            "¿Confirmar renacer? (3s)",
-            al_renacer,
-        )
-        self.menu.addSeparator()
-        self.menu.addAction("Salir").triggered.connect(lambda *_: QApplication.quit())
 
         self.reloj_dibujo = QTimer(self)
         self.reloj_dibujo.timeout.connect(self.update)
@@ -159,12 +133,19 @@ class Cara(CaraMovimientoMixin, QWidget):
 
     def poner_escuchando(self, escuchando):
         self.escuchando = bool(escuchando)
+        cara_presentacion.fijar_estado(self, "escuchando" if self.escuchando else "reposo")
         self.update()
 
     def poner_hablando(self, hablando):
         self.hablando = bool(hablando)
         if self.hablando:
             self.fijar_modo_experto(False)
+        cara_presentacion.fijar_estado(self, "hablando" if self.hablando else "reposo")
+        self.update()
+
+    def poner_herramienta(self, activa=True):
+        """Estado visual 'ejecutando herramienta' con transición suave."""
+        cara_presentacion.fijar_estado(self, "herramienta" if activa else "reposo")
         self.update()
 
     def fijar_modo_experto(self, activo, area="general"):
@@ -238,9 +219,10 @@ class Cara(CaraMovimientoMixin, QWidget):
     # ---------- Dibujo ----------
     def paintEvent(self, _):
         t0 = time.time()
+        ahora = t0
+        cara_presentacion.avanzar(self, ahora)
         pintar(self)
         cara_nucleo.registrar_cuadro(self, time.time() - t0)
-        ahora = time.time()
 
         # Reducción de tasa de refresco en reposo para mantener baja la CPU
         reposo_ahora = (
@@ -284,9 +266,8 @@ class Cara(CaraMovimientoMixin, QWidget):
     def _emocion(self, texto):
         ahora = time.time()
         if texto.startswith("«"):
-            self.pensando = True
-            self.pensando_hasta = ahora + 25
-            n = _normal(texto)
+            cara_presentacion.fijar_estado(self, "pensando", ahora)
+            n = cara_presentacion.normalizar(texto)
             if any(w in n for w in AMABLES):
                 self.feliz_hasta = ahora + 6
         else:
@@ -294,6 +275,9 @@ class Cara(CaraMovimientoMixin, QWidget):
 
     def decir(self, texto, ms=None, emocion=None):
         self.ultima_interaccion = time.time()
+        if not getattr(self, "_onda_saludo_hecha", False):
+            self._onda_saludo_hecha = True
+            cara_presentacion.iniciar(self)
         try:
             import qt_estabilidad_ui
             ui_activa = qt_estabilidad_ui.puede_actualizar_ui()

@@ -164,17 +164,12 @@ def ejecutar_accion_local(instruccion: str, timeout: float = 8.0) -> str:
             except Exception as e:
                 return f"Error consultando agenda: {e}"
 
-        # 6. Diario personal
+        # 6. Diario íntimo: misma fachada que el motor clásico
         if "diario" in t_min:
             try:
-                import diario
-                d = diario.Diario(app_muda)
-                if any(w in t_min for w in ("escribe", "anota", "escribir", "guardar", "redacta")):
-                    threading.Thread(target=d.escribir_entrada, kwargs={"forzar": True}, daemon=True).start()
-                    return "Anotando una nueva entrada en mi diario personal."
-                else:
-                    ent = d.obtener_ultima_entrada()
-                    return f"Mi última entrada del diario dice: {ent}" if ent else "Todavía no he escrito entradas en mi diario personal."
+                import diario_intimo
+                respuesta, _ = diario_intimo.atender(texto, app=app_muda)
+                return str(respuesta)
             except Exception as e:
                 return f"Error con el diario: {e}"
 

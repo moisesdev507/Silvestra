@@ -78,6 +78,23 @@ def declaraciones_extra() -> List[types.FunctionDeclaration]:
                 required=["orden"],
             ),
         ),
+        types.FunctionDeclaration(
+            name="escribir_en_diario",
+            description=(
+                "Escribe una entrada breve en el diario íntimo de Kaya, en primera persona y con su propia voz. "
+                "El tema es solo inspiración: nunca copies ni guardes el texto literal del usuario."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "tema": types.Schema(
+                        type="STRING",
+                        description="Tema, vivencia o conversación sobre la que Kaya debe reflexionar en su diario.",
+                    ),
+                },
+                required=["tema"],
+            ),
+        ),
     ]
 
 
@@ -104,6 +121,12 @@ async def despachar(nombre: str, args: Dict[str, Any]) -> Any:
     if nombre == "control_multimedia":
         return await loop.run_in_executor(
             None, cap.control_multimedia, str(args.get("orden", ""))
+        )
+    if nombre == "escribir_en_diario":
+        import diario_intimo
+        tema = str(args.get("tema", ""))
+        return await loop.run_in_executor(
+            None, lambda: diario_intimo.escribir(tema, app=None)
         )
     return None
 

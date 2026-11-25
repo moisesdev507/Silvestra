@@ -226,12 +226,13 @@ def procesar_frase_productor(voz_obj, frase, emo):
     return None
 
 
-def procesar_frase_consumidor(voz_obj, frase, audio, emo, gen, ver, al_ini, al_niv):
+def procesar_frase_consumidor(voz_obj, frase, audio, emo, gen, ver, al_ini, al_niv, reproductor=None):
     """Intenta streaming Aura-2; si falla o no aplica, retorna el audio listo para reproductor."""
     import voz_local
+    reproductor = reproductor or reproducir_stream_aura
     if not audio and not voz_local.debe_ir_local_primero():
         try:
-            if reproducir_stream_aura(frase, lambda: ver != voz_obj.version, al_ini, al_niv):
+            if reproductor(frase, lambda: ver != voz_obj.version, al_ini, al_niv):
                 if ver != voz_obj.version:
                     print(f"[voz] cancelada motivo=interrupcion frase='{frase}'", flush=True)
                 else:

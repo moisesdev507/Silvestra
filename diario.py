@@ -5,6 +5,7 @@ import os
 import re
 import threading
 import time
+import unicodedata
 
 from PySide6.QtWidgets import QApplication
 
@@ -24,6 +25,18 @@ except Exception:
 
 RUTA_DIARIO = os.path.join(os.path.dirname(os.path.abspath(__file__)), "diario.md")
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
+_instancia = None
+_bloqueo_instancia = threading.RLock()
+
+
+def _normal(texto):
+    t = unicodedata.normalize("NFKD", str(texto or "").lower())
+    return "".join(c for c in t if not unicodedata.combining(c))
+
+
+def obtener_instancia():
+    with _bloqueo_instancia:
+        return _instancia
 
 
 def fecha_texto(dt=None):
@@ -117,6 +130,39 @@ class Diario:
                 print(f"[diario] Error escribiendo diario: {e}", flush=True)
                 return False
 
+    def _contexto_reciente(self):
+        _, hechos, hilos_txt, ideas_txt, charla = self._recopilar_contexto()
+        return f"Hechos: {hechos}. Hilos: {hilos_txt}. Ideas: {ideas_txt}. Charla: {charla}"
+
+    def escribir_sobre(self, tema=""):
+        """Redacta y guarda una entrada íntima desde la perspectiva de Kaya."""
+        import diario_helpers
+        with self._bloqueo:
+            ok = diario_helpers.redactar_y_guardar(
+                str(tema or ""), self._contexto_reciente()
+            )
+        if ok:
+            self.app.cola.put(("hablar", "Ya lo anoté en mi diario, desde mi perspectiva."))
+        else:
+            self.app.cola.put(("hablar", "No pude redactar mi entrada ahora mismo."))
+        return ok
+
+    def reflexion_automatica(self):
+        """Reflexión ligera al cerrar: solo con interacción real y sin entrada de hoy."""
+        import diario_helpers
+        hoy = datetime.datetime.now().strftime("%Y-%m-%d")
+        if self.ultima_fecha == hoy:
+            return False
+        cerebro = getattr(self.app, "cerebro", None)
+        historial = getattr(cerebro, "historial", []) or []
+        turnos = sum(
+            1 for m in historial
+            if m.get("role") == "user" and str(m.get("content") or "").strip()
+        )
+        if turnos < 2:
+            return False
+        return diario_helpers.redactar_y_guardar("", self._contexto_reciente())
+
     def enviar_mensaje_manana(self, forzar=False):
         with self._bloqueo:
             hoy_str = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -192,7 +238,8 @@ class Diario:
     def al_cerrar(self):
         hoy_str = datetime.datetime.now().strftime("%Y-%m-%d")
         if self.ultima_fecha != hoy_str:
-            self.escribir_entrada(forzar=False)
+            if not self.reflexion_automatica():
+                self.escribir_entrada(forzar=False)
 
     def _bucle_horario(self):
         while not self._detener.is_set():
@@ -209,13 +256,17 @@ class Diario:
 
 
 def instalar(app):
+    global _instancia
     d = Diario(app)
-    acciones.registrar("leer_diario", lambda arg=None: d.leer_diario(), "lee en voz alta la última entrada del diario personal de Silvestra")
-    acciones.registrar("borrar_diario", lambda arg=None: d.borrar_diario(), "borra por completo el diario personal de Silvestra")
+    with _bloqueo_instancia:
+        _instancia = d
+    acciones.registrar("leer_diario", lambda arg=None: d.leer_diario(), "lee en voz alta la última entrada del diario personal de Kaya")
+    acciones.registrar("borrar_diario", lambda arg=None: d.borrar_diario(), "borra por completo el diario personal de Kaya")
     acciones.registrar(
         "escribir_diario",
-        lambda arg=None: threading.Thread(target=d.escribir_entrada, kwargs={"forzar": True}, daemon=True).start(),
-        "fuerza la escritura de una entrada en el diario",
+        d.escribir_sobre,
+        "escribe en el diario de Kaya una entrada en primera persona sobre el tema indicado",
+        con_texto=True,
     )
     acciones.registrar(
         "probar_mensaje_manana",
