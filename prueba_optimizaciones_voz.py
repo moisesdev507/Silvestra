@@ -85,15 +85,16 @@ class TestOptimizacionesVoz(unittest.TestCase):
         self.assertTrue(ok4)
         self.assertEqual(ord4, "revisa mi correo")
 
-    def test_umbral_deepgram_audio_largo_alta_confianza(self):
-        # Audio de 4.2s con 2 palabras pero confianza >= 0.92 y palabras normales: NO es sospechoso
+    def test_umbral_deepgram_solo_baja_confianza(self):
+        # Audio de 4.2s con confianza alta se acepta sin importar la duración.
         self.assertFalse(oido_adaptacion.es_transcripcion_sospechosa("baja volumen", confidence=0.95, duracion_seg=4.2))
 
-        # Audio de 4.2s con baja confianza (< 0.92) y apenas 1 palabra: sí sospechoso
-        self.assertTrue(oido_adaptacion.es_transcripcion_sospechosa("hola", confidence=0.88, duracion_seg=4.2))
+        # 0.88 está por encima del umbral 0.85: no hay conmutación a Whisper.
+        self.assertFalse(oido_adaptacion.es_transcripcion_sospechosa("hola", confidence=0.88, duracion_seg=4.2))
+        self.assertTrue(oido_adaptacion.es_transcripcion_sospechosa("hola", confidence=0.84, duracion_seg=4.2))
 
-        # Frase rota que termina en preposición: sí sospechoso siempre
-        self.assertTrue(oido_adaptacion.es_transcripcion_sospechosa("revisa cómo está mi", confidence=0.95, duracion_seg=4.2))
+        # Una frase colgante con confianza alta también se acepta directamente.
+        self.assertFalse(oido_adaptacion.es_transcripcion_sospechosa("revisa cómo está mi", confidence=0.95, duracion_seg=4.2))
 
 
 if __name__ == "__main__":

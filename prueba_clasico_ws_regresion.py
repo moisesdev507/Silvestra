@@ -8,6 +8,8 @@ from contextlib import redirect_stdout
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import oido_adaptacion
+import oido_helpers
 import oido_ws
 import tts_aura_stream
 import voz
@@ -136,6 +138,65 @@ class TestWSDeepgramSinDuplicar(unittest.TestCase):
         self.assertIn(oido_ws.MENSAJE_FINALIZE, falso.enviados)
         self.assertEqual(falso.cerrado, 1000)
         self.assertEqual(len(sesion.chunks), 1)
+
+    def test_chunks_pcm_se_envian_en_tiempo_real(self):
+        mensaje = json.dumps({
+            "is_final": True,
+            "result": {"channels": [{"alternatives": [{"transcript": "Kaya"}]}]},
+        })
+        falso = _WSFalso(mensaje)
+        sesion = oido_ws.SesionStreaming(clave="clave")
+        sesion.ws = falso
+        sesion.activa = True
+        sesion.enviar(b"\x00" * 6400, conservar=False)
+        sesion.enviar(b"\x01" * 6400, conservar=True)
+        self.assertEqual(falso.enviados, [b"\x00" * 6400, b"\x01" * 6400])
+        self.assertNotIn(oido_ws.MENSAJE_FINALIZE, falso.enviados)
+
+    def test_ensambla_finales_y_reporta_confianza(self):
+        primero = json.dumps({
+            "is_final": True,
+            "result": {"channels": [{"alternatives": [{"transcript": "hola"}]}]},
+        })
+        segundo = json.dumps({
+            "type": "FinalResults",
+            "result": {"channels": [{"alternatives": [
+                {"transcript": "hola kaya", "confidence": 0.93},
+            ]}]},
+        })
+
+        class _WSMultifinal:
+            def __init__(self, mensajes):
+                self.mensajes = list(mensajes)
+                self.enviados = []
+                self.cerrado = None
+
+            def send(self, dato):
+                self.enviados.append(dato)
+
+            def recv(self, timeout=None):
+                return self.mensajes.pop(0) if self.mensajes else None
+
+            def close(self, code=1000):
+                self.cerrado = code
+
+        falso = _WSMultifinal([primero, segundo])
+        sesion = oido_ws.SesionStreaming(clave="clave")
+        sesion.ws = falso
+        sesion.activa = True
+        resultado = sesion.finalizar()
+        self.assertEqual(resultado[0], "hola kaya")
+        self.assertAlmostEqual(resultado[2], 0.93)
+        self.assertFalse(oido_helpers.debe_usar_whisper(resultado))
+        self.assertFalse(oido_adaptacion.es_transcripcion_sospechosa(
+            resultado[0], confidence=resultado[2], duracion_seg=4.2))
+
+    def test_whisper_solo_por_baja_confianza_o_error_de_red(self):
+        self.assertTrue(oido_helpers.debe_usar_whisper(None))
+        self.assertTrue(oido_helpers.debe_usar_whisper(("hola", 4.2, 0.84)))
+        self.assertFalse(oido_helpers.debe_usar_whisper(("hola", 4.2, 0.88)))
+        self.assertFalse(oido_helpers.debe_usar_whisper(("hola", 4.2)))
+        self.assertFalse(oido_helpers.debe_usar_whisper(("", 0.5, 1.0)))
 
 
 class TestVentanaConversacionContinua(unittest.TestCase):

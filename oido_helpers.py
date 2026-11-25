@@ -1,6 +1,29 @@
 """Filtros y barge-in del oído clásico, extraídos para mantener oido.py compacto."""
 import re
 
+UMBRAL_CONFIANZA = 0.85
+
+
+def confianza_resultado(resultado, por_defecto=1.0):
+    """Confianza de Deepgram (WS o HTTP); 1.0 si el proveedor no la reporta."""
+    try:
+        valor = resultado[2] if len(resultado) > 2 else por_defecto
+    except Exception:
+        return por_defecto
+    if valor is None:
+        return por_defecto
+    try:
+        return float(valor)
+    except (TypeError, ValueError):
+        return por_defecto
+
+
+def debe_usar_whisper(resultado):
+    """Solo respalda con Whisper si falló Deepgram o la confianza es < 0.85."""
+    if not resultado:
+        return True
+    return confianza_resultado(resultado) < UMBRAL_CONFIANZA
+
 
 def cerrar_ws_al_salir(fn):
     """Cierra la sesión WebSocket aunque la escucha se cancele a mitad de frase."""

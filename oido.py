@@ -34,6 +34,7 @@ from oido_helpers import (
     barge_in as _barge_in,
     barge_in_habilitado as _barge_in_habilitado,
     cerrar_ws_al_salir,
+    debe_usar_whisper as _debe_usar_whisper,
     es_eco_prompt as _es_eco_prompt,
     motivo_descarte_transcripcion,
 )
@@ -314,9 +315,10 @@ class Oido:
         r = None
         t0 = time.time()
         dg = self._sesion_ws_actual.finalizar()
-        if dg and str(dg[0] or "").strip():
-            print("[oido] Deepgram streaming valido: sin Whisper", flush=True)
-        if dg:
+        usar_whisper = _debe_usar_whisper(dg)
+        if dg and not usar_whisper:
+            if str(dg[0] or "").strip():
+                print("[oido] Deepgram streaming valido: sin Whisper", flush=True)
             texto = dg[0]
         else:
             try:

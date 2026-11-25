@@ -59,12 +59,9 @@ def _es_cierre_limpio(exc):
     return "1000" in texto or "ConnectionClosedOK" in type(exc).__name__
 
 
-def _es_final(mensaje):
-    """True si Deepgram envió el resultado final del segmento."""
-    if not isinstance(mensaje, str):
-        return False
-    compacto = mensaje.replace(" ", "")
-    return '"FinalResults"' in compacto or '"is_final":true' in compacto
+def _es_finalize(mensaje):
+    """True si Deepgram cerró la transcripción tras recibir {"type": "Finalize"}."""
+    return isinstance(mensaje, str) and '"FinalResults"' in mensaje.replace(" ", "")
 
 
 def _texto_mensaje(mensaje):
@@ -86,6 +83,24 @@ def _texto_mensaje(mensaje):
     return ""
 
 
+def _confianza_mensaje(mensaje):
+    """Lee channel.alternatives[0].confidence del resultado final de Deepgram."""
+    try:
+        datos = json.loads(mensaje)
+    except Exception:
+        return None
+    if not (datos.get("type") == "FinalResults" or datos.get("is_final")):
+        return None
+    for canal in (datos.get("result") or {}).get("channels", []):
+        alternativas = canal.get("alternatives") or []
+        if alternativas:
+            try:
+                return float(alternativas[0].get("confidence"))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
 class SesionStreaming:
     """Sesión WS incremental con respaldo HTTP transparente."""
 
@@ -95,6 +110,7 @@ class SesionStreaming:
         self.activa = False
         self.chunks = []
         self.texto_final = ""
+        self.confianza = 1.0
         self.inicio = time.monotonic()
         self.fallo = None
 
@@ -130,6 +146,20 @@ class SesionStreaming:
             else:
                 print(f"[oido] WS cortado ({str(exc)[:80]}): usando HTTP al cerrar.", flush=True)
 
+    def _acumular_texto(self, texto):
+        """Ensambla los resultados finales sin repetir el texto ya recibido."""
+        texto = " ".join(str(texto or "").split())
+        if not texto:
+            return
+        if not self.texto_final:
+            self.texto_final = texto
+        elif texto in self.texto_final:
+            return
+        elif self.texto_final in texto:
+            self.texto_final = texto
+        else:
+            self.texto_final = f"{self.texto_final} {texto}"
+
     def _leer_resultados(self):
         fin = time.monotonic() + TIMEOUT_CIERRE
         while time.monotonic() < fin:
@@ -142,8 +172,11 @@ class SesionStreaming:
                 break
             texto = _texto_mensaje(mensaje)
             if texto:
-                self.texto_final = texto
-            if _es_final(mensaje):
+                self._acumular_texto(texto)
+                confianza = _confianza_mensaje(mensaje)
+                if confianza is not None:
+                    self.confianza = confianza
+            if _es_finalize(mensaje):
                 break
 
     def cerrar(self):
@@ -175,7 +208,7 @@ class SesionStreaming:
         if self.texto_final:
             ms = round((time.monotonic() - self.inicio) * 1000.0)
             print(f"[tiempo] clasico_stt={ms}ms (ws)", flush=True)
-            return self.texto_final, duracion
+            return self.texto_final, duracion, self.confianza
 
         print(f"[oido] WS sin transcripción: fallback HTTP "
               f"({len(self.chunks)} bloques de voz, {duracion:.2f}s).", flush=True)
@@ -201,11 +234,15 @@ class SesionStreaming:
             return None
         ms = round((time.monotonic() - t0) * 1000.0)
         print(f"[tiempo] clasico_stt={ms}ms (http)", flush=True)
-        return resultado
+        if not resultado:
+            return None
+        if len(resultado) >= 3:
+            return resultado
+        return resultado[0], resultado[1], 1.0
 
 
 def transcribir(chunks, clave=None):
-    """Atajo: stream de chunks ya capturados con fallback HTTP automático."""
+    """Atajo: stream de chunks ya capturados; devuelve (texto, duracion, confianza)."""
     sesion = SesionStreaming(clave=clave)
     sesion.iniciar()
     for chunk in chunks or ():

@@ -77,32 +77,18 @@ def adaptar_texto_fonetico(texto):
 
 
 def es_transcripcion_sospechosa(texto, confidence=1.0, duracion_seg=0.0):
-    """Detecta si una transcripción de Deepgram parece rota, inconexa o tiene baja confianza.
-    
-    Permite gatillar el respaldo de Groq Whisper antes de despachar.
+    """Solo marca una transcripción Deepgram como sospechosa si no hay texto
+    o la confianza es menor que 0.85.
+
+    La duración y las frases incompletas ya no fuerzan Whisper: el streaming
+    de Nova-3 resuelve esos casos sin el costo del respaldo (~2.5 s).
+    ``duracion_seg`` se conserva por compatibilidad de firma.
     """
     txt = str(texto or "").strip()
     if not txt:
         return True
-
-    # 1. Confianza numérica baja reportada por Deepgram
-    if confidence is not None and 0.0 < float(confidence) < 0.62:
-        return True
-
-    ps = txt.split()
-    conf = float(confidence) if confidence is not None else 1.0
-
-    # 2. Incoherencia de longitud: audio largo (> 3.5s) pero apenas 1-2 palabras transcritas.
-    # Si la confianza es alta (>= 0.92) y no tiene tokens anómalos, se preserva para evitar ~2.5s de Whisper.
-    if duracion_seg and duracion_seg >= 3.5 and len(ps) <= 2:
-        if conf >= 0.92 and not any(len(p) == 1 and p not in ("y", "o", "a", "e", "u") for p in ps):
-            pass
-        else:
-            return True
-
-    # 3. Preguntas rotas o truncadas que terminan en preposición / conector sin sentido
-    t_low = txt.lower().rstrip("?.!,:;")
-    if any(t_low.endswith(x) for x in (" en", " de", " mi", " por", " para", " con", " el", " la")):
-        return True
-
-    return False
+    try:
+        conf = 1.0 if confidence is None else float(confidence)
+    except (TypeError, ValueError):
+        conf = 1.0
+    return conf < 0.85

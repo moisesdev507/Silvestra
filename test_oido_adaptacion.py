@@ -40,19 +40,19 @@ class TestOidoAdaptacion(unittest.TestCase):
         self.assertIn("el estado de mi compu", salida.lower())
 
     def test_deteccion_transcripcion_sospechosa_y_respaldo_whisper(self):
-        """Verifica que es_transcripcion_sospechosa detecte baja confianza, audio largo con pocas palabras o cortes."""
-        # 1. Confianza numérica baja (< 0.62)
+        """Whisper solo se dispara por confianza < 0.85 (o por error de red)."""
         self.assertTrue(oido_adaptacion.es_transcripcion_sospechosa("revisa esto", confidence=0.45))
         self.assertFalse(oido_adaptacion.es_transcripcion_sospechosa("revisa esto", confidence=0.92))
 
-        # 2. Audio largo (> 3.5s) con solo 1-2 palabras (incoherente)
-        self.assertTrue(oido_adaptacion.es_transcripcion_sospechosa("hola", confidence=0.88, duracion_seg=4.2))
+        # La duración ya no fuerza el respaldo: 4.2s con confianza alta se acepta.
+        self.assertFalse(oido_adaptacion.es_transcripcion_sospechosa("hola", confidence=0.88, duracion_seg=4.2))
         self.assertFalse(oido_adaptacion.es_transcripcion_sospechosa("hola qué tal", confidence=0.88, duracion_seg=1.0))
 
-        # 3. Frase terminada en preposición o posesivo colgante
-        self.assertTrue(oido_adaptacion.es_transcripcion_sospechosa("revisa cómo está mi", confidence=0.95))
-        self.assertTrue(oido_adaptacion.es_transcripcion_sospechosa("estoy en", confidence=0.95))
+        # Las frases colgantes con confianza alta tampoco fuerzan Whisper.
+        self.assertFalse(oido_adaptacion.es_transcripcion_sospechosa("revisa cómo está mi", confidence=0.95))
+        self.assertFalse(oido_adaptacion.es_transcripcion_sospechosa("estoy en", confidence=0.95))
         self.assertFalse(oido_adaptacion.es_transcripcion_sospechosa("revisa mi computador", confidence=0.95))
+        self.assertTrue(oido_adaptacion.es_transcripcion_sospechosa("", confidence=0.95))
 
 
 if __name__ == "__main__":
