@@ -6,7 +6,7 @@ NOMBRE_OFICIAL = "Kaya"
 NOMBRE_LOWER = "kaya"
 
 # Keyterm priorizado para Deepgram Nova-3 y prompt base para Groq Whisper
-KEYTERM_DEEPGRAM = "Kaya:10,Kaia:6,Caya:5"
+KEYTERM_DEEPGRAM = "Kaya:5,Kaia:3,Caya:2"
 PROMPT_WHISPER = (
     "Conversación en español latinoamericano con la asistente Kaya. "
     "Órdenes comunes: Kaya, preséntate, baila, para de bailar, mira mi pantalla, "
@@ -119,6 +119,25 @@ def detectar_invocacion(texto):
             return True, p_norm, orden
 
     return False, "", ""
+
+
+# Palabras finales colgantes que evidencian una frase cortada o incompleta
+TERMINACIONES_TRUNCADAS = {
+    "mi", "tu", "su", "el", "la", "los", "las", "un", "una", "unos", "unas",
+    "de", "del", "en", "con", "por", "para", "a", "al", "que", "y", "o"
+}
+
+
+def es_frase_truncada(texto):
+    """Devuelve True si la frase termina abruptamente en posesivo, artículo o preposición."""
+    txt = str(texto or "").strip().rstrip(".?!,:;")
+    if not txt:
+        return False
+    ps = [p for p in re.split(r"[^\wáéíóúñü]+", txt.lower()) if p]
+    if not ps:
+        return False
+    ultima = normalizar_palabra(ps[-1])
+    return ultima in TERMINACIONES_TRUNCADAS
 
 
 def _extraer_orden(ps, indice):

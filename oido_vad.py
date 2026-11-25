@@ -19,7 +19,7 @@ class DetectorVozSilero:
         ruta_modelo=None,
         sample_rate=16000,
         threshold=0.40,
-        min_silence_duration=0.50,
+        min_silence_duration=0.85,
         min_speech_duration=0.20,
         max_speech_duration=15.0,
         buffer_size=20.0,

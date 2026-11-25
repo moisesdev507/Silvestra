@@ -107,9 +107,9 @@ def conectar(autorizar=False):
         guardar_token(creds)
     try:
         nuevos = {
-            "calendario": build("calendar", "v3", credentials=creds),
-            "gmail": build("gmail", "v1", credentials=creds),
-            "drive": build("drive", "v3", credentials=creds),
+            "calendario": build("calendar", "v3", credentials=creds, static_discovery=True),
+            "gmail": build("gmail", "v1", credentials=creds, static_discovery=True),
+            "drive": build("drive", "v3", credentials=creds, static_discovery=True),
         }
     except Exception as exc:
         return None, f"No se pudieron crear los servicios de Google ({type(exc).__name__})."

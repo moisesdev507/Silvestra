@@ -16,7 +16,27 @@ def invalidar_recuerdos():
         _cache_datos.clear()
 
 
-def obtener_contexto_rapido(consulta, extractor_fn, clave_tipo="mem_pers"):
+def ejecutar_con_limite_tiempo(extractor_fn, timeout_seg=0.25):
+    """Ejecuta una función en hilo daemon para evitar que bloquee el turno conversacional si se cuelga."""
+    caja = [None]
+    listo = threading.Event()
+
+    def _tarea():
+        try:
+            caja[0] = extractor_fn()
+        except Exception:
+            pass
+        finally:
+            listo.set()
+
+    hilo = threading.Thread(target=_tarea, daemon=True)
+    hilo.start()
+    if listo.wait(timeout=timeout_seg):
+        return caja[0]
+    return None
+
+
+def obtener_contexto_rapido(consulta, extractor_fn, clave_tipo="mem_pers", timeout_seg=0.35):
     """Devuelve resultado en caché si no ha expirado y no se han escrito recuerdos nuevos."""
     c_limpia = str(consulta or "").strip().lower()
     clave = (clave_tipo, c_limpia)
@@ -29,26 +49,24 @@ def obtener_contexto_rapido(consulta, extractor_fn, clave_tipo="mem_pers"):
             if ahora < exp and ver == _version_recuerdos:
                 return val
 
-    # Si no está o expiró, ejecuta extractor
-    resultado = extractor_fn()
-    with _bloqueo:
-        _cache_datos[clave] = (resultado, ahora + _TTL_SEGUNDOS, _version_recuerdos)
-        # Limpieza simple si la caché supera 120 elementos
-        if len(_cache_datos) > 120:
-            _cache_datos.pop(next(iter(_cache_datos)))
+    # Si no está o expiró, ejecuta extractor protegido por timeout
+    resultado = ejecutar_con_limite_tiempo(extractor_fn, timeout_seg=timeout_seg)
+    if resultado is not None:
+        with _bloqueo:
+            _cache_datos[clave] = (resultado, ahora + _TTL_SEGUNDOS, _version_recuerdos)
+            if len(_cache_datos) > 120:
+                _cache_datos.pop(next(iter(_cache_datos)))
 
-    return resultado
+    return resultado or ""
 
 
 def es_seguimiento_o_frase_corta(texto):
-    """Detecta frases de seguimiento o acuses cotidianos que no piden buscar en el pasado."""
+    """Detecta frases de seguimiento cotidianas que no piden buscar en el pasado ni alertas."""
     t = str(texto or "").strip().lower()
-    if not t or len(t) <= 28:
-        # Palabras que explícitamente piden indagar en memoria pasada o tareas
-        palabras_historia = (
-            "recuerda", "recuerdas", "guarda", "anota", "que sabes",
-            "que tengo", "cuando", "donde", "quien", "ayer", "semana pasada"
-        )
-        if not any(p in t for p in palabras_historia):
-            return True
+    if not t:
+        return True
+    # Frases conversacionales cortas que son meros acuses de recibo
+    acuses = {"ok", "vale", "listo", "gracias", "de acuerdo", "bien", "dale", "sipi", "nop"}
+    if t in acuses:
+        return True
     return False

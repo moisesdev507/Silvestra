@@ -39,6 +39,15 @@ class TestIdentidadKaya(unittest.TestCase):
             self.assertTrue(detectado, f"Fallo al detectar: {texto}")
             self.assertEqual(alias, alias_esperado, f"Alias incorrecto en: {texto}")
 
+    def test_deteccion_frase_truncada(self):
+        """Verifica que es_frase_truncada detecte palabras colgantes finales."""
+        self.assertTrue(identidad_kaya.es_frase_truncada("Kaya, revisa cómo está mi."))
+        self.assertTrue(identidad_kaya.es_frase_truncada("revisa el"))
+        self.assertTrue(identidad_kaya.es_frase_truncada("puedes abrir la"))
+        self.assertTrue(identidad_kaya.es_frase_truncada("esto es para"))
+        self.assertFalse(identidad_kaya.es_frase_truncada("Kaya qué hora es"))
+        self.assertFalse(identidad_kaya.es_frase_truncada("revisa cómo está mi computador"))
+
     def test_rechazo_falsos_positivos_calla_verbal(self):
         """Verifica que el uso verbal o sustantivo de 'calla' / 'calle' sea rechazado."""
         negativas = [
