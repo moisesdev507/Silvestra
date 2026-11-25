@@ -93,9 +93,9 @@ class SesionKayaLive:
                 try:
                     chunk = self.cola_audio_salida.get(timeout=0.1)
                 except queue.Empty:
+                    self.puerta.marcar_reproduccion(False)
                     if self._estado_actual == "hablando" and not self.compuerta.esta_en_ventana_eco():
                         self._notificar_estado("escuchando")
-                        self.puerta.notificar_actividad()
                     continue
 
                 if not chunk:
@@ -113,7 +113,6 @@ class SesionKayaLive:
                     print(f"[LIVE][AUDIO] Error salida: {err}", flush=True)
                 finally:
                     self.compuerta.marcar_fin_escritura()
-                    self.puerta.marcar_reproduccion(False)
         finally:
             self._stream_salida = live_audio.cerrar_stream(self._stream_salida)
 
@@ -121,10 +120,13 @@ class SesionKayaLive:
         while self.activo:
             try:
                 data = await asyncio.to_thread(self.cola_audio_entrada.get, timeout=0.1)
-                if data:
-                    await session.send_realtime_input(
-                        audio=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
-                    )
+                if not data:
+                    continue
+                if self.puerta.reproduciendo or self.compuerta.esta_en_ventana_eco():
+                    continue  # anti-self-barge-in: nunca enviar eco de Kaya
+                await session.send_realtime_input(
+                    audio=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
+                )
             except queue.Empty:
                 await asyncio.sleep(0.01)
             except Exception as e:
@@ -211,6 +213,7 @@ class SesionKayaLive:
                         tc = resp.tool_call
                         if tc:
                             self._notificar_estado("pensando")
+                            self.puerta.notificar_actividad()
                             for call in tc.function_calls:
                                 res_call = await live_herramientas.despachar_herramienta_asincrona(call.name, call.args)
                                 resp_tool = types.LiveClientToolResponse(function_responses=[types.FunctionResponse(name=call.name, id=call.id, response={"result": res_call})])

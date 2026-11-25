@@ -1,6 +1,6 @@
 """Módulo de audio PCM, compuerta anti-eco half-duplex y configuración para Gemini Live.
 
-Implementa la ventana de cola antieco (~320 ms) para parlantes, asegurando
+Implementa la ventana de cola antieco (~350 ms) para parlantes, asegurando
 que la salida de audio nunca interrumpa a Kaya a mitad de frase.
 """
 import asyncio
@@ -79,7 +79,7 @@ class CompuertaAntiEco:
 
         if eco_cola_ms is None:
             try:
-                self.eco_cola_ms = float(os.environ.get("KAYA_ECO_COLA_MS", "250"))
+                self.eco_cola_ms = float(os.environ.get("KAYA_ECO_COLA_MS", "350"))
             except Exception:
                 self.eco_cola_ms = 250.0
         else:

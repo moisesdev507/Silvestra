@@ -99,6 +99,68 @@ class TestPuertaAudioLive(unittest.TestCase):
         self.assertEqual(gate.procesar(pcm(False))[0], [])  # cola cerrada
         self.assertFalse(gate.abierta)
 
+    def test_eco_bloqueado_durante_reproduccion_y_margen(self):
+        reloj = Reloj(2000.0)
+        gate = puerta_audio_live.PuertaAudioLive(reloj=reloj)
+        gate.activar()
+        cola = queue.Queue()
+        gate.marcar_reproduccion(True)
+        t_actividad = gate.ultima_actividad
+        reloj.avanzar(0.1)
+        autorizados, habla = gate.procesar(pcm(True))
+        self.assertEqual(autorizados, [])
+        self.assertFalse(habla)
+        self.assertEqual(gate.frames_enviados, 0)
+        self.assertEqual(gate.ultima_actividad, t_actividad)
+        self.assertFalse(puerta_audio_live.encolar_autorizados(gate, pcm(True), cola))
+        self.assertTrue(cola.empty())
+
+        gate.marcar_reproduccion(False)  # el buffer de salida se vació
+        reloj.avanzar(0.2)  # aún dentro del margen acústico de 350 ms
+        self.assertEqual(gate.procesar(pcm(True))[0], [])
+        self.assertTrue(gate.reproduciendo)
+
+        reloj.avanzar(0.2)  # pasado el margen: la voz real sí se procesa
+        autorizados, habla = gate.procesar(pcm(True))
+        self.assertTrue(habla)
+        self.assertTrue(autorizados)
+
+    def test_inactividad_pausada_y_reinicia_al_terminar_reproduccion(self):
+        reloj = Reloj(3000.0)
+        gate = puerta_audio_live.PuertaAudioLive(timeout_silencio=12.0, reloj=reloj)
+        gate.activar()
+        gate.marcar_reproduccion(True)
+        reloj.avanzar(100.0)
+        self.assertFalse(gate.debe_cerrar())  # pausado mientras Kaya habla
+
+        gate.marcar_reproduccion(False)
+        reloj.avanzar(0.35)  # termina el margen acústico
+        self.assertFalse(gate.debe_cerrar())
+        reloj.avanzar(11.9)  # cuenta desde 0 al terminar de sonar
+        self.assertFalse(gate.debe_cerrar())
+        reloj.avanzar(0.2)
+        self.assertTrue(gate.debe_cerrar())
+
+    def test_compuerta_eco_350ms_y_callback_no_envia(self):
+        q_salida = queue.Queue()
+        compuerta = live_audio.CompuertaAntiEco(modo_audifonos=False, cola_salida=q_salida)
+        self.assertFalse(compuerta.esta_en_ventana_eco())
+        compuerta.marcar_inicio_escritura()
+        self.assertTrue(compuerta.esta_en_ventana_eco())
+        compuerta.marcar_fin_escritura()
+        self.assertTrue(compuerta.esta_en_ventana_eco())  # cola acústica
+        _, silenciado = compuerta.filtrar_chunk_entrada(pcm(True))
+        self.assertTrue(silenciado)
+
+        sesion = live_motor.SesionKayaLive()
+        sesion.activo = True
+        sesion.puerta.activar()
+        sesion.puerta.marcar_reproduccion(True)
+        sesion._rate_entrada = live_audio.RATE_ENTRADA
+        sesion._callback_audio_in(pcm(True), 800, None, None)
+        self.assertTrue(sesion.cola_audio_entrada.empty())
+        self.assertEqual(sesion.puerta.frames_enviados, 0)
+
     def test_timeout_cierra_stream_y_websocket_sin_tokens(self):
         streams, cierre_auto, cierre_ws = [], [], []
         sesion = live_motor.SesionKayaLive(
