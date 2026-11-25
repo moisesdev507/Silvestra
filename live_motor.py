@@ -1,0 +1,324 @@
+"""Motor de sesión interactiva de Gemini Live para Silvestra.
+
+Maneja la conexión WebSocket con google-genai, compuerta anti-eco, watchdog
+de silencio de 9 segundos y disyuntor automático por cuota (429/RESOURCE_EXHAUSTED).
+"""
+import asyncio
+import os
+import queue
+import threading
+import time
+from typing import Any, Callable, Optional
+import sounddevice as sd
+from google import genai
+from google.genai import types
+
+import live_audio
+import live_herramientas
+
+MODELO_DEFECTO = "gemini-2.5-flash-native-audio-latest"
+VOZ_DEFECTO = "Achernar"
+
+# Disyuntor global de cuota para Gemini Live (15 minutos de enfriamiento)
+_DISYUNTOR_HASTA = 0.0
+_LOCK_DISYUNTOR = threading.RLock()
+
+
+def es_error_cuota(exc: Exception) -> bool:
+    """Detecta si una excepción corresponde a cuota agotada (429 o RESOURCE_EXHAUSTED)."""
+    if exc is None:
+        return False
+    texto = str(exc).lower()
+    return "429" in texto or "resource_exhausted" in texto or "quota" in texto
+
+
+def esta_en_enfriamiento_cuota() -> bool:
+    with _LOCK_DISYUNTOR:
+        return time.monotonic() < _DISYUNTOR_HASTA
+
+
+def activar_enfriamiento_cuota(minutos: float = 15.0):
+    global _DISYUNTOR_HASTA
+    with _LOCK_DISYUNTOR:
+        _DISYUNTOR_HASTA = time.monotonic() + (minutos * 60.0)
+    print(f"[LIVE] Disyuntor de cuota activado por {minutos:.0f} minutos. Conmutando a modo clásico.", flush=True)
+
+
+class SesionKayaLive:
+    """Ciclo de vida asíncrono de una sesión interactiva de Gemini Live."""
+
+    def __init__(
+        self,
+        modelo: str = MODELO_DEFECTO,
+        voz: str = VOZ_DEFECTO,
+        timeout_silencio: float = live_audio.TIMEOUT_SILENCIO_DEFECTO,
+        on_estado: Optional[Callable[[str], None]] = None,
+        on_nivel_voz: Optional[Callable[[float], None]] = None,
+        on_transcripcion: Optional[Callable[[str, str], None]] = None,
+        on_cierre_automatico: Optional[Callable[[], None]] = None,
+    ):
+        self.modelo = modelo
+        self.voz = voz
+        self.timeout_silencio = timeout_silencio
+        self.on_estado = on_estado
+        self.on_nivel_voz = on_nivel_voz
+        self.on_transcripcion = on_transcripcion
+        self.on_cierre_automatico = on_cierre_automatico
+
+        self.cola_audio_entrada: queue.Queue = queue.Queue(maxsize=live_audio.MAX_COLA_ENTRADA)
+        self.cola_audio_salida: queue.Queue = queue.Queue()
+        self.compuerta = live_audio.CompuertaAntiEco(cola_salida=self.cola_audio_salida)
+
+        self.activo = False
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._hilo_loop: Optional[threading.Thread] = None
+        self._hilo_salida: Optional[threading.Thread] = None
+        self._stream_entrada: Optional[sd.InputStream] = None
+        self._stream_salida: Optional[sd.OutputStream] = None
+
+        self._t_ultima_voz = time.monotonic()
+        self._estado_actual = "reposo"
+        self._candado = threading.RLock()
+
+    def _notificar_estado(self, estado: str):
+        with self._candado:
+            self._estado_actual = estado
+        if callable(self.on_estado):
+            try:
+                self.on_estado(estado)
+            except Exception:
+                pass
+
+    def _notificar_nivel(self, nivel: float):
+        if callable(self.on_nivel_voz):
+            try:
+                self.on_nivel_voz(nivel)
+            except Exception:
+                pass
+
+    def _notificar_texto(self, rol: str, texto: str):
+        if callable(self.on_transcripcion):
+            try:
+                self.on_transcripcion(rol, texto)
+            except Exception:
+                pass
+
+    def _callback_audio_in(self, indata, frames, time_info, status):
+        if not self.activo:
+            return
+        pcm = bytes(indata)
+        chunk_filtrado, silenciado = self.compuerta.filtrar_chunk_entrada(pcm)
+        if not silenciado:
+            energia = live_audio.calcular_energia_pcm16(chunk_filtrado)
+            if energia > 0.05:
+                self._t_ultima_voz = time.monotonic()
+                if self._estado_actual != "hablando":
+                    self._notificar_estado("escuchando")
+                self._notificar_nivel(energia)
+        try:
+            self.cola_audio_entrada.put_nowait(chunk_filtrado)
+        except queue.Full:
+            pass
+
+    def _bucle_reproduccion_salida(self):
+        """Hilo dedicado a reproducir chunks PCM a 24kHz en los parlantes."""
+        try:
+            self._stream_salida = sd.OutputStream(
+                samplerate=live_audio.RATE_SALIDA,
+                channels=live_audio.CHANNELS,
+                dtype="int16",
+            )
+            self._stream_salida.start()
+        except Exception as e:
+            print(f"[LIVE][AUDIO] Error iniciando stream salida: {e}", flush=True)
+            return
+
+        while self.activo:
+            try:
+                chunk = self.cola_audio_salida.get(timeout=0.1)
+            except queue.Empty:
+                if self._estado_actual == "hablando" and not self.compuerta.esta_en_ventana_eco():
+                    self._notificar_estado("escuchando")
+                continue
+
+            if not chunk:
+                continue
+
+            self._notificar_estado("hablando")
+            energia = live_audio.calcular_energia_pcm16(chunk)
+            self._notificar_nivel(energia)
+
+            self.compuerta.marcar_inicio_escritura()
+            try:
+                self._stream_salida.write(chunk)
+            except Exception:
+                pass
+            finally:
+                self.compuerta.marcar_fin_escritura()
+
+        if self._stream_salida:
+            try:
+                self._stream_salida.stop()
+                self._stream_salida.close()
+            except Exception:
+                pass
+
+    async def _tarea_envio_audio(self, session):
+        while self.activo:
+            try:
+                data = await asyncio.to_thread(self.cola_audio_entrada.get, timeout=0.1)
+                if data:
+                    await session.send(input={"data": data, "mime_type": "audio/pcm;rate=16000"})
+            except queue.Empty:
+                await asyncio.sleep(0.01)
+            except Exception:
+                break
+
+    async def _tarea_watchdog(self):
+        """Cierra sesión si pasan timeout_silencio segundos (9s) sin voz."""
+        while self.activo:
+            await asyncio.sleep(0.5)
+            if self._estado_actual == "hablando":
+                self._t_ultima_voz = time.monotonic()
+                continue
+            silencio = time.monotonic() - self._t_ultima_voz
+            if silencio >= self.timeout_silencio:
+                print(f"[LIVE] Watchdog de silencio ({self.timeout_silencio:.1f}s) alcanzado. Cerrando sesión.", flush=True)
+                self.detener()
+                if callable(self.on_cierre_automatico):
+                    try:
+                        self.on_cierre_automatico()
+                    except Exception:
+                        pass
+                break
+
+    async def _ejecutar_sesion(self):
+        api_key = live_audio.obtener_api_key()
+        if not api_key:
+            raise RuntimeError("GEMINI_API_KEY no configurada")
+
+        client = genai.Client(api_key=api_key, http_options={"api_version": "v1alpha"})
+        cfg = types.LiveConnectConfig(
+            response_modalities=["AUDIO"],
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=self.voz))
+            ),
+            system_instruction=types.Content(parts=[types.Part.from_text(text=live_audio.construir_instruccion_sistema())]),
+            tools=live_herramientas.declarar_declaraciones_herramientas(),
+            realtime_input_config=types.RealtimeInputConfig(
+                automatic_activity_detection=types.AutomaticActivityDetection(silence_duration_ms=700)
+            ),
+        )
+
+        self._notificar_estado("conectando")
+        live_herramientas.registrar_callback_reposo(self.detener)
+
+        async with client.aio.live.connect(model=self.modelo, config=cfg) as session:
+            self._notificar_estado("escuchando")
+            self._t_ultima_voz = time.monotonic()
+
+            tarea_audio = asyncio.create_task(self._tarea_envio_audio(session))
+            tarea_dog = asyncio.create_task(self._tarea_watchdog())
+
+            try:
+                async for resp in session.receive():
+                    if not self.activo:
+                        break
+
+                    sc = resp.server_content
+                    if sc:
+                        if getattr(sc, "interrupted", False):
+                            with self.cola_audio_salida.mutex:
+                                self.cola_audio_salida.queue.clear()
+                            self._notificar_estado("escuchando")
+
+                        mt = sc.model_turn
+                        if mt:
+                            for part in mt.parts:
+                                if getattr(part, "inline_data", None) and part.inline_data.data:
+                                    self.compuerta.marcar_encolado_salida()
+                                    self.cola_audio_salida.put(part.inline_data.data)
+                                if getattr(part, "text", None):
+                                    self._notificar_texto("kaya", part.text)
+
+                    tc = resp.tool_call
+                    if tc:
+                        self._notificar_estado("pensando")
+                        for call in tc.function_calls:
+                            res_call = await live_herramientas.despachar_herramienta_asincrona(call.name, call.args)
+                            await session.send(
+                                input=types.LiveClientToolResponse(
+                                    function_responses=[
+                                        types.FunctionResponse(name=call.name, id=call.id, response={"result": res_call})
+                                    ]
+                                )
+                            )
+            finally:
+                tarea_audio.cancel()
+                tarea_dog.cancel()
+
+    def iniciar(self) -> bool:
+        """Inicia la sesión Live en un hilo independiente."""
+        if esta_en_enfriamiento_cuota():
+            print("[LIVE] Enfriamiento de cuota activo. Omitiendo arranque de Live.", flush=True)
+            return False
+
+        if self.activo:
+            return True
+
+        self.activo = True
+        self.compuerta.registrar_info_inicio()
+
+        try:
+            self._stream_entrada = sd.InputStream(
+                samplerate=live_audio.RATE_ENTRADA,
+                channels=live_audio.CHANNELS,
+                dtype="int16",
+                blocksize=int(live_audio.RATE_ENTRADA * (live_audio.CHUNK_ENTRADA_MS / 1000.0)),
+                callback=self._callback_audio_in,
+            )
+            self._stream_entrada.start()
+        except Exception as e:
+            print(f"[LIVE][AUDIO] Error iniciando micrófono: {e}", flush=True)
+            self.detener()
+            return False
+
+        self._hilo_salida = threading.Thread(target=self._bucle_reproduccion_salida, daemon=True, name="live-audio-out")
+        self._hilo_salida.start()
+
+        def _correr_loop():
+            self._loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self._loop)
+            try:
+                self._loop.run_until_complete(self._ejecutar_sesion())
+            except Exception as e:
+                if es_error_cuota(e):
+                    activar_enfriamiento_cuota(15.0)
+                print(f"[LIVE] Sesión finalizada o error: {e}", flush=True)
+            finally:
+                self.detener()
+
+        self._hilo_loop = threading.Thread(target=_correr_loop, daemon=True, name="live-ws-loop")
+        self._hilo_loop.start()
+        return True
+
+    def detener(self):
+        """Detiene limpiamente la sesión y libera streams."""
+        if not self.activo:
+            return
+        self.activo = False
+        self._notificar_estado("reposo")
+
+        if self._stream_entrada:
+            try:
+                self._stream_entrada.stop()
+                self._stream_entrada.close()
+            except Exception:
+                pass
+            self._stream_entrada = None
+
+        if self._loop and self._loop.is_running():
+            try:
+                self._loop.call_soon_threadsafe(self._loop.stop)
+            except Exception:
+                pass

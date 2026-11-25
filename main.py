@@ -188,6 +188,14 @@ class Silvestra:
 
         self.cara.root.after(100, self.revisar_cola)
 
+        # Coordinador Gemini Live unificado dentro de la aplicación principal
+        self.coordinador_live = None
+        try:
+            import live_orquestador
+            self.coordinador_live = live_orquestador.CoordinadorLiveSilvestra(self)
+        except Exception as e:
+            print(f"[main] Coordinador Live no disponible: {e}", flush=True)
+
         if self.memoria.nombre:
             self.cara.root.after(500, self.saludar)
         else:
@@ -204,6 +212,10 @@ class Silvestra:
             self.cara.fijar_emocion(emo)
         self.cara.decir(texto, ms, emocion=emo)
         if con_voz:
+            cl = getattr(self, "coordinador_live", None)
+            if cl and cl.esta_live_activo():
+                # En modo Live, el audio sale exclusivamente por Gemini Live (Achernar)
+                return
             self.ultimo_dicho = texto
             try:
                 import naturalidad
@@ -263,6 +275,12 @@ class Silvestra:
         conversacion.abrir_chat(self)
 
     def enviar(self, texto):
+        # Si Gemini Live está disponible y no está en enfriamiento de cuota, activar sesión Live
+        cl = getattr(self, "coordinador_live", None)
+        if cl and not cl.esta_live_activo():
+            if cl.intentar_activar_live(texto):
+                return
+
         if hasattr(self, "propuestas") and self.propuestas:
             try:
                 self.propuestas.detectar_desde_correccion(texto)
@@ -329,6 +347,11 @@ class Silvestra:
             self.casa.reloj.stop()
         except Exception:
             pass
+        if getattr(self, "coordinador_live", None):
+            try:
+                self.coordinador_live.cerrar()
+            except Exception:
+                pass
         for objeto, metodo, args in (
             (getattr(self, "palabra_clave", None), "detener", ()),
             (getattr(self, "invocacion", None), "detener", ()),
