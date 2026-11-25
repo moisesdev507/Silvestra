@@ -117,6 +117,18 @@ class CoordinadorLiveSilvestra:
             self.sesion_live = None
         self._reanudar_captura_local()
 
+    def precalentar_en_paralelo(self):
+        """Inicia la sesión Live en fondo de inmediato mientras cara_qt termina de dibujar."""
+        if not self.es_modo_principal() or live_motor.esta_en_enfriamiento_cuota():
+            return
+        def _arranque_fondo():
+            with self._bloqueo:
+                if self.sesion_live and self.sesion_live.activo:
+                    return
+                print("[COORDINADOR] Pre-calentando sesión Gemini Live en paralelo...", flush=True)
+                self.intentar_activar_live("¡Hola Kaya! Ya encendió el equipo, saluda breve.")
+        threading.Thread(target=_arranque_fondo, daemon=True, name="live-precalentar").start()
+
     def intentar_activar_live(self, orden_inicial: str = "") -> bool:
         """Intenta activar Gemini Live al detectar invocación. Devuelve True si Live tomó el turno."""
         if not self.modo_live_habilitado or self.modo_voz_configurado() == "clasico" or live_motor.esta_en_enfriamiento_cuota():

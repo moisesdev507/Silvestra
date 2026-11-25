@@ -191,7 +191,7 @@ class SesionKayaLive:
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=self.voz))
             ),
-            system_instruction=types.Content(parts=[types.Part.from_text(text=live_audio.construir_instruccion_sistema())]),
+            system_instruction=types.Content(parts=[types.Part.from_text(text=live_audio.construir_instruccion_sistema(rapido=bool(self.orden_inicial and "enciende" in self.orden_inicial or "encendió" in self.orden_inicial)))]),
             tools=live_herramientas.declarar_declaraciones_herramientas(),
             realtime_input_config=types.RealtimeInputConfig(
                 automatic_activity_detection=types.AutomaticActivityDetection(silence_duration_ms=700)
@@ -246,6 +246,7 @@ class SesionKayaLive:
                             if mt:
                                 for part in mt.parts:
                                     if getattr(part, "inline_data", None) and part.inline_data.data:
+                                        live_audio.registrar_tiempo_primera_voz()
                                         self.compuerta.marcar_encolado_salida()
                                         self.cola_audio_salida.put(part.inline_data.data)
                                     if getattr(part, "text", None):

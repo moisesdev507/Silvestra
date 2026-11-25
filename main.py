@@ -193,6 +193,9 @@ class Silvestra:
         try:
             import live_orquestador
             self.coordinador_live = live_orquestador.CoordinadorLiveSilvestra(self)
+            # Precalentamiento paralelo inmediato para saludo rápido
+            if self.coordinador_live.es_modo_principal():
+                self.cara.root.after(50, self.coordinador_live.precalentar_en_paralelo)
         except Exception as e:
             print(f"[main] Coordinador Live no disponible: {e}", flush=True)
 

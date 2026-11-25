@@ -230,8 +230,37 @@ def obtener_hora_local_breve() -> str:
         return ""
 
 
-def construir_instruccion_sistema() -> str:
+T_INICIO_PROCESO = time.time()
+_PRIMERA_VOZ_REGISTRADA = False
+_LOCK_TELEMETRIA_ARRANQUE = threading.RLock()
+
+
+def registrar_tiempo_primera_voz():
+    """Registra en silvestra.log el tiempo desde el arranque hasta el primer chunk de audio de bienvenida."""
+    global _PRIMERA_VOZ_REGISTRADA
+    with _LOCK_TELEMETRIA_ARRANQUE:
+        if _PRIMERA_VOZ_REGISTRADA:
+            return
+        _PRIMERA_VOZ_REGISTRADA = True
+        ms = round((time.time() - T_INICIO_PROCESO) * 1000.0)
+        print(f"[tiempo] arranque_primera_voz={ms}ms", flush=True)
+
+
+def construir_instruccion_arranque_rapido() -> str:
+    """Prompt ultracompacto para el primer saludo sin recuerdos pesados."""
+    hora_str = obtener_hora_local_breve()
+    ctx_h = f" {hora_str}" if hora_str else ""
+    return (
+        "Eres Kaya, compañera y asistente personal de Moisés en Panamá. "
+        "Femenina, cálida, ingeniosa, leal y afectuosa. Hablas en español de Panamá con respuestas breves de 1 frase."
+        f"{ctx_h} Saluda alegremente a Moisés en tu primer turno confirmando que estás lista."
+    )
+
+
+def construir_instruccion_sistema(rapido: bool = False) -> str:
     """Carga alma.txt, contexto de tiempo y guía vocal en Panamá."""
+    if rapido:
+        return construir_instruccion_arranque_rapido()
     base = (
         "Eres Kaya, compañera y asistente personal creada por tu amigo Moisés en Panamá. "
         "Moisés es tu creador y amigo; sé leal, femenina, cálida, honesta, curiosa, ingeniosa y afectuosa. "

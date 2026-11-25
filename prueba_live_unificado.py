@@ -193,6 +193,26 @@ class TestGeminiLiveUnificado(unittest.TestCase):
         coordinador.actualizar_modo_voz("gemini_live")
         self.assertTrue(coordinador.es_modo_principal())
 
+    def test_precalentamiento_paralelo_y_prompt_rapido(self):
+        # 1. Prompt rápido ultracompacto para el primer saludo
+        prompt_rapido = live_audio.construir_instruccion_arranque_rapido()
+        self.assertIn("Kaya", prompt_rapido)
+        self.assertLess(len(prompt_rapido), 400)
+
+        # 2. Telemetría de primera voz
+        live_audio._PRIMERA_VOZ_REGISTRADA = False
+        live_audio.registrar_tiempo_primera_voz()
+        self.assertTrue(live_audio._PRIMERA_VOZ_REGISTRADA)
+
+        # 3. Pre-calentamiento en paralelo en Coordinador
+        app_mock = MagicMock()
+        coordinador = live_orquestador.CoordinadorLiveSilvestra(app_mock)
+        coordinador.modo_live_habilitado = True
+        with patch.object(coordinador, "intentar_activar_live") as mock_activar:
+            coordinador.precalentar_en_paralelo()
+            time.sleep(0.08)
+            mock_activar.assert_called_once()
+
     def test_ciclo_completo_audio_habla_desbloqueo_y_captura_remuestreada(self):
         import struct
         from google.genai import types
