@@ -62,16 +62,20 @@ def construir_instruccion_sistema():
         "\n\n[Guía de actuación vocal]\n"
         "- Hablas en español latinoamericano suave, cálido y cercano con acento panameño natural.\n"
         "- Tu ritmo es ágil y fluido. Responde en 1 a 3 frases concisas para evitar monólogos.\n"
-        "- Si ejecutas una herramienta, confirma brevemente lo encontrado sin rodeos."
+        "- Si ejecutas una herramienta, confirma brevemente lo encontrado sin rodeos con tu propia voz."
     )
 
     memoria_txt = ""
     try:
-        import iniciativa_kaya
-        res = iniciativa_kaya.resumen_compacto_temas()
-        if res:
-            memoria_txt = f"\n\n[Temas abiertos en memoria]:\n{res}"
+        import kaya_live_puente
+        memoria_txt = kaya_live_puente.cargar_contexto_memoria_live()
     except Exception:
-        pass
+        try:
+            import iniciativa_kaya
+            res = iniciativa_kaya.resumen_compacto_temas()
+            if res:
+                memoria_txt = f"\n\n[Temas abiertos en memoria]:\n{res}"
+        except Exception:
+            pass
 
     return base + guia_vocal + memoria_txt

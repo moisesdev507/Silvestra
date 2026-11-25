@@ -8,7 +8,7 @@ import queue
 import threading
 import time
 import traceback
-from typing import Any, Callable, Optional
+from typing import Any, Callable, List, Optional
 import sounddevice as sd
 from google.genai import types
 
@@ -25,6 +25,7 @@ from kaya_live_audio import (
     TIMEOUT_SILENCIO_DEFECTO,
 )
 import kaya_live_conexion
+import kaya_live_puente
 import kaya_live_tools
 
 MODELO_DEFECTO = "gemini-2.5-flash-native-audio-latest"
@@ -67,6 +68,8 @@ class SesionKayaLive:
         self._loop = None
         self._pausado = False
         self._estado_actual = "reposo"
+        self._historial_turnos: List[dict] = []
+        self._bloqueo_turnos = threading.RLock()
 
     def _notificar_estado(self, nuevo_estado: str):
         self._estado_actual = nuevo_estado
@@ -75,8 +78,15 @@ class SesionKayaLive:
                 self.on_estado(nuevo_estado)
             except Exception:
                 pass
+        if nuevo_estado in ("reposo", "error"):
+            self._guardar_memoria_persistente()
 
     def _notificar_transcripcion(self, rol: str, texto: str):
+        t = str(texto or "").strip()
+        if t:
+            with self._bloqueo_turnos:
+                self._historial_turnos.append({"role": rol, "content": t})
+
         if self.on_transcripcion:
             try:
                 self.on_transcripcion(rol, texto)
@@ -99,6 +109,12 @@ class SesionKayaLive:
                 self.on_nivel_voz(nivel)
             except Exception:
                 pass
+
+    def _guardar_memoria_persistente(self):
+        with self._bloqueo_turnos:
+            turnos_copia = list(self._historial_turnos)
+        if turnos_copia:
+            kaya_live_puente.guardar_turno_o_resumen_memoria(turnos_copia)
 
     def pausar(self):
         """Pausa temporalmente la captura/envío de audio sin cerrar sesión."""
@@ -287,6 +303,7 @@ class SesionKayaLive:
 
     def detener(self):
         """Detiene de forma limpia y ordenada la sesión Live."""
+        self._guardar_memoria_persistente()
         self._evento_parada.set()
         if self._evento_parada_async:
             self._evento_parada_async.set()
