@@ -1,24 +1,12 @@
-"""Motor de sesión interactiva de Gemini Live para Silvestra."""
-import asyncio
-import os
-import queue
-import threading
-import time
+"""Motor interactivo Gemini Live para Silvestra."""
+import asyncio, queue, threading, time
 from typing import Any, Callable, Optional
-import sounddevice as sd
 from google import genai
 from google.genai import types
-import live_audio
-import live_herramientas
+import live_audio, live_herramientas
 
-MODELO_DEFECTO = "gemini-2.5-flash-native-audio-latest"
-VOZ_DEFECTO = "Achernar"
-
-from live_audio import (
-    _DISYUNTOR_HASTA, _LOCK_DISYUNTOR, activar_enfriamiento_cuota,
-    es_error_cuota, esta_en_enfriamiento_cuota,
-)
-
+MODELO_DEFECTO, VOZ_DEFECTO = "gemini-2.5-flash-native-audio-latest", "Achernar"
+from live_audio import activar_enfriamiento_cuota, es_error_cuota, esta_en_enfriamiento_cuota
 
 class SesionKayaLive:
     def __init__(
@@ -33,7 +21,8 @@ class SesionKayaLive:
         orden_inicial: str = "",
     ):
         self.modelo, self.voz = modelo, voz
-        self.timeout_silencio = timeout_silencio
+        t_sil = float(timeout_silencio or live_audio.TIMEOUT_SILENCIO_DEFECTO)
+        self.timeout_silencio = t_sil if t_sil >= 2.0 else live_audio.TIMEOUT_SILENCIO_DEFECTO
         self.on_estado, self.on_nivel_voz = on_estado, on_nivel_voz
         self.on_transcripcion, self.on_cierre_automatico = on_transcripcion, on_cierre_automatico
         self.orden_inicial = orden_inicial
@@ -49,7 +38,6 @@ class SesionKayaLive:
         self._rate_entrada = live_audio.RATE_ENTRADA
         self._t_ultimo_log_voz = 0.0
         self._en_rafaga_voz = False
-
         self._t_ultima_voz = time.monotonic()
         self._estado_actual = "reposo"
         self._candado = threading.RLock()
@@ -92,7 +80,7 @@ class SesionKayaLive:
                     self._notificar_estado("escuchando")
                 self._notificar_nivel(energia)
                 ahora = time.monotonic()
-                if not getattr(self, "_en_rafaga_voz", False) or (ahora - getattr(self, "_t_ultimo_log_voz", 0.0) >= 1.2):
+                if not getattr(self, "_en_rafaga_voz", False) or (ahora - getattr(self, "_t_ultimo_log_voz", 0.0) >= 1.5):
                     self._en_rafaga_voz = True
                     self._t_ultimo_log_voz = ahora
                     print(f"[LIVE][AUDIO] Voz detectada (rms={rms:.1f}, nivel={energia:.2f}).", flush=True)
@@ -104,49 +92,39 @@ class SesionKayaLive:
             pass
 
     def _bucle_reproduccion_salida(self):
-        """Hilo dedicado a reproducir chunks PCM a 24kHz en los parlantes."""
         try:
-            self._stream_salida = sd.OutputStream(
-                samplerate=live_audio.RATE_SALIDA,
-                channels=live_audio.CHANNELS,
-                dtype="int16",
-            )
-            self._stream_salida.start()
+            self._stream_salida = live_audio.crear_output_stream()
         except Exception as e:
             print(f"[LIVE][AUDIO] Error iniciando stream salida: {e}", flush=True)
             return
 
-        while self.activo:
-            try:
-                chunk = self.cola_audio_salida.get(timeout=0.1)
-            except queue.Empty:
-                if self._estado_actual == "hablando" and not self.compuerta.esta_en_ventana_eco():
-                    self._notificar_estado("escuchando")
-                    self._t_ultima_voz = time.monotonic()
-                continue
+        try:
+            while self.activo:
+                try:
+                    chunk = self.cola_audio_salida.get(timeout=0.1)
+                except queue.Empty:
+                    if self._estado_actual == "hablando" and not self.compuerta.esta_en_ventana_eco():
+                        self._notificar_estado("escuchando")
+                        self._t_ultima_voz = time.monotonic()
+                    continue
 
-            if not chunk:
-                continue
+                if not chunk:
+                    continue
 
-            self._notificar_estado("hablando")
-            energia = live_audio.calcular_energia_pcm16(chunk)
-            self._notificar_nivel(energia)
+                self._notificar_estado("hablando")
+                energia = live_audio.calcular_energia_pcm16(chunk)
+                self._notificar_nivel(energia)
 
-            self.compuerta.marcar_inicio_escritura()
-            try:
-                import numpy as np
-                self._stream_salida.write(np.frombuffer(chunk, dtype=np.int16))
-            except Exception as err:
-                print(f"[LIVE][AUDIO] Error salida: {err}", flush=True)
-            finally:
-                self.compuerta.marcar_fin_escritura()
-
-        if self._stream_salida:
-            try:
-                self._stream_salida.stop()
-                self._stream_salida.close()
-            except Exception:
-                pass
+                self.compuerta.marcar_inicio_escritura()
+                try:
+                    import numpy as np
+                    self._stream_salida.write(np.frombuffer(chunk, dtype=np.int16))
+                except Exception as err:
+                    print(f"[LIVE][AUDIO] Error salida: {err}", flush=True)
+                finally:
+                    self.compuerta.marcar_fin_escritura()
+        finally:
+            self._stream_salida = live_audio.cerrar_stream(self._stream_salida)
 
     async def _tarea_envio_audio(self, session):
         while self.activo:
@@ -154,7 +132,7 @@ class SesionKayaLive:
                 data = await asyncio.to_thread(self.cola_audio_entrada.get, timeout=0.1)
                 if data:
                     await session.send_realtime_input(
-                        media=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
+                        audio=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
                     )
             except queue.Empty:
                 await asyncio.sleep(0.01)
@@ -163,7 +141,6 @@ class SesionKayaLive:
                 break
 
     async def _tarea_watchdog(self):
-        """Cierra sesión si pasan timeout_silencio segundos (9s) sin voz."""
         while self.activo:
             await asyncio.sleep(0.5)
             if self._estado_actual == "hablando":
@@ -183,15 +160,14 @@ class SesionKayaLive:
     async def _ejecutar_sesion(self):
         api_key = live_audio.obtener_api_key()
         if not api_key:
-            raise RuntimeError("GEMINI_API_KEY no configurada")
-
+            return
         client = genai.Client(api_key=api_key, http_options={"api_version": "v1alpha"})
         cfg = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=self.voz))
             ),
-            system_instruction=types.Content(parts=[types.Part.from_text(text=live_audio.construir_instruccion_sistema(rapido=bool(self.orden_inicial and "enciende" in self.orden_inicial or "encendió" in self.orden_inicial)))]),
+            system_instruction=types.Content(parts=[types.Part.from_text(text=live_audio.construir_instruccion_sistema(rapido=bool(self.orden_inicial and ("enciende" in self.orden_inicial or "encendió" in self.orden_inicial))))]),
             tools=live_herramientas.declarar_declaraciones_herramientas(),
             realtime_input_config=types.RealtimeInputConfig(
                 automatic_activity_detection=types.AutomaticActivityDetection(silence_duration_ms=700)
@@ -207,19 +183,9 @@ class SesionKayaLive:
             self._t_ultima_voz = time.monotonic()
 
             orden = (self.orden_inicial or "").strip()
-            if orden and orden.lower() not in ("kaya", "kaia", "silvestra", "oye kaya"):
-                texto_inicio = orden
-            else:
-                texto_inicio = "Hola Kaya, dime, ¿estás ahí?"
-
+            texto_inicio = orden if (orden and orden.lower() not in ("kaya", "kaia", "silvestra", "oye kaya")) else "Hola Kaya, dime, ¿estás ahí?"
             try:
-                await session.send_client_content(
-                    turns=types.Content(
-                        role="user",
-                        parts=[types.Part.from_text(text=texto_inicio)]
-                    ),
-                    turn_complete=True
-                )
+                await session.send_client_content(turns=types.Content(role="user", parts=[types.Part.from_text(text=texto_inicio)]), turn_complete=True)
             except Exception as e:
                 print(f"[LIVE] Error enviando orden inicial: {e}", flush=True)
 
@@ -229,19 +195,14 @@ class SesionKayaLive:
             try:
                 while self.activo:
                     async for resp in session.receive():
-                        if not self.activo:
-                            break
-
+                        if not self.activo: break
                         sc = resp.server_content
                         if sc:
-                            if getattr(sc, "turn_complete", False):
-                                self._t_ultima_voz = time.monotonic()
+                            if getattr(sc, "turn_complete", False): self._t_ultima_voz = time.monotonic()
                             if getattr(sc, "interrupted", False):
-                                with self.cola_audio_salida.mutex:
-                                    self.cola_audio_salida.queue.clear()
+                                with self.cola_audio_salida.mutex: self.cola_audio_salida.queue.clear()
                                 self._notificar_estado("escuchando")
                                 self._t_ultima_voz = time.monotonic()
-
                             mt = sc.model_turn
                             if mt:
                                 for part in mt.parts:
@@ -249,37 +210,26 @@ class SesionKayaLive:
                                         live_audio.registrar_tiempo_primera_voz()
                                         self.compuerta.marcar_encolado_salida()
                                         self.cola_audio_salida.put(part.inline_data.data)
-                                    if getattr(part, "text", None):
-                                        self._notificar_texto("kaya", part.text)
-
+                                    if getattr(part, "text", None): self._notificar_texto("kaya", part.text)
                         tc = resp.tool_call
                         if tc:
                             self._notificar_estado("pensando")
                             for call in tc.function_calls:
                                 res_call = await live_herramientas.despachar_herramienta_asincrona(call.name, call.args)
-                                await session.send(
-                                    input=types.LiveClientToolResponse(
-                                        function_responses=[
-                                            types.FunctionResponse(name=call.name, id=call.id, response={"result": res_call})
-                                        ]
-                                    )
-                                )
-                    if not self.activo:
-                        break
+                                resp_tool = types.LiveClientToolResponse(function_responses=[types.FunctionResponse(name=call.name, id=call.id, response={"result": res_call})])
+                                await session.send(input=resp_tool)
+                    if not self.activo: break
                     await asyncio.sleep(0.02)
             finally:
                 tarea_audio.cancel()
                 tarea_dog.cancel()
 
     def iniciar(self) -> bool:
-        """Inicia la sesión Live en un hilo independiente."""
         if esta_en_enfriamiento_cuota():
             print("[LIVE] Enfriamiento de cuota activo. Omitiendo arranque de Live.", flush=True)
             return False
-
         if self.activo:
             return True
-
         self.activo = True
         self.compuerta.registrar_info_inicio()
 
@@ -305,6 +255,7 @@ class SesionKayaLive:
                     activar_enfriamiento_cuota(15.0)
                 print(f"[LIVE] Sesión finalizada o error: {e}", flush=True)
             finally:
+                self.detener()
                 try:
                     pendientes = [t for t in asyncio.all_tasks(self._loop) if not t.done()]
                     for t in pendientes:
@@ -327,7 +278,6 @@ class SesionKayaLive:
         return True
 
     def enviar_texto(self, texto: str) -> bool:
-        """Envía un mensaje de texto a la sesión Live activa."""
         if not self.activo or not self._loop or not self._session_genai:
             return False
         def _enviar():
@@ -347,20 +297,12 @@ class SesionKayaLive:
             return False
 
     def detener(self):
-        """Detiene limpiamente la sesión y cancela tareas pendientes sin romper el loop."""
         if not self.activo:
             return
         self.activo = False
         self._notificar_estado("reposo")
-
-        if self._stream_entrada:
-            try:
-                self._stream_entrada.stop()
-                self._stream_entrada.close()
-            except Exception:
-                pass
-            self._stream_entrada = None
-
+        self._stream_entrada = live_audio.cerrar_stream(self._stream_entrada)
+        self._stream_salida = live_audio.cerrar_stream(self._stream_salida)
         if self._loop and self._loop.is_running():
             try:
                 def _cancelar_todas():

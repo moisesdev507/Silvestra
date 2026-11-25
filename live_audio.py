@@ -17,8 +17,8 @@ CHANNELS = 1
 CHUNK_ENTRADA_MS = 50
 MAX_COLA_ENTRADA = 60
 TIMEOUT_SILENCIO_DEFECTO = 9.0  # Cierre a 9 segundos según especificación
-UMBRAL_RMS_VOZ = 750.0
-UMBRAL_ENERGIA_VOZ = 0.12
+UMBRAL_RMS_VOZ = 620.0
+UMBRAL_ENERGIA_VOZ = 0.10
 
 _DISYUNTOR_HASTA = 0.0
 _LOCK_DISYUNTOR = threading.RLock()
@@ -134,10 +134,10 @@ def calcular_rms_pcm16(pcm_bytes: bytes) -> float:
 
 
 def es_voz_activa(pcm_bytes: bytes) -> tuple[bool, float, float]:
-    """Discrimina habla real (rms >= 450 o energia >= 0.08) frente a ruido ambiente."""
+    """Discrimina habla real frente a ruido ambiente (requiere rms >= 620.0 y energia >= 0.10)."""
     rms = calcular_rms_pcm16(pcm_bytes)
     energia = calcular_energia_pcm16(pcm_bytes)
-    es_habla = (rms >= UMBRAL_RMS_VOZ or energia >= UMBRAL_ENERGIA_VOZ)
+    es_habla = (rms >= UMBRAL_RMS_VOZ and energia >= UMBRAL_ENERGIA_VOZ)
     return es_habla, rms, energia
 
 
@@ -176,9 +176,32 @@ def crear_input_stream(callback_audio):
             if rate_candidato != RATE_ENTRADA:
                 print(f"[LIVE][AUDIO] Micrófono abierto a {rate_candidato}Hz con remuestreo a 16000Hz.", flush=True)
             return stream, rate_candidato
-        except Exception as err:
+        except Exception:
             continue
     raise RuntimeError("No se pudo abrir ningún InputStream de micrófono para Gemini Live.")
+
+
+def crear_output_stream():
+    """Crea e inicia OutputStream PCM 24kHz para reproducción."""
+    import sounddevice as sd
+    stream = sd.OutputStream(
+        samplerate=RATE_SALIDA,
+        channels=CHANNELS,
+        dtype="int16",
+    )
+    stream.start()
+    return stream
+
+
+def cerrar_stream(stream):
+    """Detiene y cierra un stream de audio limpiamente sin lanzar excepciones."""
+    if stream:
+        try:
+            stream.stop()
+            stream.close()
+        except Exception:
+            pass
+    return None
 
 
 def calcular_energia_pcm16(pcm_bytes: bytes) -> float:

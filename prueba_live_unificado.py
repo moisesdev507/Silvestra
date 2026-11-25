@@ -51,10 +51,15 @@ class TestGeminiLiveUnificado(unittest.TestCase):
         self.assertFalse(sil)
 
     def test_watchdog_silencio_9_segundos(self):
+        # 1. Blindaje: rechazar valores menores a 2.0s y fijar 9.0s por defecto
+        sesion_defecto = live_motor.SesionKayaLive(timeout_silencio=0.1)
+        self.assertEqual(sesion_defecto.timeout_silencio, 9.0)
+
+        # 2. Con timeout válido >= 2.0s
         cierre = []
-        sesion = live_motor.SesionKayaLive(timeout_silencio=0.1, on_cierre_automatico=lambda: cierre.append(True))
+        sesion = live_motor.SesionKayaLive(timeout_silencio=2.0, on_cierre_automatico=lambda: cierre.append(True))
         sesion.activo = True
-        sesion._t_ultima_voz = time.monotonic() - 0.2
+        sesion._t_ultima_voz = time.monotonic() - 3.0  # Simular silencio pasado
 
         async def _correr():
             await sesion._tarea_watchdog()
@@ -253,14 +258,32 @@ class TestGeminiLiveUnificado(unittest.TestCase):
 
         async def _enviar_test():
             item = sesion.cola_audio_entrada.get_nowait()
-            await session_mock.send_realtime_input(media=types.Blob(data=item, mime_type="audio/pcm;rate=16000"))
+            await session_mock.send_realtime_input(audio=types.Blob(data=item, mime_type="audio/pcm;rate=16000"))
 
         asyncio.run(_enviar_test())
         session_mock.send_realtime_input.assert_called_once()
         _, kwargs = session_mock.send_realtime_input.call_args
-        blob = kwargs.get("media")
+        blob = kwargs.get("audio")
+        self.assertIsNotNone(blob)
         self.assertEqual(blob.mime_type, "audio/pcm;rate=16000")
         self.assertEqual(len(blob.data), 160 * 2)
+
+    def test_cierre_streams_garantizado(self):
+        sesion = live_motor.SesionKayaLive()
+        sesion.activo = True
+        mock_in = MagicMock()
+        mock_out = MagicMock()
+        sesion._stream_entrada = mock_in
+        sesion._stream_salida = mock_out
+
+        sesion.detener()
+        self.assertFalse(sesion.activo)
+        self.assertIsNone(sesion._stream_entrada)
+        self.assertIsNone(sesion._stream_salida)
+        mock_in.stop.assert_called_once()
+        mock_in.close.assert_called_once()
+        mock_out.stop.assert_called_once()
+        mock_out.close.assert_called_once()
 
     def test_calibracion_ruido_vs_voz_y_watchdog(self):
         import struct
