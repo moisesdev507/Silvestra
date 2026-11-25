@@ -17,8 +17,8 @@ CHANNELS = 1
 CHUNK_ENTRADA_MS = 50
 MAX_COLA_ENTRADA = 60
 TIMEOUT_SILENCIO_DEFECTO = 9.0  # Cierre a 9 segundos según especificación
-UMBRAL_RMS_VOZ = 620.0
-UMBRAL_ENERGIA_VOZ = 0.10
+UMBRAL_RMS_VOZ = 480.0
+UMBRAL_ENERGIA_VOZ = 0.08
 
 _DISYUNTOR_HASTA = 0.0
 _LOCK_DISYUNTOR = threading.RLock()
@@ -63,9 +63,9 @@ class CompuertaAntiEco:
 
         if eco_cola_ms is None:
             try:
-                self.eco_cola_ms = float(os.environ.get("KAYA_ECO_COLA_MS", "320"))
+                self.eco_cola_ms = float(os.environ.get("KAYA_ECO_COLA_MS", "250"))
             except Exception:
-                self.eco_cola_ms = 320.0
+                self.eco_cola_ms = 250.0
         else:
             self.eco_cola_ms = float(eco_cola_ms)
 
@@ -134,7 +134,7 @@ def calcular_rms_pcm16(pcm_bytes: bytes) -> float:
 
 
 def es_voz_activa(pcm_bytes: bytes) -> tuple[bool, float, float]:
-    """Discrimina habla real frente a ruido ambiente (requiere rms >= 620.0 y energia >= 0.10)."""
+    """Discrimina habla real frente a ruido ambiente para el watchdog (rms >= 480.0 y energia >= 0.08)."""
     rms = calcular_rms_pcm16(pcm_bytes)
     energia = calcular_energia_pcm16(pcm_bytes)
     es_habla = (rms >= UMBRAL_RMS_VOZ and energia >= UMBRAL_ENERGIA_VOZ)
@@ -194,10 +194,14 @@ def crear_output_stream():
 
 
 def cerrar_stream(stream):
-    """Detiene y cierra un stream de audio limpiamente sin lanzar excepciones."""
+    """Detiene y cierra un stream de audio con abort() + close() evitando deadlocks en PortAudio."""
     if stream:
         try:
-            stream.stop()
+            if hasattr(stream, "abort"):
+                stream.abort()
+        except Exception:
+            pass
+        try:
             stream.close()
         except Exception:
             pass
@@ -304,8 +308,8 @@ def construir_instruccion_sistema(rapido: bool = False) -> str:
 
     guia_vocal = (
         "\n\n[Guía de actuación, voz y herramientas]:\n"
-        "- Hablas en español suave, cálido y cercano con acento panameño natural.\n"
-        "- Tu ritmo es ágil y fluido. Respuestas directas de 1 a 2 frases para evitar monólogos.\n"
+        "- Hablas en español suave, cálido y cercano con acento panameño natural 'de tú a tú'.\n"
+        "- Tu ritmo es ágil y fluido. Respuestas cortas, conversacionales y directas de 1 a 3 frases, sin listas ni rodeos salvo que te pidan detalle.\n"
         "- Cero relleno de chatbot formal ('¿en qué te ayudo?', '¡por supuesto!').\n"
         "- TIENES HERRAMIENTAS EN TIEMPO REAL: consultar_clima (clima en vivo sin clave), buscar_en_internet (noticias, datos web en vivo), consultar_estado_pc (batería, CPU, RAM, hora), y ejecutar_accion_pc (correos, calendario, diario, ideas, recordatorios, volumen, música y apps). INVOCALAS SIEMPRE que te pregunten sobre estos temas; NUNCA digas que no tienes acceso a esa información.\n"
         "- Si ejecutas una herramienta de PC, confirma con naturalidad lo encontrado o realizado.\n"

@@ -280,21 +280,24 @@ class TestGeminiLiveUnificado(unittest.TestCase):
         self.assertFalse(sesion.activo)
         self.assertIsNone(sesion._stream_entrada)
         self.assertIsNone(sesion._stream_salida)
-        mock_in.stop.assert_called_once()
+        mock_in.abort.assert_called_once()
         mock_in.close.assert_called_once()
-        mock_out.stop.assert_called_once()
+        mock_out.abort.assert_called_once()
         mock_out.close.assert_called_once()
 
     def test_calibracion_ruido_vs_voz_y_watchdog(self):
         import struct
-        ruido = struct.pack("<480h", *([600] * 480))
+        # 1. Ruido o silencio post-frase (rms ~200, nivel ~0.02) NO se detecta como voz para el watchdog
+        ruido = struct.pack("<480h", *([200] * 480))
         es_habla, rms, nivel = live_audio.es_voz_activa(ruido)
         self.assertFalse(es_habla)
 
-        voz = struct.pack("<480h", *([900] * 480))
+        # 2. Voz real (rms ~650, nivel ~0.12) SÍ se detecta como voz activa (umbral 480)
+        voz = struct.pack("<480h", *([650] * 480))
         es_habla, rms, nivel = live_audio.es_voz_activa(voz)
         self.assertTrue(es_habla)
 
+        # 3. Sesión: con compuerta abierta, el 100% del audio (incluyendo silencio) se envía a cola_audio_entrada
         sesion = live_motor.SesionKayaLive()
         sesion.activo = True
         sesion._rate_entrada = 48000
@@ -302,7 +305,14 @@ class TestGeminiLiveUnificado(unittest.TestCase):
         sesion._t_ultima_voz = t_base
 
         sesion._callback_audio_in(ruido, 480, None, None)
+        # El audio se encoló para streaming continuo aunque sea silencio
+        self.assertFalse(sesion.cola_audio_entrada.empty())
+        # Pero el watchdog NO se reinició (se mantiene t_base)
         self.assertEqual(sesion._t_ultima_voz, t_base)
+
+        # 4. Sesión: con voz activa sí actualiza _t_ultima_voz
+        sesion._callback_audio_in(voz, 480, None, None)
+        self.assertGreater(sesion._t_ultima_voz, t_base)
 
         sesion._callback_audio_in(voz, 480, None, None)
         self.assertGreater(sesion._t_ultima_voz, t_base)

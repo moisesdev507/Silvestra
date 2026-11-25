@@ -73,6 +73,12 @@ class SesionKayaLive:
             pcm = live_audio.remuestrear_pcm16_a_16k(pcm, self._rate_entrada)
         chunk_filtrado, silenciado = self.compuerta.filtrar_chunk_entrada(pcm)
         if not silenciado:
+            # 1. El 100% del audio con compuerta abierta se envía de forma continua
+            try:
+                self.cola_audio_entrada.put_nowait(chunk_filtrado)
+            except queue.Full:
+                pass
+            # 2. El umbral RMS se usa ÚNICAMENTE para reiniciar el watchdog y emitir log
             es_habla, rms, energia = live_audio.es_voz_activa(chunk_filtrado)
             if es_habla:
                 self._t_ultima_voz = time.monotonic()
@@ -86,10 +92,6 @@ class SesionKayaLive:
                     print(f"[LIVE][AUDIO] Voz detectada (rms={rms:.1f}, nivel={energia:.2f}).", flush=True)
             elif getattr(self, "_en_rafaga_voz", False):
                 self._en_rafaga_voz = False
-        try:
-            self.cola_audio_entrada.put_nowait(chunk_filtrado)
-        except queue.Full:
-            pass
 
     def _bucle_reproduccion_salida(self):
         try:
@@ -118,7 +120,8 @@ class SesionKayaLive:
                 self.compuerta.marcar_inicio_escritura()
                 try:
                     import numpy as np
-                    self._stream_salida.write(np.frombuffer(chunk, dtype=np.int16))
+                    if self.activo and self._stream_salida:
+                        self._stream_salida.write(np.frombuffer(chunk, dtype=np.int16))
                 except Exception as err:
                     print(f"[LIVE][AUDIO] Error salida: {err}", flush=True)
                 finally:
@@ -170,7 +173,7 @@ class SesionKayaLive:
             system_instruction=types.Content(parts=[types.Part.from_text(text=live_audio.construir_instruccion_sistema(rapido=bool(self.orden_inicial and ("enciende" in self.orden_inicial or "encendió" in self.orden_inicial))))]),
             tools=live_herramientas.declarar_declaraciones_herramientas(),
             realtime_input_config=types.RealtimeInputConfig(
-                automatic_activity_detection=types.AutomaticActivityDetection(silence_duration_ms=700)
+                automatic_activity_detection=types.AutomaticActivityDetection(silence_duration_ms=420)
             ),
         )
 
