@@ -46,9 +46,14 @@ def fijar_ultimo_texto_asistente(txt):
 
 
 def registrar_turno_usuario(texto):
-    """Registra timestamp de interacción del usuario."""
+    """Registra timestamp de interacción del usuario y procesa temas abiertos en segundo plano."""
     global _ULTIMO_TURNO_TS
     _ULTIMO_TURNO_TS = time.time()
+    try:
+        import iniciativa_kaya
+        iniciativa_kaya.procesar_turno_en_segundo_plano(texto)
+    except Exception:
+        pass
 
 
 def registrar_turno_asistente(texto):

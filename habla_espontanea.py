@@ -19,6 +19,13 @@ def _franja_y_emocion():
 
 def _tema_reciente(app):
     try:
+        import iniciativa_kaya
+        resumen = iniciativa_kaya.resumen_compacto_temas()
+        if resumen:
+            return resumen
+    except Exception:
+        pass
+    try:
         mem = getattr(app, "memoria", None)
         if mem and hasattr(mem, "listar_recuerdos"):
             recuerdos = mem.listar_recuerdos(limite=3)

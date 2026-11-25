@@ -106,13 +106,19 @@ def _hardware(ahora):
     return None
 
 
-def evaluar(consulta="", ahora=None, forzar=False):
+def evaluar(consulta="", ahora=None, forzar=False, app=None):
     """Devuelve un aviso (tipo, mensaje, emoción) o ``None``."""
     momento = time.time() if ahora is None else float(ahora)
     if not forzar and momento - _estado["evaluado"] < REEVALUAR_SEG:
         return None
     _estado["evaluado"] = momento
     aviso = _entrega(momento) or _hardware(momento)
+    if not aviso and app:
+        try:
+            import iniciativa_kaya
+            aviso = iniciativa_kaya.evaluar_iniciativa_organica(app, ahora=momento)
+        except Exception:
+            pass
     if aviso:
         _marcar(aviso)
     return aviso

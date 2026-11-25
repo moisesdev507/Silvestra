@@ -187,9 +187,19 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         if asoc_res: asoc_texto = asoc_res.strip() + "\n"
     except Exception: pass
 
+    temas_abiertos_txt = ""
+    try:
+        import iniciativa_kaya
+        res_t = iniciativa_kaya.resumen_compacto_temas()
+        if res_t:
+            temas_abiertos_txt = f"{res_t}\n"
+    except Exception:
+        pass
+
     memoria_texto = (
         f"[RECUERDOS HISTÓRICOS — PASADO]\nLo que sabes (fechas relativas al día en que se guardó):\n{hechos_str}\n"
         f"{asoc_texto}"
+        f"{temas_abiertos_txt}"
         "Cada recuerdo conserva su procedencia y confianza. Las contradicciones son hipótesis y deben exponerse con ambas fuentes.\n"
         "Regla temporal: 'hoy'/'mañana' en un recuerdo son de su fecha guardada. Si el evento ya pasó, PROHIBIDO preguntar por él en futuro (ignóralo o pregunta cómo salió).\n"
         f"Ideas anotadas: {ideas_res}.\n"
