@@ -64,11 +64,15 @@ class SesionKayaLive:
         on_nivel_voz: Optional[Callable[[float], None]] = None,
         on_transcripcion: Optional[Callable[[str, str], None]] = None,
         saludar_al_iniciar: bool = True,
+        audio_local: bool = True,
+        on_audio_salida: Optional[Callable[[bytes], None]] = None,
     ):
         self.modelo = modelo
         self.voz = voz
         self.timeout_silencio = float(timeout_silencio)
         self.saludar_al_iniciar = bool(saludar_al_iniciar)
+        self.audio_local = bool(audio_local)
+        self.on_audio_salida = on_audio_salida
         self._saludo_inicial_enviado = False
         self.on_transcripcion_usuario = on_transcripcion_usuario
         self.on_transcripcion_kaya = on_transcripcion_kaya
@@ -151,6 +155,18 @@ class SesionKayaLive:
         """Refresca la marca temporal del auto-reposo inteligente."""
         self._ultimo_contacto = time.monotonic()
 
+    def inyectar_audio_pcm16(self, datos: bytes):
+        """Inyecta un chunk PCM 16kHz mono directamente en la cola de entrada."""
+        if not datos or self._evento_parada.is_set():
+            return
+        if self._cola_entrada and self._loop:
+            if self._cola_entrada.full():
+                try:
+                    self._cola_entrada.get_nowait()
+                except Exception:
+                    pass
+            self._loop.call_soon_threadsafe(self._cola_entrada.put_nowait, bytes(datos))
+
     async def enviar_imagen_jpeg(self, jpeg_bytes: bytes):
         """Inyecta un fotograma JPEG en tiempo real a la sesión Live."""
         if self._session is not None and jpeg_bytes:
@@ -179,11 +195,14 @@ class SesionKayaLive:
                 except queue.Empty:
                     continue
 
-                if trozo and stream is not None and not stream.closed:
+                if trozo:
                     try:
                         nivel = calcular_energia_pcm16(trozo)
                         self._notificar_nivel_voz(nivel)
-                        stream.write(trozo)
+                        if self.on_audio_salida:
+                            self.on_audio_salida(trozo)
+                        if stream is not None and not stream.closed:
+                            stream.write(trozo)
                     except Exception:
                         pass
         except Exception as e:

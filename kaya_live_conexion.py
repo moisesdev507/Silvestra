@@ -113,8 +113,26 @@ async def ejecutar_sesion_live(sesion, solo_verificar: bool = False) -> bool:
     sesion._evento_parada_async = asyncio.Event()
     sesion.actualizar_actividad()
 
-    sesion._hilo_audio = threading.Thread(target=sesion._hilo_reproductor, name="kaya-live-out", daemon=True)
-    sesion._hilo_audio.start()
+    if getattr(sesion, "audio_local", True):
+        sesion._hilo_audio = threading.Thread(target=sesion._hilo_reproductor, name="kaya-live-out", daemon=True)
+        sesion._hilo_audio.start()
+    else:
+        # En modo transporte remoto, el reproductor solo despacha a on_audio_salida sin abrir PortAudio
+        def _hilo_despachador_remoto():
+            while not sesion._evento_parada.is_set():
+                try:
+                    trozo = sesion._cola_salida.get(timeout=0.04)
+                except queue.Empty:
+                    continue
+                if trozo and sesion.on_audio_salida:
+                    try:
+                        nivel = kaya_live_audio.calcular_energia_pcm16(trozo)
+                        sesion._notificar_nivel_voz(nivel)
+                        sesion.on_audio_salida(trozo)
+                    except Exception:
+                        pass
+        sesion._hilo_audio = threading.Thread(target=_hilo_despachador_remoto, name="kaya-live-out-remote", daemon=True)
+        sesion._hilo_audio.start()
 
     muestras_bloque = int(RATE_ENTRADA * (CHUNK_ENTRADA_MS / 1000.0))
 
@@ -137,18 +155,19 @@ async def ejecutar_sesion_live(sesion, solo_verificar: bool = False) -> bool:
     delays = [2.0, 4.0, 8.0]
 
     try:
-        try:
-            import audio_lock
-            with audio_lock.bloqueo_portaudio():
+        if getattr(sesion, "audio_local", True):
+            try:
+                import audio_lock
+                with audio_lock.bloqueo_portaudio():
+                    sesion._stream_entrada = sd.RawInputStream(
+                        samplerate=RATE_ENTRADA, channels=CHANNELS, dtype="int16", blocksize=muestras_bloque, callback=callback_entrada
+                    )
+                    sesion._stream_entrada.start()
+            except Exception:
                 sesion._stream_entrada = sd.RawInputStream(
                     samplerate=RATE_ENTRADA, channels=CHANNELS, dtype="int16", blocksize=muestras_bloque, callback=callback_entrada
                 )
                 sesion._stream_entrada.start()
-        except Exception:
-            sesion._stream_entrada = sd.RawInputStream(
-                samplerate=RATE_ENTRADA, channels=CHANNELS, dtype="int16", blocksize=muestras_bloque, callback=callback_entrada
-            )
-            sesion._stream_entrada.start()
 
         while not sesion._evento_parada.is_set():
             try:
