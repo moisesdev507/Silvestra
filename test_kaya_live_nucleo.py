@@ -2,7 +2,7 @@
 import asyncio
 import os
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import kaya_live_nucleo
 import kaya_live_tools
@@ -11,7 +11,6 @@ import kaya_live_tools
 class TestKayaLiveNucleo(unittest.TestCase):
 
     def setUp(self):
-        # Asegurar ojos abiertos antes de cada test
         kaya_live_tools.controlar_ojos(True)
 
     def test_construccion_instruccion_sistema(self):
@@ -34,14 +33,12 @@ class TestKayaLiveNucleo(unittest.TestCase):
         self.assertIn("cerrados", resp_ctrl)
         self.assertFalse(kaya_live_tools.obtener_estado_ojos())
 
-        # Intentar ver pantalla y cámara con ojos cerrados
         res_pantalla = kaya_live_tools.ver_pantalla("¿Qué ves?")
         self.assertIn("ojos cerrados", res_pantalla.lower())
 
         res_camara = kaya_live_tools.ver_camara_pc("¿Quién está?")
         self.assertIn("ojos cerrados", res_camara.lower())
 
-        # Reabrir ojos
         resp_abrir = kaya_live_tools.controlar_ojos(True)
         self.assertIn("abiertos", resp_abrir)
         self.assertTrue(kaya_live_tools.obtener_estado_ojos())
@@ -55,17 +52,14 @@ class TestKayaLiveNucleo(unittest.TestCase):
     def test_despachar_herramienta_asincrona(self):
         """Verifica el despacho asíncrono y seguro de tools."""
         async def run_despacho():
-            # 1. Herramienta consultar_sistema
             r1 = await kaya_live_tools.despachar_herramienta("consultar_sistema", {})
             self.assertIn("resultado", r1)
             self.assertIn("Fecha", r1["resultado"])
 
-            # 2. Herramienta controlar_ojos
             r2 = await kaya_live_tools.despachar_herramienta("controlar_ojos", {"activo": False})
             self.assertIn("resultado", r2)
             self.assertIn("cerrados", r2["resultado"])
 
-            # 3. Herramienta desconocida
             r3 = await kaya_live_tools.despachar_herramienta("herramienta_fantasma", {})
             self.assertIn("no encontrada", r3["resultado"])
 
@@ -78,6 +72,28 @@ class TestKayaLiveNucleo(unittest.TestCase):
         self.assertIn("Noticias", res)
         self.assertIn("Sol en Panamá", res)
         mock_buscar.assert_called_once_with("clima en Panama")
+
+    def test_corte_inmediato_ante_1011(self):
+        """Verifica que ante un error 1011 en session.receive() el bucle corte de inmediato."""
+        sesion = kaya_live_nucleo.SesionKayaLive()
+        sesion._evento_parada_async = asyncio.Event()
+
+        class MockSessionError:
+            def receive(self):
+                async def _gen():
+                    if False:
+                        yield None
+                    raise Exception("1011 (internal error) Internal error occurred")
+                return _gen()
+
+        sesion._session = MockSessionError()
+
+        async def run_test():
+            with self.assertRaises(Exception) as ctx:
+                await sesion._recepcion_servidor()
+            self.assertIn("1011", str(ctx.exception))
+
+        asyncio.run(run_test())
 
 
 if __name__ == "__main__":

@@ -186,7 +186,7 @@ class SesionKayaLive:
                         pass
 
     async def _captura_microfono(self):
-        while not self._evento_parada_async.is_set():
+        while not self._evento_parada_async.is_set() and self._session is not None:
             try:
                 bloque = await asyncio.wait_for(self._cola_entrada.get(), timeout=0.1)
                 if bloque and not self._pausado:
@@ -200,9 +200,11 @@ class SesionKayaLive:
                     )
             except asyncio.TimeoutError:
                 continue
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 if not self._evento_parada_async.is_set():
-                    print(f"[LIVE] Error en captura: {e}", flush=True)
+                    print(f"[LIVE] Error en captura/envío (saliendo): {e}", flush=True)
                 break
 
     async def _vigilante_silencio(self):
@@ -217,89 +219,87 @@ class SesionKayaLive:
 
     async def _recepcion_servidor(self):
         turno_hablando = False
-        while not self._evento_parada_async.is_set():
-            try:
-                async for resp in self._session.receive():
-                    if self._evento_parada_async.is_set():
-                        break
-
-                    tc = getattr(resp, "tool_call", None)
-                    if tc:
-                        self.actualizar_actividad()
-                        self._notificar_estado("pensando")
-                        llamadas = getattr(tc, "function_calls", []) or []
-                        respuestas = []
-                        for call in llamadas:
-                            c_id = getattr(call, "id", "")
-                            c_name = getattr(call, "name", "")
-                            c_args = getattr(call, "args", {}) or {}
-                            resultado = await kaya_live_tools.despachar_herramienta(c_name, c_args)
-                            respuestas.append(types.FunctionResponse(id=c_id, name=c_name, response=resultado))
-                        if respuestas:
-                            await self._session.send_tool_response(function_responses=respuestas)
-                        self._notificar_estado("escuchando")
-                        continue
-
-                    sc = getattr(resp, "server_content", None)
-                    if not sc:
-                        continue
-
-                    if getattr(sc, "interrupted", False):
-                        print("\n[LIVE] Interrupción (barge-in)", flush=True)
-                        turno_hablando = False
-                        self._notificar_estado("escuchando")
-                        self._notificar_nivel_voz(0.0)
-                        while not self._cola_salida.empty():
-                            try:
-                                self._cola_salida.get_nowait()
-                            except Exception:
-                                break
-                        continue
-
-                    it = getattr(sc, "input_audio_transcription", None)
-                    if it and getattr(it, "text", None):
-                        self.actualizar_actividad()
-                        txt_u = it.text.strip()
-                        self._notificar_transcripcion("usuario", txt_u)
-
-                    ot = getattr(sc, "output_audio_transcription", None)
-                    if ot and getattr(ot, "text", None):
-                        self.actualizar_actividad()
-                        txt_k = ot.text.strip()
-                        self._notificar_transcripcion("kaya", txt_k)
-
-                    mt = getattr(sc, "model_turn", None)
-                    if mt:
-                        for part in mt.parts:
-                            if getattr(part, "thought", False):
-                                continue
-                            if part.text and not ot:
-                                t_limpio = part.text.strip()
-                                if t_limpio and not t_limpio.startswith("**"):
-                                    self._notificar_transcripcion("kaya", t_limpio)
-
-                            if part.inline_data and part.inline_data.data:
-                                self.actualizar_actividad()
-                                if not turno_hablando:
-                                    turno_hablando = True
-                                    self._notificar_estado("hablando")
-                                    if self.on_estado_audio:
-                                        self.on_estado_audio("reproduciendo")
-                                self._cola_salida.put_nowait(part.inline_data.data)
-
-                    if getattr(sc, "turn_complete", False):
-                        turno_hablando = False
-                        self._notificar_estado("escuchando")
-                        self._notificar_nivel_voz(0.0)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                if not self._evento_parada_async.is_set():
-                    print(f"\n[LIVE] Excepción en recepción: {e}", flush=True)
-                    self._notificar_estado("error")
-                    await asyncio.sleep(0.2)
-                else:
+        try:
+            if self._session is None:
+                return
+            async for resp in self._session.receive():
+                if self._evento_parada_async.is_set():
                     break
+
+                tc = getattr(resp, "tool_call", None)
+                if tc:
+                    self.actualizar_actividad()
+                    self._notificar_estado("pensando")
+                    llamadas = getattr(tc, "function_calls", []) or []
+                    respuestas = []
+                    for call in llamadas:
+                        c_id = getattr(call, "id", "")
+                        c_name = getattr(call, "name", "")
+                        c_args = getattr(call, "args", {}) or {}
+                        resultado = await kaya_live_tools.despachar_herramienta(c_name, c_args)
+                        respuestas.append(types.FunctionResponse(id=c_id, name=c_name, response=resultado))
+                    if respuestas and self._session is not None:
+                        await self._session.send_tool_response(function_responses=respuestas)
+                    self._notificar_estado("escuchando")
+                    continue
+
+                sc = getattr(resp, "server_content", None)
+                if not sc:
+                    continue
+
+                if getattr(sc, "interrupted", False):
+                    print("\n[LIVE] Interrupción (barge-in)", flush=True)
+                    turno_hablando = False
+                    self._notificar_estado("escuchando")
+                    self._notificar_nivel_voz(0.0)
+                    while not self._cola_salida.empty():
+                        try:
+                            self._cola_salida.get_nowait()
+                        except Exception:
+                            break
+                    continue
+
+                it = getattr(sc, "input_audio_transcription", None)
+                if it and getattr(it, "text", None):
+                    self.actualizar_actividad()
+                    txt_u = it.text.strip()
+                    self._notificar_transcripcion("usuario", txt_u)
+
+                ot = getattr(sc, "output_audio_transcription", None)
+                if ot and getattr(ot, "text", None):
+                    self.actualizar_actividad()
+                    txt_k = ot.text.strip()
+                    self._notificar_transcripcion("kaya", txt_k)
+
+                mt = getattr(sc, "model_turn", None)
+                if mt:
+                    for part in mt.parts:
+                        if getattr(part, "thought", False):
+                            continue
+                        if part.text and not ot:
+                            t_limpio = part.text.strip()
+                            if t_limpio and not t_limpio.startswith("**"):
+                                self._notificar_transcripcion("kaya", t_limpio)
+
+                        if part.inline_data and part.inline_data.data:
+                            self.actualizar_actividad()
+                            if not turno_hablando:
+                                turno_hablando = True
+                                self._notificar_estado("hablando")
+                                if self.on_estado_audio:
+                                    self.on_estado_audio("reproduciendo")
+                            self._cola_salida.put_nowait(part.inline_data.data)
+
+                if getattr(sc, "turn_complete", False):
+                    turno_hablando = False
+                    self._notificar_estado("escuchando")
+                    self._notificar_nivel_voz(0.0)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            if not self._evento_parada_async.is_set():
+                print(f"\n[LIVE] Excepción en recepción (saliendo de sesión): {e}", flush=True)
+                raise e
 
     def detener(self):
         """Detiene de forma limpia y ordenada la sesión Live."""

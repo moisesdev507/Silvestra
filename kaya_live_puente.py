@@ -201,7 +201,10 @@ def cargar_contexto_memoria_live() -> str:
     except Exception:
         pass
 
-    return "\n\n[Memoria y contexto persistente]:\n" + "\n".join(bloques) if bloques else ""
+    resultado = "\n\n[Memoria y contexto persistente]:\n" + "\n".join(bloques) if bloques else ""
+    if len(resultado) > 1500:
+        resultado = resultado[:1490].rsplit("\n", 1)[0] + "\n..."
+    return resultado
 
 
 def guardar_turno_o_resumen_memoria(turnos: List[Dict[str, str]]):
