@@ -16,6 +16,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import estado  # noqa: E402
 import oido_ws  # noqa: E402
 import voz_ws  # noqa: E402
+from prueba_presentacion_visual import TestPresentacionVisual  # noqa: E402,F401
 
 _REDACCION = (
     "Hoy estuve pensando en la conversación que tuvimos: me quedé reflexionando "
@@ -241,46 +242,123 @@ class TestVozStreaming(unittest.TestCase):
         reproductor.assert_called_once()
 
 
-class TestPresentacionVisual(unittest.TestCase):
+class _SesionLiveFalsa:
+    """Sesión Live mínima para verificar el cierre en segundo plano."""
+
+    def __init__(self, registro):
+        self.activo = True
+        self.registro = registro
+
+    def detener(self):
+        self.activo = False
+        self.registro.append("detener")
+
+
+class TestEventosRatonSeguros(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from PySide6.QtWidgets import QApplication
+        cls.qapp = QApplication.instance() or QApplication([])
 
-        cls.app_qt = QApplication.instance() or QApplication([])
+    @staticmethod
+    def _evento(tipo=None):
+        from PySide6.QtCore import QEvent, QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
+        punto = QPointF(6.0, 6.0)
+        return QMouseEvent(
+            tipo or QEvent.Type.MouseButtonDblClick,
+            punto, punto, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier,
+        )
 
-    def test_estados_y_onda_sin_errores(self):
-        import cara_presentacion
+    def test_doble_clic_abrir_sin_recursion_ni_error(self):
         import cara_qt
+        import menu_hud
 
         cara = cara_qt.Cara(lambda: None, lambda: None, lambda: None, lambda: None)
+        evento = self._evento()
         try:
-            cara.poner_escuchando(True)
-            self.assertEqual(cara._presentacion_estado, "escuchando")
-            cara.poner_escuchando(False)
-            cara.poner_herramienta(True)
-            self.assertEqual(cara._presentacion_estado, "herramienta")
-            self.assertTrue(cara.pensando)
-            cara.decir("Hola Moisés, estoy lista.")
-            self.assertGreaterEqual(cara._presentacion_progreso, 0.0)
-            cara_presentacion.avanzar(cara, time.time() + 0.4)
-            self.assertLessEqual(cara._presentacion_progreso, 1.0)
-            self.assertGreater(cara._presentacion_nivel, 0.0)
-            cara.paintEvent(None)
-            cara.poner_hablando(True)
-            self.assertEqual(cara._presentacion_estado, "hablando")
-            cara.paintEvent(None)
+            with patch.object(menu_hud, "abrir") as abrir:
+                def reentrante(*_args):
+                    # Qt podría redespachar el evento: la guarda debe cortarlo.
+                    cara.mouseDoubleClickEvent(evento)
+                    return object()
+                abrir.side_effect = reentrante
+                cara.mouseDoubleClickEvent(evento)
+                self.assertEqual(abrir.call_count, 1)
+                self.assertFalse(getattr(cara, "_abriendo_menu_hud", True))
+
+            # Un fallo interno del menú nunca debe salir del override de Qt.
+            with patch.object(menu_hud, "abrir", side_effect=RuntimeError("menu roto")):
+                salida = io.StringIO()
+                with contextlib.redirect_stdout(salida):
+                    cara.mouseDoubleClickEvent(evento)
+                self.assertIn("Evento mouseDoubleClickEvent ignorado", salida.getvalue())
         finally:
             cara.close()
             cara.deleteLater()
 
-    def test_opacidad_de_despliegue_es_suave(self):
-        import cara_presentacion
+    def test_eventos_de_raton_del_orbe_y_del_hud_toleran_fallos(self):
+        from PySide6.QtCore import QEvent
+        import hud
 
-        self.assertEqual(cara_presentacion.opacidad_despliegue(0), 0.0)
-        self.assertEqual(cara_presentacion.opacidad_despliegue(1), 1.0)
-        medio = cara_presentacion.opacidad_despliegue(0.5)
-        self.assertGreater(medio, 0.5)
-        self.assertLess(medio, 1.0)
+        panel = hud.PanelHUD(MagicMock())
+        evento = self._evento(QEvent.Type.MouseButtonPress)
+        try:
+            panel.mousePressEvent(evento)
+            panel.mouseMoveEvent(evento)
+            panel.mouseReleaseEvent(evento)
+            self.assertIsNone(panel.arrastre)
+            panel.arrastre = panel.frameGeometry().topLeft()
+            with patch.object(panel, "move", side_effect=OSError("pantalla")):
+                salida = io.StringIO()
+                with contextlib.redirect_stdout(salida):
+                    panel.mouseMoveEvent(evento)
+            self.assertIn("Evento mouseMoveEvent ignorado", salida.getvalue())
+        finally:
+            panel.close()
+            panel.deleteLater()
+
+
+class TestCambioMotorEnCaliente(unittest.TestCase):
+    @staticmethod
+    def _esperar(fn, timeout=2.0):
+        fin = time.monotonic() + timeout
+        while time.monotonic() < fin:
+            if fn():
+                return True
+            time.sleep(0.01)
+        return False
+
+    def test_cambio_bidireccional_sin_cerrar_la_app(self):
+        import live_audio
+        import live_orquestador
+        from PySide6.QtWidgets import QApplication
+
+        app = MagicMock()
+        registro = []
+        sesion = _SesionLiveFalsa(registro)
+        with patch.object(live_audio, "obtener_api_key", return_value="clave"):
+            with patch("estado.cargar", return_value={"modo_voz_principal": "gemini_live"}):
+                with patch.object(QApplication, "quit") as salir:
+                    coord = live_orquestador.CoordinadorLiveSilvestra(app)
+                    coord.sesion_live = sesion
+
+                    inicio = time.monotonic()
+                    coord.actualizar_modo_voz("clasico")
+                    self.assertLess(time.monotonic() - inicio, 0.5)
+                    self.assertIsNone(coord.sesion_live)
+                    self.assertFalse(coord.es_modo_principal())
+                    self.assertTrue(self._esperar(lambda: "detener" in registro))
+                    self.assertTrue(self._esperar(lambda: app.oido.reanudar.called))
+                    self.assertFalse(sesion.activo)
+
+                    segunda = _SesionLiveFalsa(registro)
+                    coord.sesion_live = segunda
+                    coord.actualizar_modo_voz("gemini_live")
+                    self.assertTrue(coord.es_modo_principal())
+                    self.assertTrue(self._esperar(lambda: "detener" in registro and not segunda.activo))
+                    self.assertTrue(self._esperar(lambda: app.invocacion.pausar.called))
+                    salir.assert_not_called()
 
 
 if __name__ == "__main__":

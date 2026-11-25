@@ -202,18 +202,21 @@ class PanelHUD(QWidget):
         self.timer_reloj.stop()
         self.timer_metricas.stop()
 
+    @cara_presentacion.proteger_evento
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
             pos_global = e.globalPosition().toPoint() if hasattr(e, "globalPosition") else e.globalPos()
             self.arrastre = pos_global - self.frameGeometry().topLeft()
             e.accept()
 
+    @cara_presentacion.proteger_evento
     def mouseMoveEvent(self, e):
         if self.arrastre is not None and e.buttons() & Qt.LeftButton:
             pos_global = e.globalPosition().toPoint() if hasattr(e, "globalPosition") else e.globalPos()
             self.move(pos_global - self.arrastre)
             e.accept()
 
+    @cara_presentacion.proteger_evento
     def mouseReleaseEvent(self, _):
         self.arrastre = None
 

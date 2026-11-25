@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox, QWidget
 import acciones
 import cara_nucleo
 import cara_presentacion
+import menu_hud
 from burbuja import Burbuja, Entrada
 from cara_dibujo import TAM, pintar
 from cara_movimiento import CaraMovimientoMixin
@@ -237,27 +238,46 @@ class Cara(CaraMovimientoMixin, QWidget):
             self.reloj_dibujo.setInterval(50 if self._en_reposo else 33)
 
     # ---------- Ratón ----------
+    @cara_presentacion.proteger_evento
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
             self.arrastre = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
             self._tocar()
+            e.accept()
 
+    @cara_presentacion.proteger_evento
     def mouseMoveEvent(self, e):
         if self.arrastre is not None:
             self.move(e.globalPosition().toPoint() - self.arrastre)
             self.ultima_interaccion = time.time()
+            e.accept()
 
+    @cara_presentacion.proteger_evento
     def mouseReleaseEvent(self, e):
         self.arrastre = None
+        e.accept()
 
+    @cara_presentacion.proteger_evento
     def mouseDoubleClickEvent(self, e):
-        if e.button() == Qt.LeftButton:
+        # Doble clic abre el diálogo "Opciones HUD..." de menu_hud sin reenviar
+        # el evento: la guarda evita abrir dos veces si Qt lo redispacha.
+        if e.button() != Qt.LeftButton:
+            return
+        e.accept()
+        if getattr(self, "_abriendo_menu_hud", False):
+            return
+        self._abriendo_menu_hud = True
+        try:
             menu_hud.abrir(self)
+        finally:
+            self._abriendo_menu_hud = False
 
+    @cara_presentacion.proteger_evento
     def contextMenuEvent(self, e):
         self._tocar()
         self.menu.exec(e.globalPos())
 
+    @cara_presentacion.proteger_evento
     def moveEvent(self, e):
         self._colocar_burbuja()
         super().moveEvent(e)

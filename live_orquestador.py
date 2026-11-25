@@ -22,6 +22,7 @@ class CoordinadorLiveSilvestra:
         self.app = app
         self.sesion_live: Optional[live_motor.SesionKayaLive] = None
         self._bloqueo = threading.RLock()
+        self._generacion = 0
         self.modo_live_habilitado = bool(
             live_audio.obtener_api_key()
             and self.modo_voz_configurado() != "clasico"
@@ -42,7 +43,16 @@ class CoordinadorLiveSilvestra:
             and not live_motor.esta_en_enfriamiento_cuota()
         )
 
+    @staticmethod
+    def _detener_sesion_seguro(sesion):
+        """Cierra una sesión Live sin propagar fallos al hilo que la cierra."""
+        try:
+            sesion.detener()
+        except Exception as exc:
+            print(f"[COORDINADOR] Cierre Live en segundo plano: {exc}", flush=True)
+
     def actualizar_modo_voz(self, modo: str):
+        """Conmuta en caliente: el estado cambia ya, el cierre pesado va a fondo."""
         with self._bloqueo:
             habilitado = bool(
                 live_audio.obtener_api_key()
@@ -50,14 +60,34 @@ class CoordinadorLiveSilvestra:
                 and os.environ.get("KAYA_MODO", "").strip().lower() != "clasico"
             )
             self.modo_live_habilitado = habilitado
-            if not habilitado and self.sesion_live:
-                try:
-                    self.sesion_live.detener()
-                except Exception:
-                    pass
-                self.sesion_live = None
-                self._reanudar_captura_local()
+            sesion = self.sesion_live
+            self.sesion_live = None
+            self._generacion += 1
+            gen = self._generacion
         print(f"[COORDINADOR] Modo voz configurado: '{modo}' (live={self.modo_live_habilitado})", flush=True)
+        threading.Thread(
+            target=self._conmutar_en_fondo,
+            args=(sesion, habilitado, gen),
+            daemon=True,
+            name="motor-switch",
+        ).start()
+
+    def _conmutar_en_fondo(self, sesion, habilitado, gen):
+        """Prepara el motor destino sin tocar Qt ni bloquear el hilo principal."""
+        if sesion is not None:
+            self._detener_sesion_seguro(sesion)
+        with self._bloqueo:
+            if gen != self._generacion:
+                return
+        try:
+            import voz_ws
+            voz_ws.detener()
+            if habilitado:
+                self._pausar_captura_local()
+            else:
+                self._reanudar_captura_local()
+        except Exception as exc:
+            print(f"[COORDINADOR] Preparación de motor clásico/Live: {exc}", flush=True)
 
     def _al_estado(self, estado: str):
         cara = getattr(self.app, "cara", None)
@@ -171,14 +201,18 @@ class CoordinadorLiveSilvestra:
             return bool(self.sesion_live and self.sesion_live.activo)
 
     def cerrar(self):
+        """Cierre de aplicación: desengancha la sesión Live y la cierra en fondo."""
         with self._bloqueo:
-            if self.sesion_live:
-                try:
-                    self.sesion_live.detener()
-                except Exception:
-                    pass
-                self.sesion_live = None
-        self._reanudar_captura_local()
+            sesion = self.sesion_live
+            self.sesion_live = None
+            self._generacion += 1
+        if sesion is not None:
+            threading.Thread(
+                target=self._detener_sesion_seguro,
+                args=(sesion,),
+                daemon=True,
+                name="live-cierre",
+            ).start()
 
 
 def despachar_evento_live(app, tipo: str, texto) -> bool:

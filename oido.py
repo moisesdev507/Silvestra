@@ -59,9 +59,21 @@ class Oido:
         self._escuchando_activo = False
         self._pausado = False
 
+    def _cerrar_sesion_ws(self):
+        """Cierra el streaming Deepgram activo sin alterar el hilo de Qt."""
+        sesion = getattr(self, "_sesion_ws_actual", None)
+        if sesion is None:
+            return
+        try:
+            sesion.cerrar()
+        except Exception:
+            pass
+        self._sesion_ws_actual = None
+
     def pausar(self):
         """Pausa y libera el micrófono para procesos externos (Gemini Live)."""
         self._pausado = True
+        self._cerrar_sesion_ws()
         self.liberar_microfono()
 
     def reanudar(self):
@@ -76,6 +88,9 @@ class Oido:
             self._flujo.liberar()
 
     def cerrar(self):
+        """Libera micrófono y streaming sin dejar sockets abiertos al conmutar."""
+        self._pausado = True
+        self._cerrar_sesion_ws()
         self.liberar_microfono()
 
     def _obtener_reconocedor_vosk(self):

@@ -194,15 +194,20 @@ def crear_output_stream():
 
 
 def cerrar_stream(stream):
-    """Detiene y cierra un stream de audio con abort() + close() evitando deadlocks en PortAudio."""
+    """Cierra el stream bajo el bloqueo PortAudio (evita 0xc0000374 al conmutar)."""
     if stream:
         try:
-            if hasattr(stream, "abort"):
-                stream.abort()
-        except Exception:
-            pass
-        try:
-            stream.close()
+            import audio_lock
+            with audio_lock.bloqueo_portaudio():
+                try:
+                    if hasattr(stream, "abort"):
+                        stream.abort()
+                except Exception:
+                    pass
+                try:
+                    stream.close()
+                except Exception:
+                    pass
         except Exception:
             pass
     return None

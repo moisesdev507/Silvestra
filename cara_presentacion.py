@@ -30,6 +30,23 @@ def normalizar(texto):
     return "".join(c for c in t if unicodedata.category(c) != "Mn")
 
 
+def proteger_evento(fn):
+    """Blinda un override de evento de Qt: nunca propaga excepciones al bucle.
+
+    Llama una sola vez a la función original, sin reenviar el evento, para
+    evitar recursiones entre widgets (por ejemplo, doble clic -> menú -> orbe).
+    """
+    def envuelto(self, *args, **kwargs):
+        try:
+            return fn(self, *args, **kwargs)
+        except Exception as exc:
+            print(f"[ui] Evento {fn.__name__} ignorado de forma segura: {exc}", flush=True)
+            return None
+    envuelto.__name__ = fn.__name__
+    envuelto.__doc__ = fn.__doc__
+    return envuelto
+
+
 def crear_menu(cara, al_escribir, al_conversar, al_renacer, al_descansar):
     """Construye el menú contextual fuera de cara_qt para ahorrar bytes."""
     menu = QMenu()
