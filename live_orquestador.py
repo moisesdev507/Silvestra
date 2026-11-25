@@ -151,7 +151,7 @@ class CoordinadorLiveSilvestra:
                 pass
 
     def _al_cierre_automatico(self):
-        """Tras 12 s sin voz: reposo Live con wake-word local y 0 tokens."""
+        """Tras 9 s sin voz: reposo Live con wake-word local y 0 tokens."""
         print("[COORDINADOR] Reposo Live: escuchando 'Kaya' en local (0 tokens).", flush=True)
         with self._bloqueo:
             self.sesion_live = None
@@ -184,9 +184,10 @@ class CoordinadorLiveSilvestra:
         print("[COORDINADOR] 'Kaya' detectado en local: reconectando Gemini Live.", flush=True)
 
         def _reactivar():
-            self.detener_despertar_local()
-            if self.intentar_activar_live("", audio_inicial=audio_inicial):
+            wake = self.despertar_local
+            if self.intentar_activar_live("", audio_inicial=audio_inicial, wake=wake):
                 self.app.cola.put(("micro_live_estado", False))
+            self.detener_despertar_local()
 
         threading.Thread(target=_reactivar, daemon=True, name="live-wake").start()
 
@@ -222,7 +223,7 @@ class CoordinadorLiveSilvestra:
                 self.intentar_activar_live("¡Hola Kaya! Ya encendió el equipo, saluda breve.")
         threading.Thread(target=_arranque_fondo, daemon=True, name="live-precalentar").start()
 
-    def intentar_activar_live(self, orden_inicial: str = "", audio_inicial=None) -> bool:
+    def intentar_activar_live(self, orden_inicial: str = "", audio_inicial=None, wake=None) -> bool:
         """Intenta activar Gemini Live al detectar invocación. Devuelve True si Live tomó el turno."""
         if not self.modo_live_habilitado or self.modo_voz_configurado() == "clasico" or live_motor.esta_en_enfriamiento_cuota():
             return False
@@ -242,6 +243,11 @@ class CoordinadorLiveSilvestra:
                 on_cierre_automatico=self._al_cierre_automatico,
                 orden_inicial=orden_inicial,
             )
+
+            if wake is not None and hasattr(wake, "drenar_posteriores"):
+                extra = wake.drenar_posteriores()
+                if extra:
+                    audio_inicial = list(audio_inicial or []) + extra
 
             ok = self.sesion_live.iniciar()
             if not ok:

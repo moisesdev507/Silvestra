@@ -113,6 +113,8 @@ class SesionKayaLive:
                     print(f"[LIVE][AUDIO] Error salida: {err}", flush=True)
                 finally:
                     self.compuerta.marcar_fin_escritura()
+                    if self.cola_audio_salida.empty():
+                        self.puerta.marcar_reproduccion(False)
         finally:
             self._stream_salida = live_audio.cerrar_stream(self._stream_salida)
 

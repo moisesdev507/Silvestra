@@ -50,10 +50,10 @@ class TestGeminiLiveUnificado(unittest.TestCase):
         self.assertEqual(c_res, chunk)
         self.assertFalse(sil)
 
-    def test_watchdog_silencio_12_segundos(self):
-        # 1. Blindaje: rechazar valores menores a 2.0s y fijar 12.0s por defecto
+    def test_watchdog_silencio_9_segundos(self):
+        # 1. Blindaje: rechazar valores menores a 2.0s y fijar 9.0s por defecto
         sesion_defecto = live_motor.SesionKayaLive(timeout_silencio=0.1)
-        self.assertEqual(sesion_defecto.timeout_silencio, 12.0)
+        self.assertEqual(sesion_defecto.timeout_silencio, 9.0)
 
         # 2. Con timeout válido >= 2.0s
         cierre = []

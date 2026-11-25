@@ -14,9 +14,9 @@ from typing import Optional
 
 import live_audio
 
-PRERROLL_MS = 400.0
-HANGOVER_MS = 800.0
-MARGEN_REPRODUCCION_MS = 350.0
+PRERROLL_MS = 300.0
+HANGOVER_MS = 450.0
+MARGEN_REPRODUCCION_MS = 150.0
 ESTADO_REPOSO = "en_reposo"
 ESTADO_ESCUCHANDO = "escuchando"
 
@@ -172,6 +172,8 @@ class PuertaAudioLive:
                 if self._abierta:
                     autorizados = []
                 else:
+                    # Inicio de voz: el pre-roll se vacía en este mismo frame,
+                    # sin retención adicional; los siguientes salen en tiempo real.
                     self._abierta = True
                     autorizados = list(self._preroll)
                     self._preroll.clear()

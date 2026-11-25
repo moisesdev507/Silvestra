@@ -18,8 +18,8 @@ import rutas_app
 
 VARIANTES = {"kaya", "kaia", "calla", "caia"}
 SEPARADOR = re.compile(r"[^\wáéíóúñü]+", re.UNICODE)
-POST_KAYA_MS = 900.0
 MAX_FRAMES = 80  # ~4 s de audio inicial como máximo
+POLL_MS = 10.0   # despacho del wake-word en cuanto aparece en el partial
 
 
 def contiene_kaya(texto) -> bool:
@@ -53,8 +53,8 @@ class EscuchaDespertarLocal:
         self._rate = live_audio.RATE_ENTRADA
         self._audio = []
         self._audio_pendiente = None
+        self._post_kaya = []  # captura posterior al nombre, para el handoff a Live
         self._t_deteccion = None
-        self._ultima_actividad = self._reloj()
         self._despachado = False
 
     @property
@@ -86,8 +86,8 @@ class EscuchaDespertarLocal:
             self._despachado = False
             self._audio.clear()
             self._audio_pendiente = None
+            self._post_kaya.clear()
             self._t_deteccion = None
-            self._ultima_actividad = self._reloj()
             self._gate.reiniciar()
         try:
             with audio_lock.bloqueo_portaudio():
@@ -134,54 +134,59 @@ class EscuchaDespertarLocal:
             return
         if self._rate != live_audio.RATE_ENTRADA:
             pcm = live_audio.remuestrear_pcm16_a_16k(pcm, self._rate)
-        autorizados, habla = self._gate.procesar(pcm)
-        if habla:
-            self._ultima_actividad = self._reloj()
-        if not autorizados or self._reconocedor is None:
+        autorizados, _ = self._gate.procesar(pcm)
+        rec = self._reconocedor
+        if rec is not None and self._t_deteccion is None:
+            texto = self._texto(getattr(rec, "PartialResult", lambda: "")(), "partial")
+            if not contiene_kaya(texto) and not self._gate.abierta:
+                # Result() solo con el gate cerrado para no resetear Vosk a mitad de frase.
+                texto = self._texto(getattr(rec, "Result", lambda: "")(), "text")
+            if contiene_kaya(texto):
+                with self._bloqueo:
+                    self._t_deteccion = self._reloj()
+        if not autorizados or rec is None:
             return
         with self._bloqueo:
             self._audio.extend(autorizados)
             if len(self._audio) > MAX_FRAMES:
                 del self._audio[:-MAX_FRAMES]
+            if self._despachado:
+                # Sigue capturando mientras Live conecta: no se pierde lo que
+                # el usuario dice después del nombre.
+                self._post_kaya.extend(autorizados)
+                if len(self._post_kaya) > MAX_FRAMES:
+                    del self._post_kaya[:-MAX_FRAMES]
         for frame in autorizados:
             try:
-                self._reconocedor.AcceptWaveForm(frame)
+                rec.AcceptWaveForm(frame)
             except Exception:
                 return
-        if self._t_deteccion is not None:
-            return
-        rec = self._reconocedor
-        texto = self._texto(getattr(rec, "PartialResult", lambda: "")(), "partial")
-        if not contiene_kaya(texto):
-            texto = self._texto(getattr(rec, "Result", lambda: "")(), "text")
-        if contiene_kaya(texto):
-            with self._bloqueo:
-                self._t_deteccion = self._reloj()
+
+    def drenar_posteriores(self) -> list:
+        """Frames posteriores a 'Kaya' capturados durante la reconexión."""
+        with self._bloqueo:
+            audio, self._post_kaya = self._post_kaya, []
+            return list(audio)
 
     def _listo_para_despachar(self) -> bool:
         with self._bloqueo:
-            if self._t_deteccion is None:
-                return False
-            ahora = self._reloj()
-            return (ahora - self._t_deteccion) * 1000.0 >= POST_KAYA_MS or (
-                not self._gate.abierta and ahora - self._ultima_actividad > 0.6)
+            return self._t_deteccion is not None and not self._despachado
 
     def _vigilar(self):
-        while self._vivo:
-            self._dormir(0.05)
+        while self._vivo and not self._despachado:
+            self._dormir(POLL_MS / 1000.0)
             if self._listo_para_despachar():
                 self._finalizar()
                 return
 
     def _finalizar(self):
-        """Entrega la frase completa y cierra la escucha local."""
+        """Despacha al instante y sigue capturando hasta que Live tome el micro."""
         with self._bloqueo:
             if self._despachado:
                 return
             self._despachado = True
             audio = list(self._audio)
             self._audio_pendiente = audio
-        self.detener()
         if callable(self.al_despertar):
             try:
                 self.al_despertar("kaya", audio)

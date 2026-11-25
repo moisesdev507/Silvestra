@@ -1,6 +1,6 @@
 """Módulo de audio PCM, compuerta anti-eco half-duplex y configuración para Gemini Live.
 
-Implementa la ventana de cola antieco (~350 ms) para parlantes, asegurando
+Implementa la ventana de cola antieco (~150 ms) para parlantes, asegurando
 que la salida de audio nunca interrumpa a Kaya a mitad de frase.
 """
 import asyncio
@@ -27,14 +27,14 @@ _LOCK_DISYUNTOR = threading.RLock()
 
 
 def timeout_silencio_configurado(valor=None) -> float:
-    """KAYA_TIMEOUT_SILENCIO (12 s por defecto) con guarda de valores inválidos."""
+    """KAYA_TIMEOUT_SILENCIO (9 s de apagado estricto) con guarda de valores inválidos."""
     if valor is None:
-        valor = os.environ.get("KAYA_TIMEOUT_SILENCIO", "12")
+        valor = os.environ.get("KAYA_TIMEOUT_SILENCIO", "9")
     try:
         segundos = float(valor)
     except (TypeError, ValueError):
-        segundos = 12.0
-    return segundos if segundos >= 2.0 else 12.0
+        segundos = 9.0
+    return segundos if segundos >= 2.0 else 9.0
 
 
 TIMEOUT_SILENCIO_DEFECTO = timeout_silencio_configurado()
@@ -79,9 +79,9 @@ class CompuertaAntiEco:
 
         if eco_cola_ms is None:
             try:
-                self.eco_cola_ms = float(os.environ.get("KAYA_ECO_COLA_MS", "350"))
+                self.eco_cola_ms = float(os.environ.get("KAYA_ECO_COLA_MS", "150"))
             except Exception:
-                self.eco_cola_ms = 250.0
+                self.eco_cola_ms = 150.0
         else:
             self.eco_cola_ms = float(eco_cola_ms)
 
