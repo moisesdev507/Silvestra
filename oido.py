@@ -23,7 +23,6 @@ from oido_flujo import (
 from oido_vad import DetectorVozSilero
 
 
-# Contexto y vocabulario para guiar a Whisper evitando deformaciones o alucinaciones.
 try:
     from identidad_kaya import PROMPT_WHISPER
 except Exception:
@@ -31,7 +30,6 @@ except Exception:
 
 
 def _barge_in_habilitado():
-    """Permite activarlo por defecto delegando en charla_continua."""
     try:
         import charla_continua
         return charla_continua.barge_in_habilitado()
@@ -40,7 +38,6 @@ def _barge_in_habilitado():
 
 
 def _barge_in(app, datos, comandos_corte, rec_vosk):
-    """Interrumpe con filtro seguro anti-eco o comando claro de corte."""
     try:
         import charla_continua
         if charla_continua.evaluar_barge_in_seguro(app, datos):
@@ -68,12 +65,10 @@ def _barge_in(app, datos, comandos_corte, rec_vosk):
 
 
 def _es_eco_prompt(texto_original, texto, prompt, ultimo_dicho=""):
-    """Delega en oido_filtro: solo eco real del TTS o bucle degenerado."""
     return oido_filtro.debe_descartar(texto_original, texto, prompt, ultimo_dicho)
 
 
 def motivo_descarte_transcripcion(texto, rms, r=None):
-    """Devuelve el motivo de descarte o None si la transcripción es válida."""
     t_low = " ".join(str(texto or "").lower().split())
     if es_cortesia_corta(texto):
         if cortesia_descartada(texto, rms, r):
@@ -103,35 +98,40 @@ class Oido:
         self._flujo = FlujoMicrofono(rate=16000, blocksize=int(16000 * 0.05))
         self._vad = DetectorVozSilero(sample_rate=16000)
         self._escuchando_activo = False
+        self._pausado = False
+
+    def pausar(self):
+        """Pausa y libera el micrófono para procesos externos (Gemini Live)."""
+        self._pausado = True
+        self.liberar_microfono()
+
+    def reanudar(self):
+        """Reanuda la escucha tras el proceso externo."""
+        self._pausado = False
+
+    def esta_pausado(self):
+        return bool(self._pausado)
 
     def liberar_microfono(self):
-        """Pausa y libera el flujo persistente para procesos exclusivos (ej. calibración de voz)."""
         with self.bloqueo:
             self._flujo.liberar()
 
     def cerrar(self):
-        """Cierre definitivo del flujo al apagar Silvestra."""
         self.liberar_microfono()
 
     def _obtener_reconocedor_vosk(self):
-        """Carga perezosa del modelo Vosk sin gramática restringida."""
         if self._reconocedor_vosk is None:
             import os
             import vosk
-            ruta_modelo = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                "modelos",
-                "vosk-model-small-es-0.42",
-            )
-            if not os.path.exists(ruta_modelo):
-                raise RuntimeError(f"No se encontró el modelo Vosk en {ruta_modelo}")
+            ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "modelos", "vosk-model-small-es-0.42")
+            if not os.path.exists(ruta):
+                raise RuntimeError(f"No se encontró el modelo Vosk en {ruta}")
             if self._modelo_vosk is None:
-                self._modelo_vosk = vosk.Model(ruta_modelo)
+                self._modelo_vosk = vosk.Model(ruta)
             self._reconocedor_vosk = vosk.KaldiRecognizer(self._modelo_vosk, 16000)
         return self._reconocedor_vosk
 
     def _transcribir_vosk(self, audio_bytes):
-        """Transcribe audio int16 16kHz usando Vosk local como respaldo cuando Whisper falla."""
         try:
             import json
             t0 = time.time()
@@ -157,6 +157,8 @@ class Oido:
         return generacion is None or getattr(app, "_generacion_escucha", generacion) == generacion
 
     def escuchar(self, corto=False, app=None, generacion=None):
+        if getattr(self, "_pausado", False):
+            return None
         while generacion is not None and self._sesion_vigente(app, generacion):
             adquirido = self.bloqueo.acquire(timeout=0.2)
             if not adquirido:

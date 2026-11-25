@@ -50,7 +50,6 @@ def normalizar_emocion(emocion):
 
 
 def deducir_emocion(texto, contexto=None):
-    """Deduce una emoción sutil según el contexto o el contenido del texto."""
     if contexto:
         ctx = str(contexto).lower()
         if any(c in ctx for c in ("cuidado", "checkin", "salida")):
@@ -64,24 +63,17 @@ def deducir_emocion(texto, contexto=None):
     if not txt:
         return "neutral"
 
-    # Errores o fallos técnicos -> seria
     if any(p in txt for p in ("error", "falló", "fallo", "problema", "no pude", "no reconozco", "no te conozco")):
         return "seria"
-
-    # Exclamaciones -> animada
     if "!" in txt or "¡" in txt:
         return "animada"
-
-    # Saludos matutinos o entusiasmo
     if any(p in txt for p in ("buenos días", "buen día", "bienvenido", "qué gusto", "excelente")):
         return "alegre"
-
     return "neutral"
 
 
 def dividir_frases(texto):
-    """Parte el texto en frases para empezar a hablar con la primera."""
-    partes = [p.strip() for p in re.split(r"(?<=[.!?…])\s+", texto.strip()) if p.strip()]
+    partes = [p.strip() for p in re.split(r"(?<=[.!?…])\s+", str(texto or "").strip()) if p.strip()]
     frases = []
     for p in partes:
         if frases and len(frases[-1]) < 25:  # une frases muy cortas
@@ -147,6 +139,13 @@ class Voz:
         self._parar()
 
     def hablar(self, texto, al_terminar=None, emocion=None):
+        if not isinstance(texto, str) or not texto.strip():
+            if callable(al_terminar):
+                try:
+                    al_terminar()
+                except Exception:
+                    pass
+            return
         emo_base = normalizar_emocion(emocion) if emocion else deducir_emocion(texto)
         flujo = self.flujo(al_terminar, emocion=emo_base)
         for frase in dividir_frases(texto):

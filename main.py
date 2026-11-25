@@ -207,6 +207,10 @@ class Silvestra:
         return not self.voz.ocupada() and not self.escuchando
 
     def decir(self, texto, ms=None, con_voz=True, emocion=None):
+        if texto is False or texto is True or texto is None:
+            return
+        if not isinstance(texto, str) or not texto.strip():
+            return
         emo = emocion or getattr(self.voz, "deducir_emocion", lambda t: "neutral")(texto)
         if hasattr(self.cara, "fijar_emocion"):
             self.cara.fijar_emocion(emo)
@@ -275,11 +279,19 @@ class Silvestra:
         conversacion.abrir_chat(self)
 
     def enviar(self, texto):
-        # Si Gemini Live está disponible y no está en enfriamiento de cuota, activar sesión Live
         cl = getattr(self, "coordinador_live", None)
-        if cl and not cl.esta_live_activo():
-            if cl.intentar_activar_live(texto):
+        if cl:
+            if cl.esta_live_activo():
+                cl.enviar_orden(texto)
                 return
+            elif getattr(cl, "modo_live_habilitado", False):
+                try:
+                    import live_motor
+                    if not live_motor.esta_en_enfriamiento_cuota():
+                        if cl.intentar_activar_live(texto):
+                            return
+                except Exception:
+                    pass
 
         if hasattr(self, "propuestas") and self.propuestas:
             try:

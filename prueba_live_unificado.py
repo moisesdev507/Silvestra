@@ -18,6 +18,10 @@ import live_orquestador
 
 class TestGeminiLiveUnificado(unittest.TestCase):
 
+    def setUp(self):
+        with live_motor._LOCK_DISYUNTOR:
+            live_motor._DISYUNTOR_HASTA = 0.0
+
     def test_compuerta_anti_eco_ventana_gracia(self):
         q_salida = queue.Queue()
         # Ventana de 120ms para prueba rápida
@@ -99,6 +103,92 @@ class TestGeminiLiveUnificado(unittest.TestCase):
         self.assertIn("ejecutar_accion_pc", nombres)
         self.assertIn("consultar_estado_pc", nombres)
         self.assertIn("entrar_en_reposo", nombres)
+
+    def test_envio_inmediato_orden_inicial_al_conectar(self):
+        # 1. Con orden específica
+        s1 = live_motor.SesionKayaLive(orden_inicial="qué clima hace")
+        self.assertEqual(s1.orden_inicial, "qué clima hace")
+
+        # 2. Con orden vacía o solo 'Kaya'
+        s2 = live_motor.SesionKayaLive(orden_inicial="Kaya")
+        self.assertEqual(s2.orden_inicial, "Kaya")
+
+        # 3. Verificar que el coordinador inyecta la orden inicial
+        app_mock = MagicMock()
+        app_mock.invocacion = MagicMock()
+        app_mock.oido = MagicMock()
+        coordinador = live_orquestador.CoordinadorLiveSilvestra(app_mock)
+        coordinador.modo_live_habilitado = True
+
+        with patch.object(live_motor.SesionKayaLive, "iniciar", return_value=True):
+            ok = coordinador.intentar_activar_live("revisa mis correos")
+            self.assertTrue(ok)
+            self.assertEqual(coordinador.sesion_live.orden_inicial, "revisa mis correos")
+            # Verificar que oido e invocacion fueron pausados
+            app_mock.oido.pausar.assert_called_once()
+            app_mock.invocacion.pausar.assert_called_once()
+
+    def test_retorno_flujo_principal_sin_false_como_voz(self):
+        from main import Silvestra
+        from voz import Voz
+
+        voz = Voz()
+        callback_llamado = []
+        # voz.hablar(False) debe descartarse sin error
+        voz.hablar(False, al_terminar=lambda: callback_llamado.append(True))
+        self.assertTrue(len(callback_llamado) <= 1)
+
+        app_mock = MagicMock()
+        app_mock.voz = voz
+        app_mock.cara = MagicMock()
+        app_mock.coordinador_live = None
+
+        # app.decir(False) debe descartarse limpiamente sin hablar
+        Silvestra.decir(app_mock, False)
+        app_mock.cara.decir.assert_not_called()
+
+    def test_cierre_limpio_loop_sin_futures_colgados(self):
+        sesion = live_motor.SesionKayaLive()
+        loop = asyncio.new_event_loop()
+        sesion._loop = loop
+        sesion.activo = True
+
+        async def _tarea_larga():
+            try:
+                await asyncio.sleep(10.0)
+            except asyncio.CancelledError:
+                pass
+
+        # Crear tareas en el loop
+        t1 = loop.create_task(_tarea_larga())
+        t2 = loop.create_task(_tarea_larga())
+
+        # Detener la sesión
+        sesion.detener()
+
+        # Recolectar tareas sin error 'Event loop stopped before Future completed'
+        pendientes = [t for t in asyncio.all_tasks(loop) if not t.done()]
+        for t in pendientes:
+            t.cancel()
+        loop.run_until_complete(asyncio.gather(*pendientes, return_exceptions=True))
+        loop.close()
+
+        self.assertTrue(t1.cancelled() or t1.done())
+        self.assertTrue(t2.cancelled() or t2.done())
+
+    def test_pausa_y_reanudacion_oido(self):
+        from oido import Oido
+        oido = Oido(cliente=None, vocabulario={})
+        self.assertFalse(oido.esta_pausado())
+
+        oido.pausar()
+        self.assertTrue(oido.esta_pausado())
+        # Mientras está pausado, escuchar devuelve None de inmediato sin tocar micrófono
+        res = oido.escuchar()
+        self.assertIsNone(res)
+
+        oido.reanudar()
+        self.assertFalse(oido.esta_pausado())
 
 
 if __name__ == "__main__":

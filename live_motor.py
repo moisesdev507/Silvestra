@@ -56,6 +56,7 @@ class SesionKayaLive:
         on_nivel_voz: Optional[Callable[[float], None]] = None,
         on_transcripcion: Optional[Callable[[str, str], None]] = None,
         on_cierre_automatico: Optional[Callable[[], None]] = None,
+        orden_inicial: str = "",
     ):
         self.modelo = modelo
         self.voz = voz
@@ -64,6 +65,7 @@ class SesionKayaLive:
         self.on_nivel_voz = on_nivel_voz
         self.on_transcripcion = on_transcripcion
         self.on_cierre_automatico = on_cierre_automatico
+        self.orden_inicial = orden_inicial
 
         self.cola_audio_entrada: queue.Queue = queue.Queue(maxsize=live_audio.MAX_COLA_ENTRADA)
         self.cola_audio_salida: queue.Queue = queue.Queue()
@@ -71,6 +73,7 @@ class SesionKayaLive:
 
         self.activo = False
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._session_genai = None
         self._hilo_loop: Optional[threading.Thread] = None
         self._hilo_salida: Optional[threading.Thread] = None
         self._stream_entrada: Optional[sd.InputStream] = None
@@ -214,8 +217,26 @@ class SesionKayaLive:
         live_herramientas.registrar_callback_reposo(self.detener)
 
         async with client.aio.live.connect(model=self.modelo, config=cfg) as session:
+            self._session_genai = session
             self._notificar_estado("escuchando")
             self._t_ultima_voz = time.monotonic()
+
+            orden = (self.orden_inicial or "").strip()
+            if orden and orden.lower() not in ("kaya", "kaia", "silvestra", "oye kaya"):
+                texto_inicio = orden
+            else:
+                texto_inicio = "Hola Kaya, dime, ¿estás ahí?"
+
+            try:
+                await session.send_client_content(
+                    turns=types.Content(
+                        role="user",
+                        parts=[types.Part.from_text(text=texto_inicio)]
+                    ),
+                    turn_complete=True
+                )
+            except Exception as e:
+                print(f"[LIVE] Error enviando orden inicial: {e}", flush=True)
 
             tarea_audio = asyncio.create_task(self._tarea_envio_audio(session))
             tarea_dog = asyncio.create_task(self._tarea_watchdog())
@@ -291,19 +312,56 @@ class SesionKayaLive:
             asyncio.set_event_loop(self._loop)
             try:
                 self._loop.run_until_complete(self._ejecutar_sesion())
+            except asyncio.CancelledError:
+                pass
             except Exception as e:
                 if es_error_cuota(e):
                     activar_enfriamiento_cuota(15.0)
                 print(f"[LIVE] Sesión finalizada o error: {e}", flush=True)
             finally:
-                self.detener()
+                try:
+                    pendientes = [t for t in asyncio.all_tasks(self._loop) if not t.done()]
+                    for t in pendientes:
+                        t.cancel()
+                    if pendientes:
+                        self._loop.run_until_complete(asyncio.gather(*pendientes, return_exceptions=True))
+                    self._loop.run_until_complete(self._loop.shutdown_asyncgens())
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        self._loop.close()
+                    except Exception:
+                        pass
+                    self._loop = None
+                    self._session_genai = None
 
         self._hilo_loop = threading.Thread(target=_correr_loop, daemon=True, name="live-ws-loop")
         self._hilo_loop.start()
         return True
 
+    def enviar_texto(self, texto: str) -> bool:
+        """Envía un mensaje de texto a la sesión Live activa."""
+        if not self.activo or not self._loop or not self._session_genai:
+            return False
+        def _enviar():
+            try:
+                asyncio.create_task(
+                    self._session_genai.send_client_content(
+                        turns=types.Content(role="user", parts=[types.Part.from_text(text=str(texto))]),
+                        turn_complete=True,
+                    )
+                )
+            except Exception as err:
+                print(f"[LIVE] Error enviando texto: {err}", flush=True)
+        try:
+            self._loop.call_soon_threadsafe(_enviar)
+            return True
+        except Exception:
+            return False
+
     def detener(self):
-        """Detiene limpiamente la sesión y libera streams."""
+        """Detiene limpiamente la sesión y cancela tareas pendientes sin romper el loop."""
         if not self.activo:
             return
         self.activo = False
@@ -319,6 +377,9 @@ class SesionKayaLive:
 
         if self._loop and self._loop.is_running():
             try:
-                self._loop.call_soon_threadsafe(self._loop.stop)
+                def _cancelar_todas():
+                    for t in asyncio.all_tasks(self._loop):
+                        t.cancel()
+                self._loop.call_soon_threadsafe(_cancelar_todas)
             except Exception:
                 pass

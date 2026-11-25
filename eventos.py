@@ -16,25 +16,23 @@ def es_confirmacion_rutinaria(texto):
     alertas = (
         "error", "fallo", "falló", "no pude", "no puedo", "no se pudo", "no está", "no esta",
         "no existe", "no encontré", "no encontre", "no tengo", "bloquead", "prohibid",
-        "cuidado", "advertencia", "contraseña", "seguridad", "invalido", "inválido", "rechazad"
+        "cuidado", "advertencia", "contraseña", "seguridad", "invalido", "inválido", "rechazad",
     )
     if any(a in t for a in alertas):
         return False
-
     datos = (
         "recordatorio vencido", "te leo", "resumen:", "última entrada", "ultima entrada",
-        "son las ", "la hora es", "el clima", "temperatura", "grados", "noticia", "diario:"
+        "son las ", "la hora es", "el clima", "temperatura", "grados", "noticia", "diario:",
     )
     if any(d in t for d in datos):
         return False
-
     rutinas = (
         "panel jarvis listo", "subiendo volumen", "bajando volumen", "cambiando silencio",
         "pausando o reanudando", "siguiente canción", "cancion anterior", "canción anterior",
         "abriendo ", "pantalla remota desactivada", "modo privado de la tablet",
         "modo normal de la tablet", "detección de presencia", "deteccion de presencia",
         "subiendo brillo", "bajando brillo", "listo", "hecho", "anotado", "abierto",
-        "cerrado", "activado", "desactivado"
+        "cerrado", "activado", "desactivado",
     )
     if any(r in t for r in rutinas):
         return True
@@ -361,19 +359,21 @@ def atender_evento(app, tipo, texto):
     elif tipo == "subtitulo":
         app.decir(str(texto), 5000, con_voz=False)
 
-    elif tipo == "fallo":
+    elif tipo in ("error", "fallo"):
         remoto = getattr(app, "_ecosistema_origen", None)
         if remoto and getattr(app, "pantalla_remota", None):
             app.pantalla_remota.puente.reservar_turno(remoto, cerrar=True)
             app._ecosistema_origen = None
         app._dejar_de_escuchar()
         app.conversacion = False
-        app.decir(texto, 5000, con_voz=False)
+        if texto and texto is not False and str(texto).strip():
+            app.decir(str(texto), 5000, con_voz=False)
 
     else:
         if app.flujo is not None:
             app.flujo.cerrar()
             app.flujo = None
-        app.decir(f"Tuve un problema para pensar: {texto}", 5000, con_voz=False)
+        if texto and texto is not False and str(texto).strip():
+            app.decir(f"Tuve un problema para pensar: {texto}", 5000, con_voz=False)
         if app.conversacion and not app.escuchando:
             app.cara.root.after(5000, app.escuchar)

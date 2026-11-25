@@ -50,18 +50,40 @@ class CoordinadorLiveSilvestra:
         if rol == "kaya" and texto:
             self.app.cola.put(("frase_burbuja_live", texto))
 
-    def _al_cierre_automatico(self):
-        """Invocado por el watchdog de 9 segundos de silencio."""
-        print("[COORDINADOR] Regresando a escucha local por palabra clave.", flush=True)
-        with self._bloqueo:
-            self.sesion_live = None
-        # Reactivar escucha ambiental local
+    def _pausar_captura_local(self):
+        inv = getattr(self.app, "invocacion", None)
+        if inv and hasattr(inv, "pausar"):
+            try:
+                inv.pausar()
+            except Exception:
+                pass
+        oid = getattr(self.app, "oido", None)
+        if oid and hasattr(oid, "pausar"):
+            try:
+                oid.pausar()
+            except Exception:
+                pass
+
+    def _reanudar_captura_local(self):
+        oid = getattr(self.app, "oido", None)
+        if oid and hasattr(oid, "reanudar"):
+            try:
+                oid.reanudar()
+            except Exception:
+                pass
         inv = getattr(self.app, "invocacion", None)
         if inv and hasattr(inv, "reanudar"):
             try:
                 inv.reanudar()
             except Exception:
                 pass
+
+    def _al_cierre_automatico(self):
+        """Invocado por el watchdog de 9 segundos de silencio o cierre de Live."""
+        print("[COORDINADOR] Regresando a escucha local por palabra clave.", flush=True)
+        with self._bloqueo:
+            self.sesion_live = None
+        self._reanudar_captura_local()
 
     def intentar_activar_live(self, orden_inicial: str = "") -> bool:
         """Intenta activar Gemini Live al detectar invocación. Devuelve True si Live tomó el turno."""
@@ -70,35 +92,35 @@ class CoordinadorLiveSilvestra:
 
         with self._bloqueo:
             if self.sesion_live and self.sesion_live.activo:
+                if orden_inicial:
+                    self.sesion_live.enviar_texto(orden_inicial)
                 return True
 
-            # Pausar temporalmente captura clásica local para evitar choque en PortAudio
-            inv = getattr(self.app, "invocacion", None)
-            if inv and hasattr(inv, "pausar"):
-                try:
-                    inv.pausar()
-                except Exception:
-                    pass
+            self._pausar_captura_local()
 
             self.sesion_live = live_motor.SesionKayaLive(
                 on_estado=self._al_estado,
                 on_nivel_voz=self._al_nivel_voz,
                 on_transcripcion=self._a_transcripcion,
                 on_cierre_automatico=self._al_cierre_automatico,
+                orden_inicial=orden_inicial,
             )
 
             ok = self.sesion_live.iniciar()
             if not ok:
                 self.sesion_live = None
-                if inv and hasattr(inv, "reanudar"):
-                    try:
-                        inv.reanudar()
-                    except Exception:
-                        pass
+                self._reanudar_captura_local()
                 return False
 
             print("[COORDINADOR] Sesión Gemini Live iniciada exitosamente.", flush=True)
             return True
+
+    def enviar_orden(self, texto: str) -> bool:
+        """Envía una orden por texto a la sesión Live en curso."""
+        with self._bloqueo:
+            if self.sesion_live and self.sesion_live.activo:
+                return self.sesion_live.enviar_texto(texto)
+        return False
 
     def esta_live_activo(self) -> bool:
         with self._bloqueo:
@@ -112,3 +134,4 @@ class CoordinadorLiveSilvestra:
                 except Exception:
                     pass
                 self.sesion_live = None
+        self._reanudar_captura_local()
