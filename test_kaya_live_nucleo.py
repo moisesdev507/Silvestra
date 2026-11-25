@@ -4,6 +4,7 @@ import os
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import kaya_live_conexion
 import kaya_live_nucleo
 import kaya_live_tools
 
@@ -17,7 +18,8 @@ class TestKayaLiveNucleo(unittest.TestCase):
         """Verifica que construir_instruccion_sistema incluya alma, guía vocal y temas."""
         instr = kaya_live_nucleo.construir_instruccion_sistema()
         self.assertIn("Kaya", instr)
-        self.assertIn("Guía de actuación vocal", instr)
+        self.assertIn("Moisés", instr)
+        self.assertIn("Guía de actuación y voz", instr)
         self.assertIn("español latinoamericano", instr.lower())
 
     def test_voz_por_defecto_es_achernar(self):
@@ -92,6 +94,29 @@ class TestKayaLiveNucleo(unittest.TestCase):
             with self.assertRaises(Exception) as ctx:
                 await sesion._recepcion_servidor()
             self.assertIn("1011", str(ctx.exception))
+
+        asyncio.run(run_test())
+
+    def test_saludo_automatico_al_iniciar(self):
+        """Verifica que saludar_al_iniciar=True envíe turno de bienvenida una sola vez."""
+        mock_session = AsyncMock()
+
+        sesion_con_saludo = kaya_live_nucleo.SesionKayaLive(saludar_al_iniciar=True)
+        sesion_sin_saludo = kaya_live_nucleo.SesionKayaLive(saludar_al_iniciar=False)
+
+        async def run_test():
+            # Caso 1: sin saludo
+            await kaya_live_conexion.enviar_saludo_inicial_si_aplica(mock_session, sesion_sin_saludo)
+            mock_session.send_client_content.assert_not_called()
+
+            # Caso 2: con saludo (primera vez)
+            await kaya_live_conexion.enviar_saludo_inicial_si_aplica(mock_session, sesion_con_saludo)
+            self.assertEqual(mock_session.send_client_content.call_count, 1)
+            self.assertTrue(sesion_con_saludo._saludo_inicial_enviado)
+
+            # Caso 3: con saludo (segunda vez / reconexión no debe enviar de nuevo)
+            await kaya_live_conexion.enviar_saludo_inicial_si_aplica(mock_session, sesion_con_saludo)
+            self.assertEqual(mock_session.send_client_content.call_count, 1)
 
         asyncio.run(run_test())
 

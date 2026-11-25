@@ -248,7 +248,7 @@ class KayaLiveApp:
 def verificar_conexion(modelo: str, voz: str) -> bool:
     """Valida la conexión con Gemini Live API sin abrir ventana Qt."""
     print(f"[LIVE App] Validando conexión Live con modelo='{modelo}' y voz='{voz}'...")
-    s = kaya_live_nucleo.SesionKayaLive(modelo=modelo, voz=voz)
+    s = kaya_live_nucleo.SesionKayaLive(modelo=modelo, voz=voz, saludar_al_iniciar=False)
     return asyncio.run(s.ejecutar(solo_verificar=True))
 
 

@@ -1,5 +1,6 @@
 """Sesión de conexión y gestión asíncrona para Gemini Live."""
 import asyncio
+import datetime
 import queue
 import threading
 import time
@@ -60,6 +61,26 @@ async def verificar_conexion_real(client, modelo: str, config) -> bool:
         except asyncio.TimeoutError:
             pass
         return True
+
+
+async def enviar_saludo_inicial_si_aplica(session, sesion):
+    """Envía un prompt de sistema silencioso para que Kaya salude naturalmente al conectar."""
+    if not getattr(sesion, "saludar_al_iniciar", False) or getattr(sesion, "_saludo_inicial_enviado", False):
+        return
+    try:
+        now = datetime.datetime.now()
+        h_str = now.strftime("%H:%M")
+        prompt_saludo = (
+            f"[Sistema: acaba de abrirse la sesión. Son las {h_str}. "
+            "Saluda breve, natural y cercana en 1 frase según la hora y, si hay un tema pendiente reciente, menciónalo con naturalidad.]"
+        )
+        await session.send_client_content(
+            turns=[types.Content(role="user", parts=[types.Part.from_text(text=prompt_saludo)])],
+            turn_complete=True,
+        )
+        sesion._saludo_inicial_enviado = True
+    except Exception as e:
+        print(f"[LIVE] Error enviando saludo inicial: {e}", flush=True)
 
 
 async def ejecutar_sesion_live(sesion, solo_verificar: bool = False) -> bool:
@@ -137,6 +158,8 @@ async def ejecutar_sesion_live(sesion, solo_verificar: bool = False) -> bool:
                     sesion._notificar_estado("escuchando")
                     reintentos = 0
                     print(f"[LIVE] Sesión activa (modelo={sesion.modelo}, voz={sesion.voz}). Kaya te escucha...", flush=True)
+
+                    await enviar_saludo_inicial_si_aplica(session, sesion)
 
                     t_mic = asyncio.create_task(sesion._captura_microfono())
                     t_rec = asyncio.create_task(sesion._recepcion_servidor())

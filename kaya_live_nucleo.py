@@ -46,10 +46,13 @@ class SesionKayaLive:
         on_estado: Optional[Callable[[str], None]] = None,
         on_nivel_voz: Optional[Callable[[float], None]] = None,
         on_transcripcion: Optional[Callable[[str, str], None]] = None,
+        saludar_al_iniciar: bool = True,
     ):
         self.modelo = modelo
         self.voz = voz
         self.timeout_silencio = float(timeout_silencio)
+        self.saludar_al_iniciar = bool(saludar_al_iniciar)
+        self._saludo_inicial_enviado = False
         self.on_transcripcion_usuario = on_transcripcion_usuario
         self.on_transcripcion_kaya = on_transcripcion_kaya
         self.on_estado_audio = on_estado_audio

@@ -1,4 +1,5 @@
 """Manejo de audio PCM y configuración de sesión para Gemini Live."""
+import datetime
 import math
 import os
 import struct
@@ -9,6 +10,9 @@ CHANNELS = 1
 CHUNK_ENTRADA_MS = 50
 MAX_COLA_ENTRADA = 60
 TIMEOUT_SILENCIO_DEFECTO = 75.0
+
+DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 
 
 def calcular_energia_pcm16(pcm_bytes: bytes) -> float:
@@ -46,8 +50,24 @@ def obtener_api_key():
     return str(key or "").strip()
 
 
+def obtener_hora_local_breve():
+    try:
+        now = datetime.datetime.now().astimezone()
+        dia_sem = DIAS[now.weekday()]
+        h12 = now.hour % 12 or 12
+        minu = f"{now.minute:02d}"
+        meridiano = "p. m." if now.hour >= 12 else "a. m."
+        return f"Hoy es {dia_sem} {now.day} de {MESES[now.month-1]} de {now.year}, {h12}:{minu} {meridiano} (hora local)."
+    except Exception:
+        return ""
+
+
 def construir_instruccion_sistema():
-    base = "Eres Kaya, asistente personal panameña, cálida, ingeniosa, hablas en español natural con respuestas breves."
+    base = (
+        "Eres Kaya, compañera y asistente personal creada por tu amigo Moisés en Panamá. "
+        "Moisés es tu creador y amigo; sé leal, femenina, cálida, honesta, curiosa, ingeniosa y afectuosa. "
+        "Hablas en español natural de Panamá con respuestas breves (1 a 2 frases por defecto)."
+    )
     ruta_alma = os.path.join(os.path.dirname(os.path.abspath(__file__)), "alma.txt")
     if os.path.exists(ruta_alma):
         try:
@@ -58,11 +78,15 @@ def construir_instruccion_sistema():
         except Exception:
             pass
 
+    hora_str = obtener_hora_local_breve()
+    contexto_tiempo = f"\n\n[Fecha y hora actual]: {hora_str}" if hora_str else ""
+
     guia_vocal = (
-        "\n\n[Guía de actuación vocal]\n"
+        "\n\n[Guía de actuación y voz]:\n"
         "- Hablas en español latinoamericano suave, cálido y cercano con acento panameño natural.\n"
-        "- Tu ritmo es ágil y fluido. Responde en 1 a 3 frases concisas para evitar monólogos.\n"
-        "- Si ejecutas una herramienta, confirma brevemente lo encontrado sin rodeos con tu propia voz."
+        "- Tu ritmo es ágil y fluido. Respuestas directas de 1 a 2 frases para evitar monólogos.\n"
+        "- Cero relleno de chatbot formal ('¿en qué te ayudo?', '¡por supuesto!').\n"
+        "- Si ejecutas una herramienta de PC, confirma con naturalidad lo encontrado o realizado."
     )
 
     memoria_txt = ""
@@ -78,4 +102,7 @@ def construir_instruccion_sistema():
         except Exception:
             pass
 
-    return base + guia_vocal + memoria_txt
+    total = base + contexto_tiempo + guia_vocal + memoria_txt
+    if len(total) > 2200:
+        total = total[:2180].rsplit("\n", 1)[0] + "\n..."
+    return total
