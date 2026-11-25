@@ -53,8 +53,38 @@ class OrquestadorKayaLive:
         self._silencio_total = False
         self._hilo_vigilante_vosk = None
         self._parada_vosk = threading.Event()
+        self._voz_original_hablar = None
+        self._instalar_candado_voz()
 
         kaya_live_puente.registrar_callback_reposo(self._al_solicitar_reposo_desde_live)
+
+    def _instalar_candado_voz(self):
+        """Capa 2: Intercepta app.voz para que ningún módulo emita TTS clásico en Live."""
+        if hasattr(self.app, "voz") and self.app.voz:
+            if not hasattr(self.app.voz, "_hablar_original_silvestra"):
+                self._voz_original_hablar = self.app.voz.hablar
+                self.app.voz._hablar_original_silvestra = self._voz_original_hablar
+
+                def _hablar_bloqueado(texto, al_terminar=None, emocion=None):
+                    if self._modo_actual == "clasico":
+                        return self._voz_original_hablar(texto, al_terminar=al_terminar, emocion=emocion)
+                    # En modo Live / Reposo, redirigir a aviso o ignorar
+                    print(f"[ORQUESTADOR][CANDADO_VOZ] Interceptada locución clásica en Live: '{str(texto)[:60]}'", flush=True)
+                    self.coordinar_aviso_externo(str(texto), es_recordatorio=False)
+                    if callable(al_terminar):
+                        try:
+                            al_terminar()
+                        except Exception:
+                            pass
+
+                self.app.voz.hablar = _hablar_bloqueado
+
+    def _restaurar_candado_voz(self):
+        """Restaura la emisión TTS local para el modo clásico."""
+        if hasattr(self.app, "voz") and self.app.voz:
+            orig = getattr(self.app.voz, "_hablar_original_silvestra", None)
+            if orig:
+                self.app.voz.hablar = orig
 
     def iniciar(self):
         """Inicia el orquestador según la configuración inicial."""
@@ -263,6 +293,7 @@ class OrquestadorKayaLive:
     def activar_fallback_clasico(self, motivo: str = ""):
         with self._bloqueo:
             self._modo_actual = "clasico"
+            self._restaurar_candado_voz()
             self._detener_sesion_live_interna()
             self._detener_vigilante_vosk()
 
@@ -329,5 +360,6 @@ class OrquestadorKayaLive:
 
     def cerrar(self):
         self._cerrando = True
+        self._restaurar_candado_voz()
         self._detener_vigilante_vosk()
         self._detener_sesion_live_interna()

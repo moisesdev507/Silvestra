@@ -79,6 +79,44 @@ class TestUnificacionLive(unittest.TestCase):
         self.assertTrue(coordinado)
         mock_cara.decir.assert_called_with("Comentario casual", 5000)
 
+    def test_candado_doble_voz_en_live_y_restauracion_en_clasico(self):
+        class AppFalsa:
+            pass
+
+        class VozFalsa:
+            def __init__(self):
+                self.llamadas = []
+
+            def hablar(self, txt, al_terminar=None, emocion=None):
+                self.llamadas.append(txt)
+
+        mock_cara = MagicMock()
+        mock_app = AppFalsa()
+        mock_voz = VozFalsa()
+        mock_app.voz = mock_voz
+
+        # 1. Al crear el orquestador se instala el candado sobre app.voz
+        orq = kaya_live_orquestador.OrquestadorKayaLive(
+            app_clasica=mock_app,
+            cara=mock_cara,
+            iniciar_en_live=False,
+        )
+        orq._modo_actual = "live"
+        orq.sesion = MagicMock()
+        orq.sesion._session = None
+        orq.loop_async = MagicMock()
+
+        # Intento de locución clásica mientras está en Live: NO debe llegar al TTS real
+        mock_app.voz.hablar("Hola desde módulo clásico")
+        self.assertEqual(len(mock_voz.llamadas), 0)
+
+        # 2. Al activarse el fallback clásico, se restaura la voz original
+        orq.activar_fallback_clasico("test_cuota")
+        self.assertEqual(orq._modo_actual, "clasico")
+        mock_app.voz.hablar("Ahora sí en clásico")
+        self.assertEqual(len(mock_voz.llamadas), 1)
+        self.assertEqual(mock_voz.llamadas[0], "Ahora sí en clásico")
+
     def test_bandera_clasico_sys_argv(self):
         import sys
         prev_argv = list(sys.argv)
