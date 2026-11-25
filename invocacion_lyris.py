@@ -1,4 +1,4 @@
-"""Invocación natural de Lyris: un único pipeline de captura (oido + Silero VAD)."""
+# Invocación de Kaya: un único pipeline de captura (oido + Silero VAD)
 import re
 import threading
 import time
@@ -291,7 +291,11 @@ class GestorInvocacion:
                 return False
         voz = getattr(self.app, "voz", None)
         if voz is not None and hasattr(voz, "ocupada") and voz.ocupada():
-            return False
+            try:
+                import charla_continua
+                if not charla_continua.barge_in_habilitado(): return False
+            except Exception:
+                return False
         return not getattr(self.app, "escuchando", False)
 
     def _bucle(self):

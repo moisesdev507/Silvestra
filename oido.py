@@ -31,9 +31,12 @@ except Exception:
 
 
 def _barge_in_habilitado():
-    """Permite activarlo por config o por entorno sin tocar config.py."""
-    return bool(getattr(config, "BARGE_IN_ACTIVO", False)
-                or os.environ.get("LYRIS_BARGE_IN") == "1")
+    """Permite activarlo por defecto delegando en charla_continua."""
+    try:
+        import charla_continua
+        return charla_continua.barge_in_habilitado()
+    except Exception:
+        return True
 
 
 def _barge_in(app, datos, comandos_corte, rec_vosk):

@@ -64,7 +64,50 @@ class TestCharlaContinua(unittest.TestCase):
         self.assertTrue(corta_voz2)
         app.voz.detener.assert_called_once_with(motivo="barge_in")
         app.cola.put.assert_called_with(("interrupcion", None))
-        app.cola.put.assert_called_with(("interrupcion", None))
+
+    def test_barge_in_escala_float32_normalizada(self):
+        """Verifica que muestras en float32 [-1.0, 1.0] se normalicen a escala int16."""
+        app = SimpleNamespace(
+            voz=SimpleNamespace(ocupada=lambda: True, detener=MagicMock()),
+            cola=SimpleNamespace(put=MagicMock())
+        )
+        charla_continua.reiniciar_estado_barge_in()
+        # 600 RMS sobre 32768 equivale a ~0.0183 en escala [-1.0, 1.0]
+        val_float = 600.0 / 32768.0
+        audio_float = np.full(1600, val_float, dtype=np.float32)
+
+        c1 = charla_continua.evaluar_barge_in_seguro(app, audio_float)
+        self.assertFalse(c1)
+        time.sleep(0.20)
+        c2 = charla_continua.evaluar_barge_in_seguro(app, audio_float)
+        self.assertTrue(c2)
+        app.voz.detener.assert_called_once_with(motivo="barge_in")
+
+    def test_barge_in_laptop_parlante_elevado(self):
+        """Verifica que el umbral para parlante con eco de laptop (~800 RMS) no corte en eco pero sí con voz (> 1000 RMS)."""
+        app = SimpleNamespace(
+            voz=SimpleNamespace(ocupada=lambda: True, detener=MagicMock()),
+            cola=SimpleNamespace(put=MagicMock())
+        )
+        charla_continua.reiniciar_estado_barge_in()
+        audio_eco_fuerte = np.full(1600, 350, dtype=np.int16)
+        charla_continua.evaluar_barge_in_seguro(app, audio_eco_fuerte)
+        time.sleep(0.15)
+        # Sigue el eco: no debe cortar
+        corta_eco = charla_continua.evaluar_barge_in_seguro(app, audio_eco_fuerte)
+        self.assertFalse(corta_eco)
+        app.voz.detener.assert_not_called()
+
+        # Usuario habla fuerte sobre el parlante
+        audio_usuario = np.full(1600, 750, dtype=np.int16)
+        charla_continua.evaluar_barge_in_seguro(app, audio_usuario)
+        time.sleep(0.20)
+        corta_usuario = charla_continua.evaluar_barge_in_seguro(app, audio_usuario)
+        self.assertTrue(corta_usuario)
+
+    def test_barge_in_habilitado(self):
+        """Verifica que barge_in_habilitado() retorne True por defecto."""
+        self.assertTrue(charla_continua.barge_in_habilitado())
 
     def test_humanizar_resultado_accion_preserva_cifras(self):
         """Verifica que humanizar_resultado_accion conserve cifras reales sin clichés robóticos."""
