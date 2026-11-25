@@ -1,13 +1,15 @@
 """Prototipo experimental e independiente de Kaya con Gemini Live API.
 
 Audio nativo bidireccional en tiempo real con interrupción nativa (barge-in).
-No modifica ningún archivo del sistema central ni depende de servicios locales.
+Audio I/O desacoplado del bucle asyncio, filtrado de pensamientos y reconexión continua.
 """
 import argparse
 import asyncio
 import os
+import queue
 import sys
 import threading
+import traceback
 import sounddevice as sd
 from google import genai
 from google.genai import types
@@ -18,6 +20,7 @@ RATE_ENTRADA = 16000
 RATE_SALIDA = 24000
 CHANNELS = 1
 CHUNK_ENTRADA_MS = 50  # ~50 ms -> 800 muestras int16 = 1600 bytes
+MAX_COLA_ENTRADA = 60  # ~3 segundos máximo en buffer de entrada
 
 
 def _obtener_api_key():
@@ -61,8 +64,63 @@ def _cargar_instruccion_alma():
     return base + extra
 
 
+def _hilo_reproductor(cola_salida, evento_parada):
+    """Hilo dedicado de salida de audio que no toca el event loop de asyncio."""
+    stream = None
+    try:
+        try:
+            import audio_lock
+            with audio_lock.bloqueo_portaudio():
+                stream = sd.RawOutputStream(
+                    samplerate=RATE_SALIDA,
+                    channels=CHANNELS,
+                    dtype="int16",
+                    blocksize=960,
+                )
+                stream.start()
+        except Exception:
+            stream = sd.RawOutputStream(
+                samplerate=RATE_SALIDA,
+                channels=CHANNELS,
+                dtype="int16",
+                blocksize=960,
+            )
+            stream.start()
+
+        while not evento_parada.is_set():
+            try:
+                trozo = cola_salida.get(timeout=0.04)
+            except queue.Empty:
+                continue
+
+            if trozo and len(trozo) > 0 and stream is not None and not stream.closed:
+                try:
+                    stream.write(trozo)
+                except Exception as write_err:
+                    if not evento_parada.is_set():
+                        print(f"[LIVE] Error escribiendo audio en stream: {write_err}", flush=True)
+    except Exception as err:
+        if not evento_parada.is_set():
+            print(f"[LIVE] Error iniciando reproductor de audio: {err}", flush=True)
+    finally:
+        if stream is not None:
+            try:
+                try:
+                    import audio_lock
+                    with audio_lock.bloqueo_portaudio():
+                        if not stream.closed:
+                            stream.stop()
+                            stream.close()
+                except Exception:
+                    if not stream.closed:
+                        stream.stop()
+                        stream.close()
+            except Exception:
+                pass
+
+
 async def _captura_microfono(session, cola_entrada, evento_parada):
-    """Lee audio del micrófono en streaming continuo y lo envía a Gemini Live."""
+    """Lee audio del micrófono desde la cola y lo envía a Gemini Live."""
     while not evento_parada.is_set():
         try:
             bloque = await asyncio.wait_for(cola_entrada.get(), timeout=0.1)
@@ -74,87 +132,80 @@ async def _captura_microfono(session, cola_entrada, evento_parada):
             continue
         except Exception as e:
             if not evento_parada.is_set():
-                print(f"[LIVE] Error en envío de audio: {e}", flush=True)
+                print(f"\n[LIVE] Excepción en captura_microfono: {e}", flush=True)
+                traceback.print_exc()
             break
-
-
-async def _reproduccion_audio(cola_salida, evento_parada):
-    """Reproduce audio PCM 24 kHz recibido desde Gemini Live de forma continua."""
-    loop = asyncio.get_running_loop()
-
-    def callback_salida(outdata, frames, time_info, status):
-        bytes_pedidos = frames * 2  # 16-bit mono = 2 bytes/frame
-        acumulado = bytearray()
-        while len(acumulado) < bytes_pedidos:
-            try:
-                pedazo = cola_salida.get_nowait()
-                acumulado.extend(pedazo)
-            except Exception:
-                break
-        if len(acumulado) < bytes_pedidos:
-            acumulado.extend(b"\x00" * (bytes_pedidos - len(acumulado)))
-        elif len(acumulado) > bytes_pedidos:
-            sobrante = bytes(acumulado[bytes_pedidos:])
-            acumulado = acumulado[:bytes_pedidos]
-            try:
-                cola_salida.put_nowait(sobrante)
-            except Exception:
-                pass
-        outdata[:] = bytes(acumulado)
-
-    try:
-        with sd.RawOutputStream(
-            samplerate=RATE_SALIDA,
-            channels=CHANNELS,
-            dtype="int16",
-            blocksize=960,
-            callback=callback_salida,
-        ):
-            while not evento_parada.is_set():
-                await asyncio.sleep(0.05)
-    except Exception as err:
-        if not evento_parada.is_set():
-            print(f"[LIVE] Error en stream de salida: {err}", flush=True)
 
 
 async def _recepcion_servidor(session, cola_salida, evento_parada):
-    """Recibe audio y transcripciones desde el servidor Live de Gemini."""
-    async for resp in session.receive():
-        if evento_parada.is_set():
-            break
+    """Bucle continuo de lectura de session.receive() protegiendo contra timeouts y filtrando pensamientos."""
+    turno_hablando = False
 
-        sc = resp.server_content
-        if not sc:
-            continue
-
-        # Interrupción nativa (barge-in del servidor)
-        if getattr(sc, "interrupted", False):
-            print("\n[LIVE] Interrumpida por el usuario (barge-in)", flush=True)
-            # Vaciar de inmediato la cola de salida para que Kaya se calle en < 20 ms
-            while not cola_salida.empty():
-                try:
-                    cola_salida.get_nowait()
-                except Exception:
+    while not evento_parada.is_set():
+        try:
+            async for resp in session.receive():
+                if evento_parada.is_set():
                     break
-            continue
 
-        # Transcripción del habla del usuario
-        it = getattr(sc, "input_audio_transcription", None)
-        if it and getattr(it, "text", None):
-            print(f"\n[Usuario]: {it.text}", end="", flush=True)
+                sc = getattr(resp, "server_content", None)
+                if not sc:
+                    continue
 
-        # Transcripción o audio de la respuesta de Kaya
-        ot = getattr(sc, "output_audio_transcription", None)
-        if ot and getattr(ot, "text", None):
-            print(f"\n[Kaya]: {ot.text}", end="", flush=True)
+                # Interrupción nativa (barge-in detectado por Gemini Live)
+                if getattr(sc, "interrupted", False):
+                    print("\n[LIVE] Interrumpida por el usuario (barge-in)", flush=True)
+                    turno_hablando = False
+                    # Vaciar cola de audio instantáneamente
+                    while not cola_salida.empty():
+                        try:
+                            cola_salida.get_nowait()
+                        except Exception:
+                            break
+                    continue
 
-        mt = getattr(sc, "model_turn", None)
-        if mt:
-            for part in mt.parts:
-                if part.text and not ot:
-                    print(f"\n[Kaya]: {part.text}", end="", flush=True)
-                if part.inline_data and part.inline_data.data:
-                    cola_salida.put_nowait(part.inline_data.data)
+                # Transcripción del usuario
+                it = getattr(sc, "input_audio_transcription", None)
+                if it and getattr(it, "text", None):
+                    print(f"\n[Tú]: {it.text.strip()}", flush=True)
+
+                # Transcripción de Kaya
+                ot = getattr(sc, "output_audio_transcription", None)
+                if ot and getattr(ot, "text", None):
+                    print(f"\n[Kaya]: {ot.text.strip()}", flush=True)
+
+                # Trozos de audio / texto del modelo
+                mt = getattr(sc, "model_turn", None)
+                if mt:
+                    for part in mt.parts:
+                        # Filtrar pensamientos internos
+                        if getattr(part, "thought", False):
+                            continue
+
+                        # Si no hay output_audio_transcription, imprimir texto limpio
+                        if part.text and not ot:
+                            texto_limpio = part.text.strip()
+                            if texto_limpio and not texto_limpio.startswith("**"):
+                                print(f"\n[Kaya]: {texto_limpio}", flush=True)
+
+                        # Encolar audio para el reproductor
+                        if part.inline_data and part.inline_data.data:
+                            if not turno_hablando:
+                                turno_hablando = True
+                                print("[LIVE] Reproduciendo audio...", flush=True)
+                            cola_salida.put_nowait(part.inline_data.data)
+
+                if getattr(sc, "turn_complete", False):
+                    turno_hablando = False
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            if not evento_parada.is_set():
+                print(f"\n[LIVE] Excepción en recepción: {e}", flush=True)
+                traceback.print_exc()
+                await asyncio.sleep(0.2)
+            else:
+                break
 
 
 async def ejecutar_sesion_live(modelo=MODELO_DEFECTO, voz=VOZ_DEFECTO, solo_verificar=False):
@@ -167,19 +218,32 @@ async def ejecutar_sesion_live(modelo=MODELO_DEFECTO, voz=VOZ_DEFECTO, solo_veri
     print(f"[LIVE] Inicializando Gemini Live con modelo '{modelo}' y voz '{voz}'...")
     client = genai.Client(api_key=key, http_options={"api_version": "v1alpha"})
 
-    cfg = types.LiveConnectConfig(
-        response_modalities=[types.Modality.AUDIO],
-        speech_config=types.SpeechConfig(
-            voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voz)
-            )
-        ),
-        input_audio_transcription=types.AudioTranscriptionConfig(),
-        output_audio_transcription=types.AudioTranscriptionConfig(),
-        system_instruction=types.Content(
-            parts=[types.Part.from_text(text=_cargar_instruccion_alma())]
-        ),
+    # Configuración Live con thinking_budget=0 y fallback si no lo soporta
+    speech_cfg = types.SpeechConfig(
+        voice_config=types.VoiceConfig(
+            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voz)
+        )
     )
+    alma_instr = types.Content(parts=[types.Part.from_text(text=_cargar_instruccion_alma())])
+
+    cfg = None
+    try:
+        cfg = types.LiveConnectConfig(
+            response_modalities=[types.Modality.AUDIO],
+            speech_config=speech_cfg,
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
+            input_audio_transcription=types.AudioTranscriptionConfig(),
+            output_audio_transcription=types.AudioTranscriptionConfig(),
+            system_instruction=alma_instr,
+        )
+    except Exception:
+        cfg = types.LiveConnectConfig(
+            response_modalities=[types.Modality.AUDIO],
+            speech_config=speech_cfg,
+            input_audio_transcription=types.AudioTranscriptionConfig(),
+            output_audio_transcription=types.AudioTranscriptionConfig(),
+            system_instruction=alma_instr,
+        )
 
     if solo_verificar:
         print("[LIVE] Modo verificación: conectando con Gemini Live...")
@@ -188,43 +252,92 @@ async def ejecutar_sesion_live(modelo=MODELO_DEFECTO, voz=VOZ_DEFECTO, solo_veri
             return True
 
     loop = asyncio.get_running_loop()
-    cola_entrada = asyncio.Queue()
-    cola_salida = asyncio.Queue()
-    evento_parada = asyncio.Event()
+    cola_entrada = asyncio.Queue(maxsize=MAX_COLA_ENTRADA)
+    cola_salida = queue.Queue(maxsize=300)
+    evento_parada = threading.Event()
+    evento_parada_async = asyncio.Event()
+
+    # Hilo dedicado para reproducción de audio
+    hilo_audio = threading.Thread(
+        target=_hilo_reproductor,
+        args=(cola_salida, evento_parada),
+        name="kaya-live-audio-out",
+        daemon=True,
+    )
+    hilo_audio.start()
 
     muestras_bloque = int(RATE_ENTRADA * (CHUNK_ENTRADA_MS / 1000.0))
 
     def callback_entrada(indata, frames, time_info, status):
-        if not evento_parada.is_set():
-            loop.call_soon_threadsafe(cola_entrada.put_nowait, indata.copy())
+        """Conversión segura de buffer CFFI a bytes sin .copy() ni bloqueos."""
+        if evento_parada.is_set():
+            return
+        try:
+            datos_bytes = bytes(indata)
+            if cola_entrada.full():
+                try:
+                    cola_entrada.get_nowait()
+                except Exception:
+                    pass
+            loop.call_soon_threadsafe(cola_entrada.put_nowait, datos_bytes)
+        except Exception:
+            pass
 
     print("\n" + "=" * 50)
     print("  KAYA LIVE BIDIRECCIONAL - GEMINI NATIVE AUDIO")
     print("  Habla naturalmente por tu micrófono. Presiona Ctrl+C para salir.")
     print("=" * 50 + "\n", flush=True)
 
-    stream_entrada = sd.RawInputStream(
-        samplerate=RATE_ENTRADA,
-        channels=CHANNELS,
-        dtype="int16",
-        blocksize=muestras_bloque,
-        callback=callback_entrada,
-    )
+    stream_entrada = None
+    try:
+        try:
+            import audio_lock
+            with audio_lock.bloqueo_portaudio():
+                stream_entrada = sd.RawInputStream(
+                    samplerate=RATE_ENTRADA,
+                    channels=CHANNELS,
+                    dtype="int16",
+                    blocksize=muestras_bloque,
+                    callback=callback_entrada,
+                )
+                stream_entrada.start()
+        except Exception:
+            stream_entrada = sd.RawInputStream(
+                samplerate=RATE_ENTRADA,
+                channels=CHANNELS,
+                dtype="int16",
+                blocksize=muestras_bloque,
+                callback=callback_entrada,
+            )
+            stream_entrada.start()
 
-    with stream_entrada:
         async with client.aio.live.connect(model=modelo, config=cfg) as session:
             print("[LIVE] Sesión bidireccional abierta. Kaya te está escuchando...", flush=True)
             tareas = [
-                asyncio.create_task(_captura_microfono(session, cola_entrada, evento_parada)),
-                asyncio.create_task(_reproduccion_audio(cola_salida, evento_parada)),
-                asyncio.create_task(_recepcion_servidor(session, cola_salida, evento_parada)),
+                asyncio.create_task(_captura_microfono(session, cola_entrada, evento_parada_async)),
+                asyncio.create_task(_recepcion_servidor(session, cola_salida, evento_parada_async)),
             ]
             try:
                 await asyncio.gather(*tareas)
             except asyncio.CancelledError:
                 pass
             finally:
-                evento_parada.set()
+                evento_parada_async.set()
+    finally:
+        evento_parada.set()
+        evento_parada_async.set()
+        if stream_entrada is not None:
+            try:
+                try:
+                    import audio_lock
+                    with audio_lock.bloqueo_portaudio():
+                        stream_entrada.stop()
+                        stream_entrada.close()
+                except Exception:
+                    stream_entrada.stop()
+                    stream_entrada.close()
+            except Exception:
+                pass
     return True
 
 
@@ -241,6 +354,7 @@ def main():
         print("\n[LIVE] Sesión finalizada por el usuario. ¡Hasta luego!", flush=True)
     except Exception as e:
         print(f"\n[LIVE] Error en ejecución: {e}", flush=True)
+        traceback.print_exc()
         sys.exit(1)
 
 
