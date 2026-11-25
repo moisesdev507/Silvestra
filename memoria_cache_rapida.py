@@ -61,10 +61,16 @@ def obtener_contexto_rapido(consulta, extractor_fn, clave_tipo="mem_pers", timeo
 
 
 def es_seguimiento_o_frase_corta(texto):
-    """Detecta frases de seguimiento cotidianas que no piden buscar en el pasado ni alertas."""
+    """Detecta frases cotidianas breves o de seguimiento que no requieren RAG ni búsqueda de recuerdos."""
     t = str(texto or "").strip().lower()
     if not t:
         return True
+    try:
+        import cerebro_perfil
+        if cerebro_perfil.es_frase_ultrarrapida(t):
+            return True
+    except Exception:
+        pass
     # Frases conversacionales cortas que son meros acuses de recibo
     acuses = {"ok", "vale", "listo", "gracias", "de acuerdo", "bien", "dale", "sipi", "nop"}
     if t in acuses:

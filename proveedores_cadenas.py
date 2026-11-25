@@ -223,20 +223,20 @@ def refrescar_clave_proveedor(prov_dict):
     return prov_dict
 
 
-MODELOS_RAPIDOS_GROQ = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"]
+MODELOS_RAPIDOS_GROQ = ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]
 MODELOS_RAPIDOS_GOOGLE = ["gemini-flash-lite-latest", "gemini-flash-latest"]
 
 
 def _ajustar_carril_rapido_groq():
-    """Configura el carril rápido de Groq en config.PROVEEDORES priorizando Llama sin <think>."""
+    """Configura el carril rápido de Groq en config.PROVEEDORES con los modelos vigentes."""
     try:
         for p in getattr(config, "PROVEEDORES", []):
             if isinstance(p, dict) and p.get("nombre") == "Groq":
-                rapidos = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"]
+                rapidos = ["openai/gpt-oss-20b", "openai/gpt-oss-120b"]
                 for campo in ("modelos", "modelos_charla", "modelos_razonamiento"):
                     existentes = list(p.get(campo) or [])
-                    sin_qwen = [m for m in existentes if "qwen" not in str(m).lower() and m not in rapidos]
-                    p[campo] = list(rapidos) + sin_qwen
+                    sin_rapidos = [m for m in existentes if m not in rapidos and "llama" not in str(m).lower() and "qwen" not in str(m).lower()]
+                    p[campo] = list(rapidos) + sin_rapidos
     except Exception:
         pass
 

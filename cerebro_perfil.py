@@ -9,7 +9,9 @@ _FRASES_ULTRARRAPIDAS = {
     "vale", "entendido", "de acuerdo", "perfecto", "listo", "dale",
     "hola", "hola lyris", "buenas", "buenos dias", "buenas tardes", "buenas noches",
     "adios", "chao", "hasta luego", "nos vemos", "bye", "bien", "muy bien",
-    "genial", "excelente", "comprendido", "claro", "si", "no"
+    "genial", "excelente", "comprendido", "claro", "si", "no",
+    "como estas", "como estas hoy", "que tal", "que tal todo", "que cuentas",
+    "que me cuentas", "como te va", "como andas", "todo bien"
 }
 
 _PALABRAS_PESADAS = {
@@ -42,7 +44,11 @@ def es_frase_ultrarrapida(texto):
         if any(p in _PALABRAS_PESADAS for p in palabras):
             return False
         # Si consiste exclusivamente en componentes de cortesía
-        cortesia = {"hola", "buenas", "dias", "tardes", "noches", "lyris", "silvestra", "ok", "gracias", "vale", "chao", "adios"}
+        cortesia = {
+            "hola", "buenas", "dias", "tardes", "noches", "lyris", "silvestra",
+            "ok", "gracias", "vale", "chao", "adios", "como", "estas", "que", "tal",
+            "todo", "bien", "te", "va", "andas", "amiga"
+        }
         if all(p in cortesia for p in palabras):
             return True
     return False

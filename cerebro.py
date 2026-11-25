@@ -90,8 +90,13 @@ class Cerebro:
                 self._seguimiento_visual_pendiente = False
         else:
             self._seguimiento_visual_pendiente = False
-        from planificacion_motor import es_solicitud_explicita
-        solicitud_plan = es_solicitud_explicita(texto_actual)
+        solicitud_plan = False
+        if not es_ultrarrapido:
+            try:
+                from planificacion_motor import es_solicitud_explicita
+                solicitud_plan = es_solicitud_explicita(texto_actual)
+            except Exception:
+                solicitud_plan = False
         if (len(pregunta) >= 18 or solicitud_plan) and not es_invitado and not es_ultrarrapido and hasattr(self.memoria, "razonar"):
             try:
                 import contexto_motor

@@ -17,6 +17,19 @@ RUTA_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 LIMITE_CONTEXTO = 550
 _bloqueo = threading.RLock()
 
+# Caché en RAM de los recuerdos cargados e índice para búsqueda instantánea (< 15 ms)
+_cache_filas_ram = None
+_cache_busquedas_ram = {}
+_cache_version = 0
+
+
+def _invalidar_cache_ram():
+    global _cache_filas_ram, _cache_busquedas_ram, _cache_version
+    with _bloqueo:
+        _cache_filas_ram = None
+        _cache_busquedas_ram.clear()
+        _cache_version += 1
+
 _DDL = """CREATE TABLE IF NOT EXISTS recuerdos (
     id INTEGER PRIMARY KEY,
     categoria TEXT,
@@ -82,6 +95,7 @@ def guardar_recuerdo(categoria, clave, valor, ruta_db=None):
                 "VALUES(?,?,?,?)", (cat, clave, texto, ahora))
         con.commit()
         fila = con.execute("SELECT * FROM recuerdos WHERE clave=?", (clave,)).fetchone()
+    _invalidar_cache_ram()
     res = _fila(fila) if fila else None
     if res:
         try:
@@ -98,16 +112,33 @@ def guardar_recuerdo(categoria, clave, valor, ruta_db=None):
     return res
 
 
+def _cargar_todas_filas(ruta_db=None):
+    """Carga y cachea en RAM todos los recuerdos activos."""
+    global _cache_filas_ram
+    if _cache_filas_ram is not None and not ruta_db:
+        return _cache_filas_ram
+    with _bloqueo, closing(_conectar(ruta_db)) as con:
+        filas = con.execute("SELECT * FROM recuerdos ORDER BY actualizado_en DESC").fetchall()
+    resultado = [_fila(f) for f in filas]
+    if not ruta_db:
+        with _bloqueo:
+            _cache_filas_ram = resultado
+    return resultado
+
+
 def buscar_recuerdos(consulta, limite=6, ruta_db=None):
     """Recuerdos ordenados por relevancia al texto y, después, por antigüedad."""
     consulta = str(consulta or "")
+    lim = max(0, int(limite or 6))
+    clave_cache = (consulta.strip().lower(), lim)
+    if not ruta_db:
+        with _bloqueo:
+            if clave_cache in _cache_busquedas_ram:
+                return list(_cache_busquedas_ram[clave_cache])
     terminos = [t for t in re.findall(r"\w+", unicodedata.normalize(
         "NFKD", consulta.lower()).encode("ascii", "ignore").decode("ascii"))
         if len(t) >= 3]
-    with _bloqueo, closing(_conectar(ruta_db)) as con:
-        filas = con.execute(
-            "SELECT * FROM recuerdos ORDER BY actualizado_en DESC").fetchall()
-    filas = [_fila(f) for f in filas]
+    filas = list(_cargar_todas_filas(ruta_db=ruta_db))
 
     def peso(fila):
         texto = unicodedata.normalize("NFKD", (fila["clave"] + " " + fila["valor"]).lower())
@@ -145,16 +176,19 @@ def buscar_recuerdos(consulta, limite=6, ruta_db=None):
         except Exception:
             pass
 
-    return filas[:max(0, int(limite or 6))]
+    res = filas[:lim]
+    if not ruta_db:
+        with _bloqueo:
+            _cache_busquedas_ram[clave_cache] = list(res)
+            if len(_cache_busquedas_ram) > 200:
+                _cache_busquedas_ram.pop(next(iter(_cache_busquedas_ram)))
+    return res
 
 
 def listar_recuerdos(limite=15, ruta_db=None):
-    """Recuerdos más recientes."""
-    with _bloqueo, closing(_conectar(ruta_db)) as con:
-        filas = con.execute(
-            "SELECT * FROM recuerdos ORDER BY actualizado_en DESC LIMIT ?",
-            (max(0, int(limite or 15)),)).fetchall()
-    return [_fila(f) for f in filas]
+    """Recuerdos más recientes usando la caché en RAM."""
+    filas = _cargar_todas_filas(ruta_db=ruta_db)
+    return filas[:max(0, int(limite or 15))]
 
 
 def eliminar_recuerdo(clave, ruta_db=None):
@@ -167,6 +201,7 @@ def eliminar_recuerdo(clave, ruta_db=None):
         con.commit()
         ok = bool(cur.rowcount)
         if ok:
+            _invalidar_cache_ram()
             try:
                 import memoria_cache_rapida
                 memoria_cache_rapida.invalidar_recuerdos()

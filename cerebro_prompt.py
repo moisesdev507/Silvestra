@@ -60,6 +60,12 @@ def cargar_alma():
 
 def recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5, contexto="", paquete=None):
     """Selecciona hasta max_recuerdos relevantes al tema actual por categorías y palabras clave."""
+    try:
+        import cerebro_perfil
+        if cerebro_perfil.es_frase_ultrarrapida(texto_actual):
+            return "- (todavía nada)", 0
+    except Exception:
+        pass
     if hasattr(memoria, "recuperar"):
         try:
             paquete = paquete or memoria.recuperar(texto_actual or "", contexto=contexto, limite=max_recuerdos)
