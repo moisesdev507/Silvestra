@@ -188,41 +188,10 @@ class Silvestra:
 
         self.cara.root.after(100, self.revisar_cola)
 
-        self.orquestador_live = None
-        es_modo_clasico = "--clasico" in sys.argv or os.environ.get("KAYA_MODO", "").strip().lower() == "clasico"
-
-        if not es_modo_clasico:
-            # Desactivar detectores clásicos para evitar colisión de PortAudio y doble escucha
-            if hasattr(self, "palabra_clave") and self.palabra_clave:
-                try:
-                    self.palabra_clave.detener()
-                except Exception:
-                    pass
-            if hasattr(self, "invocacion") and self.invocacion:
-                try:
-                    self.invocacion.detener()
-                except Exception:
-                    pass
-
-            try:
-                import kaya_live_orquestador
-                self.orquestador_live = kaya_live_orquestador.OrquestadorKayaLive(
-                    app_clasica=self,
-                    cara=self.cara,
-                    iniciar_en_live=True,
-                )
-                self.cara._al_escribir = self.orquestador_live.al_escribir
-                self.cara.root.after(200, self.orquestador_live.iniciar)
-            except Exception as e:
-                print(f"[main] No se pudo iniciar orquestador Live: {e}. Quedando en modo clásico.", flush=True)
-                self.orquestador_live = None
-
         if self.memoria.nombre:
-            if es_modo_clasico or self.orquestador_live is None:
-                self.cara.root.after(500, self.saludar)
+            self.cara.root.after(500, self.saludar)
         else:
-            if es_modo_clasico or self.orquestador_live is None:
-                self.cara.root.after(800, self.nacer)
+            self.cara.root.after(800, self.nacer)
 
     # ---------- Hablar y acciones ----------
     def puede_hablar_sola(self):
@@ -235,11 +204,6 @@ class Silvestra:
             self.cara.fijar_emocion(emo)
         self.cara.decir(texto, ms, emocion=emo)
         if con_voz:
-            orq = getattr(self, "orquestador_live", None)
-            if orq and getattr(orq, "_modo_actual", "") != "clasico":
-                es_rec = "recordatorio" in str(texto).lower() or "⏰" in str(texto)
-                orq.coordinar_aviso_externo(texto, es_recordatorio=es_rec)
-                return
             self.ultimo_dicho = texto
             try:
                 import naturalidad
@@ -365,11 +329,6 @@ class Silvestra:
             self.casa.reloj.stop()
         except Exception:
             pass
-        if getattr(self, "orquestador_live", None):
-            try:
-                self.orquestador_live.cerrar()
-            except Exception:
-                pass
         for objeto, metodo, args in (
             (getattr(self, "palabra_clave", None), "detener", ()),
             (getattr(self, "invocacion", None), "detener", ()),
