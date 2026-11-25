@@ -81,6 +81,23 @@ def nombre_usuario(base=None, ruta=None) -> str:
         return str(_cargar(ruta_perfil(base, ruta)).get("nombre") or "").strip()
 
 
+def perfil_con_usuario(base=None, ruta=None) -> bool:
+    """True si ya hay un perfil con nombre; nunca lo tratamos como instalación nueva."""
+    with _LOCK:
+        return bool(_cargar(ruta_perfil(base, ruta)).get("nombre"))
+
+
+def desactivar_primer_despertar_si_existe(base=None, ruta=None) -> bool:
+    """Neutraliza el flag en un perfil existente sin tocar su nombre ni otros datos."""
+    destino = ruta_perfil(base, ruta)
+    with _LOCK:
+        datos = _cargar(destino)
+        if not datos.get("nombre") or not datos.get(CLAVE_DESPERTAR, False):
+            return False
+        datos[CLAVE_DESPERTAR] = False
+        return ps.guardar_json_atomico(destino, datos)
+
+
 def primer_despertar_activo(base=None, ruta=None) -> bool:
     """Consulta sin consumir si el perfil aún debe despertar por primera vez."""
     with _LOCK:
@@ -122,6 +139,7 @@ __all__ = [
     "NOMBRE", "CREADOR", "CREADOR_CORTO", "LUGAR", "FECHA_INICIO", "FECHA_CORTA",
     "BLOQUE_IDENTIDAD", "IDENTIDAD_COMPACTA", "ruta_perfil",
     "preparar_perfil_usuario", "guardar_primer_despertar", "nombre_usuario",
+    "perfil_con_usuario", "desactivar_primer_despertar_si_existe",
     "primer_despertar_activo", "consumir_primer_despertar",
     "saludo_primer_despertar", "instruccion_primer_despertar",
 ]

@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import os
 import re
-import tempfile
 import threading
 
 import estado
 import identidad_origen
+import migracion_config
 import persistencia_segura as ps
 import rutas_app
 from PySide6.QtCore import QThread, Qt, QUrl, Signal
@@ -118,47 +118,22 @@ def guardar_configuracion(nombre, claves, base=None, ruta_env=None):
     try:
         ruta_datos = os.path.join(base, "datos")
         os.makedirs(ruta_datos, exist_ok=True)
-        if not identidad_origen.preparar_perfil_usuario(nombre, base=base):
-            return False, "No se pudo guardar el perfil en datos/."
-        ruta_memoria = os.path.join(base, "memoria.json")
-        memoria = ps.cargar_json_seguro(ruta_memoria, {})
-        if not isinstance(memoria, dict):
-            memoria = {}
-        memoria["nombre"] = nombre
-        if not ps.guardar_json_atomico(ruta_memoria, memoria):
-            return False, "No se pudo guardar el nombre en memoria.json."
+        if not identidad_origen.perfil_con_usuario(base):
+            if not identidad_origen.preparar_perfil_usuario(nombre, base=base):
+                return False, "No se pudo guardar el perfil en datos/."
+            ruta_memoria = os.path.join(base, "memoria.json")
+            memoria = ps.cargar_json_seguro(ruta_memoria, {})
+            if not isinstance(memoria, dict):
+                memoria = {}
+            memoria["nombre"] = nombre
+            if not ps.guardar_json_atomico(ruta_memoria, memoria):
+                return False, "No se pudo guardar el nombre en memoria.json."
+        else:
+            identidad_origen.desactivar_primer_despertar_si_existe(base)
 
-        lineas = []
-        if os.path.exists(ruta_env):
-            with open(ruta_env, "r", encoding="utf-8", errors="replace") as f:
-                lineas = f.read().splitlines()
-        finales, vistos = [], set()
-        for linea in lineas:
-            clave = linea.split("=", 1)[0].strip().lstrip("#")
-            if clave.lower().startswith("export "):
-                clave = clave[7:].strip()
-            if clave in CLAVES:
-                if clave not in vistos:
-                    finales.append(f"{clave}={str(claves[clave]).strip()}")
-                    vistos.add(clave)
-                continue
-            finales.append(linea)
-        for clave in CLAVES:
-            if clave not in vistos:
-                finales.append(f"{clave}={str(claves[clave]).strip()}")
-        texto = ("# Claves privadas de Kaya. Nunca compartas este archivo.\n"
-                 + "\n".join(finales).strip() + "\n")
-        directorio = os.path.dirname(os.path.abspath(ruta_env))
-        fd, temporal = tempfile.mkstemp(prefix=".env-", dir=directorio)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(texto)
-            f.flush()
-            os.fsync(f.fileno())
-        try:
-            os.chmod(temporal, 0o600)
-        except Exception:
-            pass
-        os.replace(temporal, ruta_env)
+        if not migracion_config.escribir_env(
+                ruta_env, {k: claves[k] for k in CLAVES}):
+            return False, "No se pudo guardar la configuración."
     except Exception as e:
         return False, f"Error guardando la configuración: {type(e).__name__}"
 
@@ -356,10 +331,24 @@ class OnboardingDialog(QDialog):
         self.lbl_estado.setText("Calibración omitida. Puedes hacerla después desde el menú.")
 
 
+def migrar_config_local(base=None):
+    """Migra claves de config.py y neutraliza el despertar en perfiles existentes."""
+    base = base or BASE
+    actuales = claves_actuales(os.path.join(base, ".env"))
+    migradas = migracion_config.migrar_desde_config(
+        base, actuales=actuales,
+        es_valida=lambda nombre, valor: validar_clave(nombre, valor)[0])
+    identidad_origen.desactivar_primer_despertar_si_existe(base)
+    if migradas:
+        cargar_env(os.path.join(base, ".env"))
+    return migradas
+
+
 def asegurar_configuracion(base=None):
-    """Muestra el onboarding solo cuando falta .env o alguna clave válida."""
+    """Migra claves antiguas y muestra el onboarding solo si aún faltan."""
     base = base or BASE
     ruta = os.path.join(base, ".env")
+    migrar_config_local(base)
     if not necesita_onboarding(ruta):
         cargar_env(ruta)
         return True

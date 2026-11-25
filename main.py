@@ -415,7 +415,7 @@ if __name__ == "__main__":
     import onboarding_qt
 
     rutas_app.preparar_dir_usuario()
-    onboarding_qt.cargar_env()
+    onboarding_qt.migrar_config_local()
     if not onboarding_qt.asegurar_configuracion():
         print("[main] Configuración inicial cancelada; no se iniciaron motores.", flush=True)
         sys.exit(0)
