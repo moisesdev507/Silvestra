@@ -4,80 +4,31 @@ Voz oficial Achernar, audio bidireccional, soporte de tools, inyección de imág
 y auto-reposo inteligente tras 75s de silencio para ahorro de cuota ($0).
 """
 import asyncio
-import os
 import queue
 import threading
 import time
 import traceback
 from typing import Any, Callable, Optional
 import sounddevice as sd
-from google import genai
 from google.genai import types
 
+import kaya_live_audio
+from kaya_live_audio import (
+    calcular_energia_pcm16,
+    obtener_api_key,
+    construir_instruccion_sistema,
+    RATE_ENTRADA,
+    RATE_SALIDA,
+    CHANNELS,
+    CHUNK_ENTRADA_MS,
+    MAX_COLA_ENTRADA,
+    TIMEOUT_SILENCIO_DEFECTO,
+)
+import kaya_live_conexion
 import kaya_live_tools
 
 MODELO_DEFECTO = "gemini-2.5-flash-native-audio-latest"
 VOZ_DEFECTO = "Achernar"
-RATE_ENTRADA = 16000
-RATE_SALIDA = 24000
-CHANNELS = 1
-CHUNK_ENTRADA_MS = 50
-MAX_COLA_ENTRADA = 60
-TIMEOUT_SILENCIO_DEFECTO = 75.0
-
-
-def obtener_api_key():
-    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    if not key:
-        try:
-            import config
-            key = getattr(config, "GEMINI_API_KEY", "") or getattr(config, "GOOGLE_API_KEY", "")
-        except Exception:
-            pass
-    if not key and os.path.exists(".env"):
-        try:
-            with open(".env", "r", encoding="utf-8") as f:
-                for linea in f:
-                    linea = linea.strip()
-                    if linea.startswith("GEMINI_API_KEY="):
-                        key = linea.split("=", 1)[1].strip("'\" ")
-                        break
-        except Exception:
-            pass
-    return str(key or "").strip()
-
-
-def construir_instruccion_sistema():
-    """Construye dinámicamente la instrucción de sistema con alma, actuación vocal y memoria."""
-    base = "Eres Kaya, asistente personal panameña, cálida, ingeniosa, hablas en español natural con respuestas breves."
-    ruta_alma = os.path.join(os.path.dirname(os.path.abspath(__file__)), "alma.txt")
-    if os.path.exists(ruta_alma):
-        try:
-            with open(ruta_alma, "r", encoding="utf-8") as f:
-                c = f.read().strip()
-                if c:
-                    base = c
-        except Exception:
-            pass
-
-    guia_vocal = (
-        "\n\n[Guía de actuación vocal]\n"
-        "- Hablas en español latinoamericano suave, cálido y cercano con acento panameño natural. "
-        "Nunca uses acento de España ni tono de locutora formal.\n"
-        "- Tu ritmo es ágil, relajado y fluido. Responde en 1 a 3 frases concisas y directas para que la charla no se vuelva monólogo.\n"
-        "- Si ejecutas una herramienta (ver pantalla, buscar, etc.), confirma brevemente lo encontrado sin rodeos."
-    )
-
-    memoria_txt = ""
-    try:
-        import iniciativa_kaya
-        res = iniciativa_kaya.resumen_compacto_temas()
-        if res:
-            memoria_txt = f"\n\n[Temas abiertos en memoria]:\n{res}"
-    except Exception:
-        pass
-
-    return base + guia_vocal + memoria_txt
 
 
 class SesionKayaLive:
@@ -91,6 +42,9 @@ class SesionKayaLive:
         on_transcripcion_usuario: Optional[Callable[[str], None]] = None,
         on_transcripcion_kaya: Optional[Callable[[str], None]] = None,
         on_estado_audio: Optional[Callable[[str], None]] = None,
+        on_estado: Optional[Callable[[str], None]] = None,
+        on_nivel_voz: Optional[Callable[[float], None]] = None,
+        on_transcripcion: Optional[Callable[[str, str], None]] = None,
     ):
         self.modelo = modelo
         self.voz = voz
@@ -98,6 +52,9 @@ class SesionKayaLive:
         self.on_transcripcion_usuario = on_transcripcion_usuario
         self.on_transcripcion_kaya = on_transcripcion_kaya
         self.on_estado_audio = on_estado_audio
+        self.on_estado = on_estado
+        self.on_nivel_voz = on_nivel_voz
+        self.on_transcripcion = on_transcripcion
 
         self._session = None
         self._evento_parada = threading.Event()
@@ -108,6 +65,51 @@ class SesionKayaLive:
         self._hilo_audio = None
         self._stream_entrada = None
         self._loop = None
+        self._pausado = False
+        self._estado_actual = "reposo"
+
+    def _notificar_estado(self, nuevo_estado: str):
+        self._estado_actual = nuevo_estado
+        if self.on_estado:
+            try:
+                self.on_estado(nuevo_estado)
+            except Exception:
+                pass
+
+    def _notificar_transcripcion(self, rol: str, texto: str):
+        if self.on_transcripcion:
+            try:
+                self.on_transcripcion(rol, texto)
+            except Exception:
+                pass
+        if rol == "usuario" and self.on_transcripcion_usuario:
+            try:
+                self.on_transcripcion_usuario(texto)
+            except Exception:
+                pass
+        elif rol == "kaya" and self.on_transcripcion_kaya:
+            try:
+                self.on_transcripcion_kaya(texto)
+            except Exception:
+                pass
+
+    def _notificar_nivel_voz(self, nivel: float):
+        if self.on_nivel_voz:
+            try:
+                self.on_nivel_voz(nivel)
+            except Exception:
+                pass
+
+    def pausar(self):
+        """Pausa temporalmente la captura/envío de audio sin cerrar sesión."""
+        self._pausado = True
+        self._notificar_estado("reposo")
+
+    def reanudar(self):
+        """Reanuda la interacción tras haber sido pausada."""
+        self._pausado = False
+        self.actualizar_actividad()
+        self._notificar_estado("escuchando")
 
     def actualizar_actividad(self):
         """Refresca la marca temporal del auto-reposo inteligente."""
@@ -115,7 +117,7 @@ class SesionKayaLive:
 
     async def enviar_imagen_jpeg(self, jpeg_bytes: bytes):
         """Inyecta un fotograma JPEG en tiempo real a la sesión Live."""
-        if self._session is not None and jpeg_bytes and len(jpeg_bytes) > 0:
+        if self._session is not None and jpeg_bytes:
             try:
                 await self._session.send_realtime_input(
                     media=types.Blob(data=jpeg_bytes, mime_type="image/jpeg")
@@ -141,8 +143,10 @@ class SesionKayaLive:
                 except queue.Empty:
                     continue
 
-                if trozo and len(trozo) > 0 and stream is not None and not stream.closed:
+                if trozo and stream is not None and not stream.closed:
                     try:
+                        nivel = calcular_energia_pcm16(trozo)
+                        self._notificar_nivel_voz(nivel)
                         stream.write(trozo)
                     except Exception:
                         pass
@@ -152,25 +156,29 @@ class SesionKayaLive:
         finally:
             if stream is not None:
                 try:
-                    try:
-                        import audio_lock
-                        with audio_lock.bloqueo_portaudio():
-                            if not stream.closed:
-                                stream.stop()
-                                stream.close()
-                    except Exception:
+                    import audio_lock
+                    with audio_lock.bloqueo_portaudio():
                         if not stream.closed:
                             stream.stop()
                             stream.close()
                 except Exception:
-                    pass
+                    try:
+                        if not stream.closed:
+                            stream.stop()
+                            stream.close()
+                    except Exception:
+                        pass
 
     async def _captura_microfono(self):
         while not self._evento_parada_async.is_set():
             try:
                 bloque = await asyncio.wait_for(self._cola_entrada.get(), timeout=0.1)
-                if bloque and len(bloque) > 0:
+                if bloque and not self._pausado:
                     self.actualizar_actividad()
+                    if self._estado_actual != "hablando":
+                        nivel_in = calcular_energia_pcm16(bloque)
+                        if nivel_in > 0.05:
+                            self._notificar_nivel_voz(nivel_in)
                     await self._session.send_realtime_input(
                         media=types.Blob(data=bloque, mime_type="audio/pcm;rate=16000")
                     )
@@ -182,12 +190,12 @@ class SesionKayaLive:
                 break
 
     async def _vigilante_silencio(self):
-        """Cierra automáticamente la sesión para ahorro de cuota ($0) tras inactividad."""
         while not self._evento_parada_async.is_set():
             await asyncio.sleep(2.0)
             inactivo = time.monotonic() - self._ultimo_contacto
             if inactivo >= self.timeout_silencio:
-                print(f"\n[LIVE] Auto-reposo inteligente activado ({int(inactivo)}s sin voz). Sesión cerrada para ahorro de cuota ($0).", flush=True)
+                print(f"\n[LIVE] Auto-reposo inteligente ({int(inactivo)}s sin voz). Ahorro de cuota.", flush=True)
+                self._notificar_estado("reposo")
                 self.detener()
                 break
 
@@ -199,32 +207,32 @@ class SesionKayaLive:
                     if self._evento_parada_async.is_set():
                         break
 
-                    sc = getattr(resp, "server_content", None)
                     tc = getattr(resp, "tool_call", None)
-
-                    # 1. Manejo de Tool Calls
                     if tc:
                         self.actualizar_actividad()
+                        self._notificar_estado("pensando")
                         llamadas = getattr(tc, "function_calls", []) or []
                         respuestas = []
                         for call in llamadas:
                             c_id = getattr(call, "id", "")
                             c_name = getattr(call, "name", "")
                             c_args = getattr(call, "args", {}) or {}
-                            print(f"\n[LIVE Tool] Ejecutando: {c_name}({c_args})", flush=True)
                             resultado = await kaya_live_tools.despachar_herramienta(c_name, c_args)
                             respuestas.append(types.FunctionResponse(id=c_id, name=c_name, response=resultado))
                         if respuestas:
                             await self._session.send_tool_response(function_responses=respuestas)
+                        self._notificar_estado("escuchando")
                         continue
 
+                    sc = getattr(resp, "server_content", None)
                     if not sc:
                         continue
 
-                    # 2. Interrupción nativa (barge-in)
                     if getattr(sc, "interrupted", False):
-                        print("\n[LIVE] Interrumpida por el usuario (barge-in)", flush=True)
+                        print("\n[LIVE] Interrupción (barge-in)", flush=True)
                         turno_hablando = False
+                        self._notificar_estado("escuchando")
+                        self._notificar_nivel_voz(0.0)
                         while not self._cola_salida.empty():
                             try:
                                 self._cola_salida.get_nowait()
@@ -232,27 +240,18 @@ class SesionKayaLive:
                                 break
                         continue
 
-                    # 3. Transcripción de entrada (Usuario)
                     it = getattr(sc, "input_audio_transcription", None)
                     if it and getattr(it, "text", None):
                         self.actualizar_actividad()
                         txt_u = it.text.strip()
-                        if self.on_transcripcion_usuario:
-                            self.on_transcripcion_usuario(txt_u)
-                        else:
-                            print(f"\n[Tú]: {txt_u}", flush=True)
+                        self._notificar_transcripcion("usuario", txt_u)
 
-                    # 4. Transcripción de salida (Kaya)
                     ot = getattr(sc, "output_audio_transcription", None)
                     if ot and getattr(ot, "text", None):
                         self.actualizar_actividad()
                         txt_k = ot.text.strip()
-                        if self.on_transcripcion_kaya:
-                            self.on_transcripcion_kaya(txt_k)
-                        else:
-                            print(f"\n[Kaya]: {txt_k}", flush=True)
+                        self._notificar_transcripcion("kaya", txt_k)
 
-                    # 5. Audio de Kaya
                     mt = getattr(sc, "model_turn", None)
                     if mt:
                         for part in mt.parts:
@@ -261,29 +260,27 @@ class SesionKayaLive:
                             if part.text and not ot:
                                 t_limpio = part.text.strip()
                                 if t_limpio and not t_limpio.startswith("**"):
-                                    if self.on_transcripcion_kaya:
-                                        self.on_transcripcion_kaya(t_limpio)
-                                    else:
-                                        print(f"\n[Kaya]: {t_limpio}", flush=True)
+                                    self._notificar_transcripcion("kaya", t_limpio)
 
                             if part.inline_data and part.inline_data.data:
                                 self.actualizar_actividad()
                                 if not turno_hablando:
                                     turno_hablando = True
+                                    self._notificar_estado("hablando")
                                     if self.on_estado_audio:
                                         self.on_estado_audio("reproduciendo")
-                                    else:
-                                        print("[LIVE] Reproduciendo audio...", flush=True)
                                 self._cola_salida.put_nowait(part.inline_data.data)
 
                     if getattr(sc, "turn_complete", False):
                         turno_hablando = False
+                        self._notificar_estado("escuchando")
+                        self._notificar_nivel_voz(0.0)
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 if not self._evento_parada_async.is_set():
                     print(f"\n[LIVE] Excepción en recepción: {e}", flush=True)
-                    traceback.print_exc()
+                    self._notificar_estado("error")
                     await asyncio.sleep(0.2)
                 else:
                     break
@@ -295,109 +292,4 @@ class SesionKayaLive:
             self._evento_parada_async.set()
 
     async def ejecutar(self, solo_verificar: bool = False) -> bool:
-        """Inicia la sesión Live conectando con Gemini Live y lanzando las tareas."""
-        key = obtener_api_key()
-        if not key:
-            print("[LIVE] Error: No se encontró GEMINI_API_KEY.")
-            return False
-
-        client = genai.Client(api_key=key, http_options={"api_version": "v1alpha"})
-
-        speech_cfg = types.SpeechConfig(
-            voice_config=types.VoiceConfig(
-                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=self.voz)
-            )
-        )
-        sys_instr = types.Content(parts=[types.Part.from_text(text=construir_instruccion_sistema())])
-
-        cfg_kwargs = dict(
-            response_modalities=[types.Modality.AUDIO],
-            speech_config=speech_cfg,
-            tools=kaya_live_tools.obtener_herramientas_live(),
-            input_audio_transcription=types.AudioTranscriptionConfig(),
-            output_audio_transcription=types.AudioTranscriptionConfig(),
-            system_instruction=sys_instr,
-        )
-
-        try:
-            cfg = types.LiveConnectConfig(
-                thinking_config=types.ThinkingConfig(thinking_budget=0),
-                **cfg_kwargs,
-            )
-        except Exception:
-            cfg = types.LiveConnectConfig(**cfg_kwargs)
-
-        if solo_verificar:
-            print(f"[LIVE] Modo verificación: conectando con modelo '{self.modelo}' y voz '{self.voz}'...")
-            async with client.aio.live.connect(model=self.modelo, config=cfg) as _:
-                print("[LIVE] Conexión validada exitosamente con Gemini Live API y herramientas!")
-                return True
-
-        self._loop = asyncio.get_running_loop()
-        self._cola_entrada = asyncio.Queue(maxsize=MAX_COLA_ENTRADA)
-        self._evento_parada.clear()
-        self._evento_parada_async = asyncio.Event()
-        self.actualizar_actividad()
-
-        self._hilo_audio = threading.Thread(target=self._hilo_reproductor, name="kaya-live-out", daemon=True)
-        self._hilo_audio.start()
-
-        muestras_bloque = int(RATE_ENTRADA * (CHUNK_ENTRADA_MS / 1000.0))
-
-        def callback_entrada(indata, frames, time_info, status):
-            if self._evento_parada.is_set():
-                return
-            try:
-                datos = bytes(indata)
-                if self._cola_entrada.full():
-                    try:
-                        self._cola_entrada.get_nowait()
-                    except Exception:
-                        pass
-                self._loop.call_soon_threadsafe(self._cola_entrada.put_nowait, datos)
-            except Exception:
-                pass
-
-        try:
-            try:
-                import audio_lock
-                with audio_lock.bloqueo_portaudio():
-                    self._stream_entrada = sd.RawInputStream(
-                        samplerate=RATE_ENTRADA, channels=CHANNELS, dtype="int16", blocksize=muestras_bloque, callback=callback_entrada
-                    )
-                    self._stream_entrada.start()
-            except Exception:
-                self._stream_entrada = sd.RawInputStream(
-                    samplerate=RATE_ENTRADA, channels=CHANNELS, dtype="int16", blocksize=muestras_bloque, callback=callback_entrada
-                )
-                self._stream_entrada.start()
-
-            async with client.aio.live.connect(model=self.modelo, config=cfg) as session:
-                self._session = session
-                print(f"[LIVE] Sesión bidireccional activa (modelo={self.modelo}, voz={self.voz}). Kaya te escucha...", flush=True)
-                tareas = [
-                    asyncio.create_task(self._captura_microfono()),
-                    asyncio.create_task(self._recepcion_servidor()),
-                    asyncio.create_task(self._vigilante_silencio()),
-                ]
-                try:
-                    await asyncio.gather(*tareas)
-                except asyncio.CancelledError:
-                    pass
-                finally:
-                    self.detener()
-        finally:
-            self.detener()
-            if self._stream_entrada is not None:
-                try:
-                    try:
-                        import audio_lock
-                        with audio_lock.bloqueo_portaudio():
-                            self._stream_entrada.stop()
-                            self._stream_entrada.close()
-                    except Exception:
-                        self._stream_entrada.stop()
-                        self._stream_entrada.close()
-                except Exception:
-                    pass
-        return True
+        return await kaya_live_conexion.ejecutar_sesion_live(self, solo_verificar=solo_verificar)
