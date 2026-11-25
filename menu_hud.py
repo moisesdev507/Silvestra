@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QHBoxLayout,
 
 import conversacion
 import estado
+import identidad_origen
 import modos_sistema
 import voz_estilo
 
@@ -60,8 +61,10 @@ class MenuHUD(QDialog):
 
         raiz.addWidget(QLabel("Motor de voz principal"))
         self.combo_motor_voz = QComboBox()
-        self.combo_motor_voz.addItem("Gemini Live (Natural · Achernar)", "gemini_live")
-        self.combo_motor_voz.addItem("Voz Clásica (Celeste · Groq)", "clasico")
+        voz_aura = identidad_origen.VOZ_KAYA_CLASICA.split("-")[-2].capitalize()
+        self.combo_motor_voz.addItem(
+            f"Gemini Live (Natural · {identidad_origen.VOZ_KAYA_LIVE})", "gemini_live")
+        self.combo_motor_voz.addItem(f"Voz Kaya ({voz_aura} · Groq)", "clasico")
         modo_voz_act = datos.get("modo_voz_principal", "gemini_live")
         idx_mv = self.combo_motor_voz.findData(modo_voz_act)
         self.combo_motor_voz.setCurrentIndex(idx_mv if idx_mv >= 0 else 0)

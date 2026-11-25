@@ -101,7 +101,7 @@ def necesita_onboarding(ruta=None):
 
 
 def guardar_configuracion(nombre, claves, base=None, ruta_env=None):
-    """Guarda .env, perfil en datos/ y nombre en memoria.json de forma atómica."""
+    """Guarda .env, perfil del usuario e identidad inmutable de Kaya en memoria.json."""
     base = base or BASE
     ruta_env = ruta_env or os.path.join(base, ".env")
     nombre = str(nombre or "").strip()
@@ -121,15 +121,19 @@ def guardar_configuracion(nombre, claves, base=None, ruta_env=None):
         if not identidad_origen.perfil_con_usuario(base):
             if not identidad_origen.preparar_perfil_usuario(nombre, base=base):
                 return False, "No se pudo guardar el perfil en datos/."
-            ruta_memoria = os.path.join(base, "memoria.json")
-            memoria = ps.cargar_json_seguro(ruta_memoria, {})
-            if not isinstance(memoria, dict):
-                memoria = {}
-            memoria["nombre"] = nombre
-            if not ps.guardar_json_atomico(ruta_memoria, memoria):
-                return False, "No se pudo guardar el nombre en memoria.json."
         else:
             identidad_origen.desactivar_primer_despertar_si_existe(base)
+
+        # El nombre escrito es SOLO del usuario: nunca se convierte en "nombre" de Kaya.
+        ruta_memoria = os.path.join(base, "memoria.json")
+        memoria = ps.cargar_json_seguro(ruta_memoria, {})
+        if not isinstance(memoria, dict):
+            memoria = {}
+        memoria["nombre"] = identidad_origen.NOMBRE
+        memoria["creador"] = identidad_origen.CREADOR
+        memoria["usuario"] = nombre
+        if not ps.guardar_json_atomico(ruta_memoria, memoria):
+            return False, "No se pudo guardar la identidad en memoria.json."
 
         if not migracion_config.escribir_env(
                 ruta_env, {k: claves[k] for k in CLAVES}):

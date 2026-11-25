@@ -3,7 +3,7 @@
 Gestiona las transiciones en PortAudio y sincroniza el orbe de cara_qt:
 1. Inicia en espera local por palabra clave con Silero VAD y Vosk (0 gasto de cuota).
 2. Al invocar 'Kaya', abre sesión Gemini Live si hay clave y no hay enfriamiento de cuota.
-3. Si Live falla o la cuota se agota (429), conmuta de inmediato al motor clásico (Groq/Celeste).
+3. Si Live falla o la cuota se agota (429), conmuta de inmediato al motor clásico (Groq/Kaya).
 4. Cierra limpiamente la sesión Live a los 9 segundos de silencio volviendo a espera local.
 """
 import os

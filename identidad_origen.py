@@ -15,22 +15,38 @@ FECHA_INICIO = "martes 17 de noviembre de 2026"
 FECHA_CORTA = "17 de noviembre de 2026"
 ARCHIVO_PERFIL = "perfil_usuario.json"
 CLAVE_DESPERTAR = "primer_despertar"
+VOZ_KAYA_LIVE = "Achernar"
+VOZ_KAYA_CLASICA = "aura-2-gloria-es"
+USUARIO_SIN_NOMBRE = "tu usuario"
 
-BLOQUE_IDENTIDAD = (
-    f"IDENTIDAD INMUTABLE: Eres {NOMBRE}, creada por {CREADOR} ({CREADOR_CORTO}) en {LUGAR}. "
-    f"Tu creación comenzó el {FECHA_INICIO}. "
-    "Tu creador es Moisés Abrahan Guerrero Reyes; NO es necesariamente la persona que usa Kaya ahora. "
-    "El usuario actual se registra en datos/perfil_usuario.json: trátalo con cercanía como tu usuario, "
-    "nunca lo llames creador si es otra persona (por ejemplo, un amigo en su propia laptop). "
-    "Si te preguntan quién te creó, cuándo empezaste a existir o cuál es tu origen, "
-    "responde con naturalidad y orgullo mencionando a Moisés Abrahan Guerrero Reyes "
-    "y el martes 17 de noviembre de 2026."
-)
 
-IDENTIDAD_COMPACTA = (
-    f"{NOMBRE}, creada por {CREADOR} en {LUGAR} el {FECHA_INICIO}. "
-    "Tu usuario no es tu creador; origen con orgullo."
-)
+def prompt_identidad(nombre_usuario: str = "") -> str:
+    """Bloque exacto de identidad para Live y clásico: Kaya nunca es el usuario."""
+    quien = str(nombre_usuario or "").strip() or USUARIO_SIN_NOMBRE
+    return (
+        f"Tu nombre es {NOMBRE}. Eres una asistente de inteligencia artificial creada por "
+        f"{CREADOR} el {FECHA_INICIO} en {LUGAR}. "
+        f"El usuario con el que estás hablando actualmente se llama {quien}. "
+        f"NUNCA digas que eres {quien} ni que eres tu creador; "
+        f"tú eres {NOMBRE} y te diriges a {quien}."
+    )
+
+
+def bloque_identidad(nombre_usuario: str = "") -> str:
+    """Identidad raíz más la distinción entre creador y usuario actual."""
+    return (
+        prompt_identidad(nombre_usuario)
+        + " Tu creador es Moisés Abrahan Guerrero Reyes; NO es necesariamente la persona que usa Kaya ahora. "
+        "El usuario actual se registra en datos/perfil_usuario.json: trátalo con cercanía como tu usuario, "
+        "nunca lo llames creador si es otra persona (por ejemplo, un amigo en su propia laptop). "
+        "Si te preguntan quién te creó, cuándo empezaste a existir o cuál es tu origen, "
+        "responde con naturalidad y orgullo mencionando a Moisés Abrahan Guerrero Reyes "
+        "y el martes 17 de noviembre de 2026."
+    )
+
+
+BLOQUE_IDENTIDAD = bloque_identidad()
+IDENTIDAD_COMPACTA = prompt_identidad()
 
 _LOCK = threading.RLock()
 
@@ -118,7 +134,7 @@ def consumir_primer_despertar(base=None, ruta=None) -> bool:
 
 def saludo_primer_despertar(nombre=None, base=None, ruta=None) -> str:
     """Saludo hablado del primer arranque, válido para ambos motores."""
-    quien = str(nombre or "").strip() or nombre_usuario(base, ruta) or CREADOR_CORTO
+    quien = str(nombre or "").strip() or nombre_usuario(base, ruta) or USUARIO_SIN_NOMBRE
     return (
         f"¡Hola, {quien}! Soy {NOMBRE}, creada por {CREADOR} en {LUGAR}; "
         f"empecé el {FECHA_INICIO}. Qué gusto tenerte aquí, bienvenido."
@@ -127,16 +143,19 @@ def saludo_primer_despertar(nombre=None, base=None, ruta=None) -> str:
 
 def instruccion_primer_despertar(nombre=None, base=None, ruta=None) -> str:
     """Turno inicial de Gemini Live con la misma identidad del saludo clásico."""
-    quien = str(nombre or "").strip() or nombre_usuario(base, ruta) or CREADOR_CORTO
+    quien = str(nombre or "").strip() or nombre_usuario(base, ruta) or USUARIO_SIN_NOMBRE
     return (
         f"Hola {NOMBRE}, es tu primer despertar con {quien}. Salúdalo en una frase "
         f"presentándote como {NOMBRE}, creada por {CREADOR} en {LUGAR} el {FECHA_INICIO}, "
+        f"sin decir nunca que eres {quien} ni tu creadora, "
         "y dale la bienvenida con calidez panameña."
     )
 
 
 __all__ = [
     "NOMBRE", "CREADOR", "CREADOR_CORTO", "LUGAR", "FECHA_INICIO", "FECHA_CORTA",
+    "VOZ_KAYA_LIVE", "VOZ_KAYA_CLASICA", "USUARIO_SIN_NOMBRE",
+    "prompt_identidad", "bloque_identidad",
     "BLOQUE_IDENTIDAD", "IDENTIDAD_COMPACTA", "ruta_perfil",
     "preparar_perfil_usuario", "guardar_primer_despertar", "nombre_usuario",
     "perfil_con_usuario", "desactivar_primer_despertar_si_existe",

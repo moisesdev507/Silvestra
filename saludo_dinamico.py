@@ -147,7 +147,7 @@ def _guardar_ultimo_saludo(saludo):
         pass
 
 
-def generar_saludo_dinamico(creador="Moisés", timeout=3.0):
+def generar_saludo_dinamico(creador=identidad_origen.USUARIO_SIN_NOMBRE, timeout=3.0):
     """Genera saludo espontáneo y cálido con briefing proactivo de Gmail/Calendar/Memoria."""
     perfil = identidad_origen.nombre_usuario()
     if perfil:
@@ -180,7 +180,7 @@ def generar_saludo_dinamico(creador="Moisés", timeout=3.0):
     no_repetir_txt = " | ".join(f'"{s}"' for s in ultimos) if ultimos else "Ninguno aún."
 
     sys_prompt = (
-        identidad_origen.BLOQUE_IDENTIDAD + "\n"
+        identidad_origen.bloque_identidad(creador) + "\n"
         + f"Eres {identidad_origen.NOMBRE}, la compañera y asistente personal de {creador}. "
         "Habla en un tono cálido, cercano, relajado y natural con un toque sutil de español panameño "
         "(puedes usar de forma natural un 'Qué xopa' casual, sin exagerar ni sonar forzada). "

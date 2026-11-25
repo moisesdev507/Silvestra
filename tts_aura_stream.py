@@ -13,12 +13,13 @@ from typing import Callable, Optional
 
 import config
 import httpx
+import identidad_origen
 
 _CLIENTE_LOCK = threading.RLock()
 _CLIENTE_HTTP: Optional[httpx.Client] = None
 _EVENTO_CANCELAR_STREAM = threading.Event()
 URL_AURA_SPEAK = "https://api.deepgram.com/v1/speak"
-MODELO_DEFECTO = "aura-2-celeste-es"
+MODELO_DEFECTO = identidad_origen.VOZ_KAYA_CLASICA
 SAMPLE_RATE = 24000
 CHANNELS = 1
 
@@ -32,7 +33,7 @@ def detener_reproduccion_activa(motivo="cambio_de_motor"):
 
 
 def reanudar_stream():
-    """Limpia la cancelación heredada para que Celeste pueda volver a hablar."""
+    """Limpia la cancelación heredada para que Kaya pueda volver a hablar."""
     _EVENTO_CANCELAR_STREAM.clear()
 
 

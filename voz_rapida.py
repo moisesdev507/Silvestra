@@ -12,12 +12,13 @@ import threading
 
 import config
 import httpx
+import identidad_origen
 import voz_cache
 import voz_local
 
 _LOCK = threading.RLock()
 URL_DEEPGRAM_TTS = "https://api.deepgram.com/v1/speak"
-MODELO_AURA = "aura-2-celeste-es"
+MODELO_AURA = identidad_origen.VOZ_KAYA_CLASICA
 
 
 def sintetizar_deepgram(frase):
@@ -83,7 +84,7 @@ def sintetizar_edge(frase, emocion="neutral"):
 
 
 def sintetizar_cadena(frase, emocion="neutral"):
-    """Cadena: Cache -> Aura-2 (Celeste) -> Edge-TTS (Salomé respaldo) -> Respaldo local."""
+    """Cadena: Caché -> Aura-2 (voz Kaya) -> Edge-TTS -> Respaldo local."""
     en_cache = voz_cache.obtener_audio_cache(frase, emocion)
     if en_cache:
         return en_cache
@@ -93,7 +94,7 @@ def sintetizar_cadena(frase, emocion="neutral"):
         if audio_local:
             return audio_local
 
-    # Motor principal: Deepgram Aura-2 (Celeste)
+    # Motor principal: Deepgram Aura-2 (voz oficial de Kaya)
     audio_dg = sintetizar_deepgram(frase)
     if audio_dg:
         return audio_dg

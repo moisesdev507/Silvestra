@@ -28,7 +28,7 @@ def sonar_invocacion(app):
     try:
         import voz_ws
         if voz_ws.disponible() and voz_ws.reproducir(FRASE_INVOCACION):
-            print(f"[voz] micro_invocacion='{FRASE_INVOCACION}' (celeste_ws)", flush=True)
+            print(f"[voz] micro_invocacion='{FRASE_INVOCACION}' (kaya_ws)", flush=True)
             return True
     except Exception:
         pass

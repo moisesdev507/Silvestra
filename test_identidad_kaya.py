@@ -1,4 +1,4 @@
-"""Pruebas unitarias para identidad_kaya, wake-word, habla espontánea y prioridad Celeste."""
+"""Pruebas unitarias para identidad_kaya, wake-word, habla espontánea y voz Kaya."""
 import queue
 import time
 import unittest
@@ -95,14 +95,14 @@ class TestIdentidadKaya(unittest.TestCase):
         for c in cliches:
             self.assertNotIn(c, saludo_off.lower())
 
-    def test_voz_prioriza_deepgram_aura_celeste(self):
+    def test_voz_prioriza_deepgram_aura_kaya(self):
         """Verifica que sintetizar_cadena priorice Deepgram Aura-2 antes que Edge-TTS."""
-        with patch.object(voz_rapida, "sintetizar_deepgram", return_value=b"AUDIO_AURA_CELESTE") as mock_dg, \
+        with patch.object(voz_rapida, "sintetizar_deepgram", return_value=b"AUDIO_AURA_KAYA") as mock_dg, \
              patch.object(voz_rapida, "sintetizar_edge", return_value=b"AUDIO_SALOME") as mock_edge, \
              patch.object(voz_rapida.voz_cache, "obtener_audio_cache", return_value=None), \
              patch.object(voz_rapida.voz_local, "debe_ir_local_primero", return_value=False):
             audio = voz_rapida.sintetizar_cadena("Hola mundo")
-            self.assertEqual(audio, b"AUDIO_AURA_CELESTE")
+            self.assertEqual(audio, b"AUDIO_AURA_KAYA")
             mock_dg.assert_called_once()
             mock_edge.assert_not_called()
 

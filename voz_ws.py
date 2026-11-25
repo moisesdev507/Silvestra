@@ -1,4 +1,4 @@
-"""Voz clásica Celeste en streaming progresivo con métrica de primer audio.
+"""Voz clásica de Kaya en streaming progresivo con métrica de primer audio.
 
 Reutiliza el productor/consumidor de ``tts_aura_stream``: reproduce cada trozo
 PCM en cuanto llega (RawOutputStream, sin archivos temporales) y respeta la

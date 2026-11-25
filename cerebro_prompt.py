@@ -172,7 +172,7 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         pass
 
     if es_invitado:
-        hechos_str = f"- (Protegido: datos privados de {m.creador} ocultos para invitados)"
+        hechos_str = f"- (Protegido: datos privados de {identidad_origen.CREADOR} ocultos para invitados)"
         n_recuerdos = 0
     else:
         hechos_str, n_recuerdos = recuerdos_relevantes(memoria, texto_actual, max_recuerdos=5,
@@ -241,19 +241,20 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
     if es_invitado:
         aviso_invitado = (
             f"\n\nAVISO DE SEGURIDAD (TURNO DE INVITADO):\n"
-            f"Quien habla por micrófono NO es {m.creador}; es un invitado no verificado. "
-            f"Responde amable y natural, pero NO lo trates como {m.creador} ni reveles datos personales/privados. "
+            f"Quien habla por micrófono NO es {identidad_origen.CREADOR}; es un invitado no verificado. "
+            f"Responde amable y natural, pero NO lo trates como {identidad_origen.CREADOR} ni reveles datos personales/privados. "
             "PROHIBIDO: en RECUERDO pon 'ninguno'."
         )
 
     recuerdo_fmt = (
         "RECUERDO: ninguno (Modo invitado: no se guardan recuerdos)"
         if es_invitado
-        else f"RECUERDO: <nuevo dato personal duradero de {m.creador} (gustos, familia, proyectos), o ninguno. NUNCA sobre comandos, pruebas, interfaz ni Silvestra>"
+        else f"RECUERDO: <nuevo dato personal duradero del usuario {identidad_origen.nombre_usuario() or identidad_origen.USUARIO_SIN_NOMBRE} (gustos, familia, proyectos), o ninguno. NUNCA sobre comandos, pruebas, interfaz ni Silvestra>"
     )
 
     instrucciones_texto = (
-        f"Eres {m.nombre}, compañera personal en la laptop de {m.creador}. Propósito: {m.proposito}.\n"
+        identidad_origen.bloque_identidad(identidad_origen.nombre_usuario()) + "\n"
+        f"Eres {identidad_origen.NOMBRE}, asistente personal en esta laptop. Propósito: {m.proposito}.\n"
         "Habla siempre en español de Panamá con calidez, ingenio y chispa natural. "
         "Respuestas directas de 1 a 2 frases cortas. PROHIBIDO relleno ('¿en qué te ayudo?', '¡por supuesto!').\n"
         f"FECHA Y HORA: {hora_local}.\n\n"

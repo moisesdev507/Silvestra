@@ -314,16 +314,16 @@ def registrar_tiempo_primera_voz():
 
 
 def construir_instruccion_arranque_rapido(primer_despertar: bool = False, nombre_usuario: str = "") -> str:
-    """Prompt ultracompacto con identidad raíz y primer turno opcional de despertar."""
+    """Prompt compacto con identidad exacta y usuario explícitamente separado."""
     hora_str = obtener_hora_local_breve()
     ctx_h = f" {hora_str}" if hora_str else ""
-    quien = str(nombre_usuario or "").strip() or identidad_origen.CREADOR_CORTO
+    quien = str(nombre_usuario or "").strip() or identidad_origen.USUARIO_SIN_NOMBRE
     if primer_despertar:
-        turno = f" Primer turno: saluda a {quien} presentándote así y dale la bienvenida."
+        turno = f" Primer turno: saluda a {quien} presentándote como Kaya y dale la bienvenida."
     else:
         turno = f" Primer turno: saluda alegremente a {quien} y confirma que estás lista."
     return (
-        identidad_origen.IDENTIDAD_COMPACTA
+        identidad_origen.prompt_identidad(quien)
         + " Femenina, cálida, ingeniosa. Español panameño, 1 frase."
         + ctx_h + turno
         + " Usa revisar_pantalla si piden ver pantalla."
@@ -349,7 +349,7 @@ def construir_instruccion_sistema(
                     estilo = c
         except Exception:
             pass
-    base = identidad_origen.BLOQUE_IDENTIDAD + "\n" + estilo
+    base = identidad_origen.bloque_identidad(nombre_usuario) + "\n" + estilo
 
     hora_str = obtener_hora_local_breve()
     contexto_tiempo = f"\n\n[Fecha y hora actual]: {hora_str}" if hora_str else ""

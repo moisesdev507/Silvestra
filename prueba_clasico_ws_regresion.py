@@ -1,4 +1,4 @@
-"""Regresiones del motor clásico: Celeste tras Live, WS Deepgram y charla continua."""
+"""Regresiones del motor clásico: Kaya tras Live, WS Deepgram y charla continua."""
 import io
 import json
 import threading
@@ -46,7 +46,7 @@ class _WSFalso:
         self.cerrado = code
 
 
-class TestCelesteTrasCambio(unittest.TestCase):
+class TestKayaTrasCambio(unittest.TestCase):
 
     def test_reanudar_limpia_pausa_y_cancelacion_heredada(self):
         tts_aura_stream.detener_reproduccion_activa("prueba")

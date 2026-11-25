@@ -6,7 +6,8 @@ from google.genai import types
 import identidad_origen
 import live_audio, live_herramientas, puerta_audio_live
 
-MODELO_DEFECTO, VOZ_DEFECTO = "gemini-2.5-flash-native-audio-latest", "Achernar"
+MODELO_DEFECTO = "gemini-2.5-flash-native-audio-latest"
+VOZ_DEFECTO = identidad_origen.VOZ_KAYA_LIVE
 from live_audio import activar_enfriamiento_cuota, es_error_cuota, esta_en_enfriamiento_cuota
 
 class SesionKayaLive:

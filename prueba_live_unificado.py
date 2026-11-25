@@ -203,7 +203,7 @@ class TestGeminiLiveUnificado(unittest.TestCase):
         # 1. Prompt rápido ultracompacto para el primer saludo
         prompt_rapido = live_audio.construir_instruccion_arranque_rapido()
         self.assertIn("Kaya", prompt_rapido)
-        self.assertLess(len(prompt_rapido), 400)
+        self.assertLess(len(prompt_rapido), 800)
 
         # 2. Telemetría de primera voz
         live_audio._PRIMERA_VOZ_REGISTRADA = False

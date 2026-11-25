@@ -8,12 +8,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import cerebro_prompt
+import habla_espontanea
 import identidad_origen
 import live_audio
 import live_motor
 import nacimiento
 import onboarding_qt
+import persistencia_segura
 import saludo_dinamico
+import tts_aura_stream
+import voz_rapida
 
 CLAVES_PRUEBA = {
     "GEMINI_API_KEY": "AIzaFakeKeyParaPruebas123456789012345",
@@ -65,12 +69,13 @@ class IdentidadDespertarTests(unittest.TestCase):
             self.assertIn(identidad_origen.NOMBRE, texto)
             self.assertIn(identidad_origen.CREADOR, texto)
             self.assertIn(identidad_origen.FECHA_INICIO, texto)
+            self.assertIn(identidad_origen.prompt_identidad(), texto)
 
         self.assertIn("datos/perfil_usuario.json", cerebro_prompt.SOBRE_MI)
         self.assertIn("datos/perfil_usuario.json", textos[1])
         self.assertIn("revisar_pantalla", textos[1])
         self.assertIn("revisar_pantalla", textos[2])
-        self.assertLess(len(textos[2]), 400)
+        self.assertLess(len(textos[2]), 800)
         self.assertTrue(all(
             "Lyris" not in frase
             for frases in saludo_dinamico.FALLBACKS_FRANJAS.values()
@@ -158,6 +163,82 @@ class IdentidadDespertarTests(unittest.TestCase):
             self.assertIn(identidad_origen.FECHA_INICIO, texto)
         with self._ruta_parcheada():
             self.assertFalse(identidad_origen.primer_despertar_activo())
+
+    def test_usuario_abrahan_nunca_se_confunde_con_kaya(self):
+        esperado = (
+            "Tu nombre es Kaya. Eres una asistente de inteligencia artificial creada por "
+            "Moisés Abrahan Guerrero Reyes el martes 17 de noviembre de 2026 en Panamá. "
+            "El usuario con el que estás hablando actualmente se llama Abrahan. "
+            "NUNCA digas que eres Abrahan ni que eres tu creador; "
+            "tú eres Kaya y te diriges a Abrahan."
+        )
+        self.assertEqual(identidad_origen.prompt_identidad("Abrahan"), esperado)
+
+        class MemoriaCorrupta:
+            nombre = "Abrahan"  # valor legado que antes se copiaba del usuario
+            creador = "Abrahan"
+            proposito = "ayudarte"
+            hechos = []
+
+        with self._ruta_parcheada():
+            identidad_origen.preparar_perfil_usuario("Abrahan")
+            textos = (
+                identidad_origen.bloque_identidad(identidad_origen.nombre_usuario()),
+                identidad_origen.instruccion_primer_despertar(),
+                identidad_origen.saludo_primer_despertar(),
+                live_audio.construir_instruccion_sistema(nombre_usuario="Abrahan"),
+                live_audio.construir_instruccion_arranque_rapido(nombre_usuario="Abrahan"),
+                cerebro_prompt.construir_prompt(MemoriaCorrupta()),
+            )
+        prompts_sistema = (textos[0], textos[3], textos[4], textos[5])
+        for texto in prompts_sistema:
+            self.assertIn("Tu nombre es Kaya", texto)
+            self.assertIn("se llama Abrahan", texto)
+            self.assertIn("NUNCA digas que eres Abrahan", texto)
+            self.assertIn("tú eres Kaya y te diriges a Abrahan", texto)
+            self.assertIn("Moisés Abrahan Guerrero Reyes", texto)
+            self.assertIn("martes 17 de noviembre de 2026", texto)
+        for texto in (textos[1], textos[2]):  # primer turno y saludo hablado
+            self.assertIn("Abrahan", texto)
+            self.assertIn("Kaya", texto)
+            self.assertNotIn("soy Abrahan", texto.lower())
+
+    def test_voz_oficial_de_kaya_reemplaza_celeste(self):
+        self.assertEqual(identidad_origen.VOZ_KAYA_LIVE, "Achernar")
+        self.assertEqual(identidad_origen.VOZ_KAYA_CLASICA, "aura-2-gloria-es")
+        self.assertEqual(live_motor.VOZ_DEFECTO, identidad_origen.VOZ_KAYA_LIVE)
+        self.assertEqual(live_motor.SesionKayaLive().voz, identidad_origen.VOZ_KAYA_LIVE)
+        self.assertEqual(voz_rapida.MODELO_AURA, identidad_origen.VOZ_KAYA_CLASICA)
+        self.assertEqual(tts_aura_stream.MODELO_DEFECTO, identidad_origen.VOZ_KAYA_CLASICA)
+        for valor in (live_motor.VOZ_DEFECTO, voz_rapida.MODELO_AURA,
+                      tts_aura_stream.MODELO_DEFECTO):
+            self.assertNotIn("celeste", str(valor).lower())
+
+    def test_onboarding_guarda_usuario_sin_alterar_identidad_de_kaya(self):
+        with patch.dict(os.environ):
+            ok, mensaje = onboarding_qt.guardar_configuracion(
+                "Abrahan", CLAVES_PRUEBA, base=self.base, ruta_env=self.ruta_env)
+        self.assertTrue(ok, mensaje)
+        memoria = persistencia_segura.cargar_json_seguro(
+            os.path.join(self.base, "memoria.json"), {})
+        self.assertEqual(memoria.get("nombre"), "Kaya")
+        self.assertEqual(memoria.get("creador"), identidad_origen.CREADOR)
+        self.assertEqual(memoria.get("usuario"), "Abrahan")
+        with self._ruta_parcheada():
+            self.assertEqual(identidad_origen.nombre_usuario(), "Abrahan")
+
+    def test_clasico_no_toma_turno_con_live_activo(self):
+        app = MagicMock()
+        app.coordinador_live.esta_live_activo.return_value = True
+        app.coordinador_live.es_modo_principal.return_value = True
+        original = habla_espontanea.generar_saludo_espontaneo
+        with self._ruta_parcheada():
+            identidad_origen.preparar_perfil_usuario("Abrahan")
+            with patch("habla_espontanea.generar_saludo_espontaneo") as generar:
+                nacimiento.saludar(app)
+                original(app, lambda *_a: None)
+        generar.assert_not_called()
+        app.cola.put.assert_not_called()
 
 
 if __name__ == "__main__":

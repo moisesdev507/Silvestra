@@ -14,8 +14,21 @@ def _usuario_actual(app, respaldo=None):
     perfil = identidad_origen.nombre_usuario()
     if perfil:
         return perfil
-    memoria = getattr(app, "memoria", None) if app else None
-    return str(getattr(memoria, "creador", None) or respaldo or identidad_origen.CREADOR_CORTO)
+    return str(respaldo or identidad_origen.USUARIO_SIN_NOMBRE)
+
+
+def _live_toma_turno(app) -> bool:
+    """Evita que el motor clásico hable en paralelo con Gemini Live."""
+    cl = getattr(app, "coordinador_live", None) if app else None
+    if cl is None:
+        return False
+    for nombre in ("esta_live_activo", "es_modo_principal"):
+        try:
+            if getattr(cl, nombre)() is True:
+                return True
+        except Exception:
+            pass
+    return False
 
 
 def _franja_y_emocion():
@@ -49,6 +62,8 @@ def _tema_reciente(app):
 
 def generar_saludo_espontaneo(app, al_generar=None):
     """Genera una frase de saludo viva y personalizada usando el carril rápido del cerebro."""
+    if _live_toma_turno(app):
+        return
     def _tarea():
         franja, emocion, saludo_base = _franja_y_emocion()
         usuario = _usuario_actual(app)
@@ -60,7 +75,7 @@ def generar_saludo_espontaneo(app, al_generar=None):
             try:
                 dia_str = DIAS[datetime.datetime.now().astimezone().weekday()]
                 prompt_sistema = (
-                    identidad_origen.BLOQUE_IDENTIDAD + "\n"
+                    identidad_origen.bloque_identidad(usuario) + "\n"
                     + f"Eres Kaya, la compañera y amiga personal de {usuario} en Panamá. "
                     "Hablas con calidez, cercanía, personalidad propia y chispa panameña natural. "
                     "Genera exactamente 1 sola frase corta y espontánea para saludarlo al encender tu sistema. "
@@ -127,7 +142,7 @@ def humanizar_resultado_accion(orden, resultado_crudo, app=None):
     if cerebro and hasattr(cerebro, "_pedir"):
         try:
             prompt_sistema = (
-                identidad_origen.BLOQUE_IDENTIDAD + "\n"
+                identidad_origen.bloque_identidad(_usuario_actual(app)) + "\n"
                 + f"Eres Kaya, la compañera personal de {_usuario_actual(app)} en Panamá. "
                 "Comunica el siguiente resultado real del computador en exactamente 1 o 2 frases cortas habladas, "
                 "con tono natural, fresco y cercano. "

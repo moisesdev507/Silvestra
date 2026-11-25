@@ -84,8 +84,13 @@ def preguntar_proposito(app):
 def saludar(app):
     """Encola el saludo inicial de inmediato, sin bloquear el hilo de la GUI."""
     cl = getattr(app, "coordinador_live", None)
-    if cl and hasattr(cl, "es_modo_principal") and cl.es_modo_principal():
-        return
+    if cl:
+        for metodo in ("esta_live_activo", "es_modo_principal"):
+            try:
+                if getattr(cl, metodo)() is True:
+                    return  # Gemini Live ya tiene el turno: el clásico no habla.
+            except Exception:
+                pass
     if identidad_origen.consumir_primer_despertar():
         saludo = identidad_origen.saludo_primer_despertar()
         _guardar_ultimo_saludo(saludo)
@@ -109,7 +114,7 @@ def generar_saludo(app_o_creador=None, creador=None):
         if isinstance(app_o_creador, str):
             creador = app_o_creador
         else:
-            creador = getattr(getattr(app, "memoria", None), "creador", "Moisés") or "Moisés"
+            creador = identidad_origen.nombre_usuario() or identidad_origen.USUARIO_SIN_NOMBRE
 
     try:
         saludo = generar_saludo_dinamico(creador=creador, timeout=3.0)
