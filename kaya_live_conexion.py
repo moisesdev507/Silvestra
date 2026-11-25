@@ -20,6 +20,14 @@ from kaya_live_audio import (
 import kaya_live_tools
 
 
+def es_error_cuota(exc: Exception) -> bool:
+    """Detecta si una excepción corresponde a cuota agotada (429 o RESOURCE_EXHAUSTED)."""
+    if exc is None:
+        return False
+    texto = str(exc).lower()
+    return "429" in texto or "resource_exhausted" in texto or "quota" in texto
+
+
 def crear_configuracion_live(sesion):
     speech_cfg = types.SpeechConfig(
         voice_config=types.VoiceConfig(
@@ -31,6 +39,16 @@ def crear_configuracion_live(sesion):
         instr = instr[:1490].rsplit("\n", 1)[0] + "\n..."
     sys_instr = types.Content(parts=[types.Part.from_text(text=instr)])
 
+    ric = None
+    try:
+        aad = types.AutomaticActivityDetection(
+            start_of_speech_sensitivity=types.StartSensitivity.START_SENSITIVITY_LOW,
+            silence_duration_ms=700,
+        )
+        ric = types.RealtimeInputConfig(automatic_activity_detection=aad)
+    except Exception:
+        pass
+
     cfg_kwargs = dict(
         response_modalities=[types.Modality.AUDIO],
         speech_config=speech_cfg,
@@ -39,6 +57,9 @@ def crear_configuracion_live(sesion):
         output_audio_transcription=types.AudioTranscriptionConfig(),
         system_instruction=sys_instr,
     )
+    if ric is not None:
+        cfg_kwargs["realtime_input_config"] = ric
+
     try:
         return types.LiveConnectConfig(
             thinking_config=types.ThinkingConfig(thinking_budget=0),
@@ -114,6 +135,8 @@ async def ejecutar_sesion_live(sesion, solo_verificar: bool = False) -> bool:
     sesion.actualizar_actividad()
 
     if getattr(sesion, "audio_local", True):
+        if hasattr(sesion, "compuerta_eco"):
+            sesion.compuerta_eco.registrar_info_inicio()
         sesion._hilo_audio = threading.Thread(target=sesion._hilo_reproductor, name="kaya-live-out", daemon=True)
         sesion._hilo_audio.start()
     else:

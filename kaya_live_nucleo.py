@@ -86,6 +86,7 @@ class SesionKayaLive:
         self._evento_parada_async = None
         self._cola_entrada = None
         self._cola_salida = queue.Queue(maxsize=300)
+        self.compuerta_eco = kaya_live_audio.CompuertaAntiEco(cola_salida=self._cola_salida)
         self._ultimo_contacto = time.monotonic()
         self._hilo_audio = None
         self._stream_entrada = None
@@ -197,6 +198,7 @@ class SesionKayaLive:
 
                 if trozo:
                     try:
+                        self.compuerta_eco.marcar_inicio_escritura()
                         nivel = calcular_energia_pcm16(trozo)
                         self._notificar_nivel_voz(nivel)
                         if self.on_audio_salida:
@@ -205,6 +207,8 @@ class SesionKayaLive:
                             stream.write(trozo)
                     except Exception:
                         pass
+                    finally:
+                        self.compuerta_eco.marcar_fin_escritura()
         except Exception as e:
             if not self._evento_parada.is_set():
                 registrar_log_live(f"Error en reproductor de audio: {e}")
@@ -230,12 +234,13 @@ class SesionKayaLive:
                 bloque = await asyncio.wait_for(self._cola_entrada.get(), timeout=0.1)
                 if bloque and not self._pausado:
                     self.actualizar_actividad()
-                    if self._estado_actual != "hablando":
+                    bloque_envio, silenciado = self.compuerta_eco.filtrar_chunk_entrada(bloque)
+                    if not silenciado and self._estado_actual != "hablando":
                         nivel_in = calcular_energia_pcm16(bloque)
                         if nivel_in > 0.05:
                             self._notificar_nivel_voz(nivel_in)
                     await self._session.send_realtime_input(
-                        media=types.Blob(data=bloque, mime_type="audio/pcm;rate=16000")
+                        media=types.Blob(data=bloque_envio, mime_type="audio/pcm;rate=16000")
                     )
             except asyncio.TimeoutError:
                 continue
@@ -330,6 +335,7 @@ class SesionKayaLive:
                                 self._notificar_estado("hablando")
                                 if self.on_estado_audio:
                                     self.on_estado_audio("reproduciendo")
+                            self.compuerta_eco.marcar_encolado_salida()
                             self._cola_salida.put_nowait(part.inline_data.data)
 
                 if getattr(sc, "turn_complete", False):
