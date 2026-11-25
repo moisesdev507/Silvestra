@@ -1,8 +1,4 @@
-"""Motor de sesión interactiva de Gemini Live para Silvestra.
-
-Maneja la conexión WebSocket con google-genai, compuerta anti-eco, watchdog
-de silencio de 9 segundos y disyuntor automático por cuota (429/RESOURCE_EXHAUSTED).
-"""
+"""Motor de sesión interactiva de Gemini Live para Silvestra."""
 import asyncio
 import os
 import queue
@@ -153,9 +149,10 @@ class SesionKayaLive:
 
             self.compuerta.marcar_inicio_escritura()
             try:
-                self._stream_salida.write(chunk)
-            except Exception:
-                pass
+                import numpy as np
+                self._stream_salida.write(np.frombuffer(chunk, dtype=np.int16))
+            except Exception as err:
+                print(f"[LIVE][AUDIO] Error salida: {err}", flush=True)
             finally:
                 self.compuerta.marcar_fin_escritura()
 

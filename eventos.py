@@ -43,6 +43,12 @@ def es_confirmacion_rutinaria(texto):
 def atender_evento(app, tipo, texto):
     if invocacion_lyris.interceptar(app, tipo, texto):
         return
+    try:
+        import live_orquestador
+        if live_orquestador.despachar_evento_live(app, tipo, texto):
+            return
+    except Exception:
+        pass
     if tipo == "frase":
         if isinstance(texto, (tuple, list)):
             frase_txt = str(texto[0])
@@ -204,18 +210,9 @@ def atender_evento(app, tipo, texto):
                     import qt_estabilidad_ui
                     if not qt_estabilidad_ui.puede_actualizar_ui():
                         return
-                    app.cara.setWindowOpacity(0.0)
+                    app.cara.setWindowOpacity(1.0)
                     app.cara.show()
                     app.cara.raise_()
-
-                    def _animar_aparicion(op):
-                        if hasattr(app, "cara") and app.cara:
-                            op = min(1.0, op + 0.15)
-                            app.cara.setWindowOpacity(op)
-                            if op < 1.0:
-                                app.cara.root.after(30, lambda: _animar_aparicion(op))
-
-                    _animar_aparicion(0.0)
                 except Exception:
                     try:
                         app.cara.show()
@@ -373,7 +370,8 @@ def atender_evento(app, tipo, texto):
         if app.flujo is not None:
             app.flujo.cerrar()
             app.flujo = None
-        if texto and texto is not False and str(texto).strip():
+        es_ui = any(k in str(tipo).lower() for k in ("cara", "live", "ui", "metodo", "hablando", "escuchando"))
+        if isinstance(texto, str) and texto.strip() and not es_ui and not texto.startswith("("):
             app.decir(f"Tuve un problema para pensar: {texto}", 5000, con_voz=False)
         if app.conversacion and not app.escuchando:
             app.cara.root.after(5000, app.escuchar)

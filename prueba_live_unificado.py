@@ -190,6 +190,43 @@ class TestGeminiLiveUnificado(unittest.TestCase):
         oido.reanudar()
         self.assertFalse(oido.esta_pausado())
 
+    def test_evento_poner_hablando_sin_error_visual(self):
+        import eventos
+        app_mock = MagicMock()
+        app_mock.cara = MagicMock()
+        app_mock.flujo = None
+
+        # 1. Evento directo ("poner_hablando", False)
+        eventos.atender_evento(app_mock, "poner_hablando", False)
+        app_mock.cara.poner_hablando.assert_called_with(False)
+        app_mock.cara.decir.assert_not_called()
+
+        # 2. Evento ("cara_metodo", ("poner_hablando", False))
+        app_mock.reset_mock()
+        eventos.atender_evento(app_mock, "cara_metodo", ("poner_hablando", False))
+        app_mock.cara.poner_hablando.assert_called_with(False)
+        app_mock.cara.decir.assert_not_called()
+
+        # 3. Evento ("cara_metodo", ("poner_escuchando", True))
+        app_mock.reset_mock()
+        eventos.atender_evento(app_mock, "cara_metodo", ("poner_escuchando", True))
+        app_mock.cara.poner_escuchando.assert_called_with(True)
+        app_mock.cara.decir.assert_not_called()
+
+    def test_selector_ajustes_modo_voz(self):
+        app_mock = MagicMock()
+        coordinador = live_orquestador.CoordinadorLiveSilvestra(app_mock)
+        coordinador.modo_live_habilitado = True
+
+        # 1. Seleccionar 'clasico' en Ajustes
+        coordinador.actualizar_modo_voz("clasico")
+        self.assertFalse(coordinador.es_modo_principal())
+        self.assertFalse(coordinador.intentar_activar_live("hola"))
+
+        # 2. Seleccionar 'gemini_live' en Ajustes
+        coordinador.actualizar_modo_voz("gemini_live")
+        self.assertTrue(coordinador.es_modo_principal())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -24,8 +24,40 @@ class CoordinadorLiveSilvestra:
         self._bloqueo = threading.RLock()
         self.modo_live_habilitado = bool(
             live_audio.obtener_api_key()
+            and self.modo_voz_configurado() != "clasico"
             and os.environ.get("KAYA_MODO", "").strip().lower() != "clasico"
         )
+
+    def modo_voz_configurado(self) -> str:
+        try:
+            import estado
+            return str(estado.cargar().get("modo_voz_principal", "gemini_live")).strip().lower()
+        except Exception:
+            return "gemini_live"
+
+    def es_modo_principal(self) -> bool:
+        return bool(
+            self.modo_live_habilitado
+            and self.modo_voz_configurado() != "clasico"
+            and not live_motor.esta_en_enfriamiento_cuota()
+        )
+
+    def actualizar_modo_voz(self, modo: str):
+        with self._bloqueo:
+            habilitado = bool(
+                live_audio.obtener_api_key()
+                and str(modo).strip().lower() != "clasico"
+                and os.environ.get("KAYA_MODO", "").strip().lower() != "clasico"
+            )
+            self.modo_live_habilitado = habilitado
+            if not habilitado and self.sesion_live:
+                try:
+                    self.sesion_live.detener()
+                except Exception:
+                    pass
+                self.sesion_live = None
+                self._reanudar_captura_local()
+        print(f"[COORDINADOR] Modo voz configurado: '{modo}' (live={self.modo_live_habilitado})", flush=True)
 
     def _al_estado(self, estado: str):
         cara = getattr(self.app, "cara", None)
@@ -87,7 +119,7 @@ class CoordinadorLiveSilvestra:
 
     def intentar_activar_live(self, orden_inicial: str = "") -> bool:
         """Intenta activar Gemini Live al detectar invocación. Devuelve True si Live tomó el turno."""
-        if not self.modo_live_habilitado or live_motor.esta_en_enfriamiento_cuota():
+        if not self.modo_live_habilitado or self.modo_voz_configurado() == "clasico" or live_motor.esta_en_enfriamiento_cuota():
             return False
 
         with self._bloqueo:
@@ -135,3 +167,30 @@ class CoordinadorLiveSilvestra:
                     pass
                 self.sesion_live = None
         self._reanudar_captura_local()
+
+
+def despachar_evento_live(app, tipo: str, texto) -> bool:
+    """Atiende eventos de UI y sincronización visual de Live."""
+    if tipo == "cara_metodo":
+        if isinstance(texto, (tuple, list)) and len(texto) >= 2:
+            metodo, val = texto[0], texto[1]
+            c = getattr(app, "cara", None)
+            if c and hasattr(c, metodo):
+                try:
+                    getattr(c, metodo)(val)
+                except Exception:
+                    pass
+        return True
+    if tipo in ("poner_hablando", "poner_escuchando"):
+        c = getattr(app, "cara", None)
+        if c and hasattr(c, tipo):
+            try:
+                getattr(c, tipo)(bool(texto))
+            except Exception:
+                pass
+        return True
+    if tipo == "frase_burbuja_live":
+        if hasattr(app, "cara") and app.cara:
+            app.cara.decir(str(texto), 5000, con_voz=False)
+        return True
+    return False

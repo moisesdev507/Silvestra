@@ -29,6 +29,7 @@ def cargar():
         "diario_ultima_fecha": None,
         "diario_ultimo_mensaje_manana": None,
         "salida_activa": None,
+        "modo_voz_principal": "gemini_live",
     }
 
 

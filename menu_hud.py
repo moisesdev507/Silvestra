@@ -58,7 +58,17 @@ class MenuHUD(QDialog):
         titulo.setObjectName("titulo")
         raiz.addWidget(titulo)
 
-        raiz.addWidget(QLabel("Voz neuronal"))
+        raiz.addWidget(QLabel("Motor de voz principal"))
+        self.combo_motor_voz = QComboBox()
+        self.combo_motor_voz.addItem("Gemini Live (Natural · Achernar)", "gemini_live")
+        self.combo_motor_voz.addItem("Voz Clásica (Celeste · Groq)", "clasico")
+        modo_voz_act = datos.get("modo_voz_principal", "gemini_live")
+        idx_mv = self.combo_motor_voz.findData(modo_voz_act)
+        self.combo_motor_voz.setCurrentIndex(idx_mv if idx_mv >= 0 else 0)
+        self.combo_motor_voz.currentIndexChanged.connect(self._on_motor_voz)
+        raiz.addWidget(self.combo_motor_voz)
+
+        raiz.addWidget(QLabel("Voz neuronal (Clásica)"))
         self.combo_voz = QComboBox()
         for clave, etiqueta in voz_estilo.VOCES.items():
             self.combo_voz.addItem(etiqueta, clave)
@@ -114,6 +124,16 @@ class MenuHUD(QDialog):
         cerrar.clicked.connect(self.hide)
         pie.addWidget(cerrar)
         raiz.addLayout(pie)
+
+    def _on_motor_voz(self, _indice):
+        modo = self.combo_motor_voz.currentData()
+        datos = estado.cargar()
+        datos["modo_voz_principal"] = modo
+        estado.guardar(datos)
+        if self.app is not None:
+            cl = getattr(self.app, "coordinador_live", None)
+            if cl is not None and hasattr(cl, "actualizar_modo_voz"):
+                cl.actualizar_modo_voz(modo)
 
     def _on_voz(self, _indice):
         voz_estilo.guardar(voz=self.combo_voz.currentData())

@@ -323,6 +323,11 @@ class Silvestra:
         nacimiento.nacer(self)
 
     def saludar(self):
+        cl = getattr(self, "coordinador_live", None)
+        if cl and hasattr(cl, "es_modo_principal") and cl.es_modo_principal():
+            creador = getattr(getattr(self, "memoria", None), "creador", "Moisés") or "Moisés"
+            if cl.intentar_activar_live(f"Hola Kaya, saluda brevemente a {creador} para comenzar el día."):
+                return
         nacimiento.saludar(self)
 
     def renacer(self):
