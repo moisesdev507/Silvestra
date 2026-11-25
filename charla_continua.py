@@ -19,6 +19,19 @@ TERMINOS_CIERRE = {
 _bloqueo = threading.RLock()
 _limite_charla_continua = 0.0
 _energia_sostenida_inicio = 0.0
+_piso_eco_estimado = 0.0
+_t_inicio_habla_asistente = 0.0
+_bloques_bajos_tolerados = 0
+
+
+def reiniciar_estado_barge_in():
+    """Reinicia variables de calibración de eco y barge-in."""
+    global _energia_sostenida_inicio, _piso_eco_estimado, _t_inicio_habla_asistente, _bloques_bajos_tolerados
+    with _bloqueo:
+        _energia_sostenida_inicio = 0.0
+        _piso_eco_estimado = 0.0
+        _t_inicio_habla_asistente = 0.0
+        _bloques_bajos_tolerados = 0
 
 
 def normalizar_texto(texto):
@@ -75,17 +88,18 @@ def respuesta_cierre_amable():
 
 
 def evaluar_barge_in_seguro(app, datos_audio):
-    """Evalúa si el audio del micrófono corresponde a voz humana sostenida y no a eco.
+    """Evalúa si el audio del micrófono corresponde a voz humana sostenida sobre el eco.
     
-    Devuelve True si se confirma interrupción legítima y detiene el audio.
+    Usa umbral adaptativo calibrado contra el piso de eco medido durante el habla de Kaya.
+    Corta en < 300 ms cuando el usuario habla normal (~550-850 RMS) sin falsos positivos por parlante.
     """
-    global _energia_sostenida_inicio
-    if not (app and hasattr(app, "voz") and app.voz.ocupada()):
-        _energia_sostenida_inicio = 0.0
+    global _energia_sostenida_inicio, _piso_eco_estimado, _t_inicio_habla_asistente, _bloques_bajos_tolerados
+    hablando = bool(app and hasattr(app, "voz") and app.voz.ocupada())
+    if not hablando:
+        reiniciar_estado_barge_in()
         return False
 
     if datos_audio is None or len(datos_audio) == 0:
-        _energia_sostenida_inicio = 0.0
         return False
 
     try:
@@ -98,22 +112,42 @@ def evaluar_barge_in_seguro(app, datos_audio):
         return False
 
     ahora = time.monotonic()
+    if _t_inicio_habla_asistente == 0.0:
+        _t_inicio_habla_asistente = ahora
 
-    # Si la energía supera el umbral de presencia vocal clara sobre el altavoz
-    if rms >= UMBRAL_RMS_BARGE_IN:
+    duracion_hablando = ahora - _t_inicio_habla_asistente
+
+    # Calibración del piso de eco en los primeros bloques si no hay voz humana fuerte
+    if duracion_hablando <= 0.25:
+        if rms < 450.0:
+            _piso_eco_estimado = max(_piso_eco_estimado, rms)
+        # Durante los primeros 80 ms dejar arrancar el stream de audio
+        if duracion_hablando < 0.08:
+            return False
+
+    # Umbral adaptativo: al menos 480 RMS o 1.40x sobre el piso de eco medido
+    umbral_dinamico = max(480.0, _piso_eco_estimado * 1.40)
+
+    if rms >= umbral_dinamico:
+        _bloques_bajos_tolerados = 0
         if _energia_sostenida_inicio == 0.0:
             _energia_sostenida_inicio = ahora
             return False
         duracion_energia = ahora - _energia_sostenida_inicio
-        if duracion_energia >= DURACION_MIN_BARGE_IN:
-            _energia_sostenida_inicio = 0.0
-            print(f"[barge-in] interrumpido legítimo: rms={rms:.1f} duracion={duracion_energia:.2f}s", flush=True)
+        if duracion_energia >= 0.16:  # ~160 ms de energía sostenida sobre el eco
+            print(f"[barge_in] interrumpida rms={rms:.1f} piso_eco={_piso_eco_estimado:.1f} umbral={umbral_dinamico:.1f}", flush=True)
+            reiniciar_estado_barge_in()
             if hasattr(app.voz, "detener"):
-                app.voz.detener()
+                app.voz.detener(motivo="barge_in")
             if hasattr(app, "cola"):
                 app.cola.put(("interrupcion", None))
             return True
     else:
-        _energia_sostenida_inicio = 0.0
+        # Tolerancia a micro-caídas entre sílabas (1 bloque ~50-80 ms)
+        if _energia_sostenida_inicio > 0.0 and _bloques_bajos_tolerados < 1:
+            _bloques_bajos_tolerados += 1
+        else:
+            _energia_sostenida_inicio = 0.0
+            _bloques_bajos_tolerados = 0
 
     return False

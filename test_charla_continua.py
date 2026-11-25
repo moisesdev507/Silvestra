@@ -35,29 +35,35 @@ class TestCharlaContinua(unittest.TestCase):
         for nc in no_cierres:
             self.assertFalse(charla_continua.es_cierre_conversacion(nc), f"No debería ser cierre: '{nc}'")
 
-    def test_barge_in_ignora_ruido_bajo_y_corta_ante_voz_sostenida(self):
-        """Verifica que barge-in seguro ignore silencio/ruido bajo y corte ante energía vocal sostenida."""
+    def test_barge_in_adaptativo_voz_normal_vs_eco(self):
+        """Verifica que barge-in corte con voz normal (~620 RMS) y NO dispare con eco (~250 RMS)."""
         app = SimpleNamespace(
             voz=SimpleNamespace(ocupada=lambda: True, detener=MagicMock()),
             cola=SimpleNamespace(put=MagicMock())
         )
+        charla_continua.reiniciar_estado_barge_in()
 
-        # 1. Silencio o ruido bajo (RMS < 850) -> No corta
-        audio_bajo = np.zeros(1600, dtype=np.int16)
-        corta = charla_continua.evaluar_barge_in_seguro(app, audio_bajo)
-        self.assertFalse(corta)
+        # Simular los primeros 0.2s con eco de parlante a ~250 RMS
+        audio_eco = np.full(1600, 250, dtype=np.int16)
+        corta_eco = charla_continua.evaluar_barge_in_seguro(app, audio_eco)
+        self.assertFalse(corta_eco)
+        time.sleep(0.15)
+        # Seguir con eco: no debe cortar
+        corta_eco2 = charla_continua.evaluar_barge_in_seguro(app, audio_eco)
+        self.assertFalse(corta_eco2)
         app.voz.detener.assert_not_called()
 
-        # 2. Voz fuerte instantánea (impulso o clic < 0.22s) -> Primer frame no corta de golpe
-        audio_fuerte = np.full(1600, 2000, dtype=np.int16)
-        corta1 = charla_continua.evaluar_barge_in_seguro(app, audio_fuerte)
-        self.assertFalse(corta1)
+        # Usuario habla con voz normal a ~620 RMS
+        audio_voz = np.full(1600, 620, dtype=np.int16)
+        corta_voz1 = charla_continua.evaluar_barge_in_seguro(app, audio_voz)
+        self.assertFalse(corta_voz1)  # Primer bloque registra inicio
 
-        # Simular energía sostenida tras el umbral de duración
-        time.sleep(0.24)
-        corta2 = charla_continua.evaluar_barge_in_seguro(app, audio_fuerte)
-        self.assertTrue(corta2)
-        app.voz.detener.assert_called_once()
+        # Sostenido tras ~190 ms -> Debe interrumpir
+        time.sleep(0.20)
+        corta_voz2 = charla_continua.evaluar_barge_in_seguro(app, audio_voz)
+        self.assertTrue(corta_voz2)
+        app.voz.detener.assert_called_once_with(motivo="barge_in")
+        app.cola.put.assert_called_with(("interrupcion", None))
         app.cola.put.assert_called_with(("interrupcion", None))
 
     def test_humanizar_resultado_accion_preserva_cifras(self):

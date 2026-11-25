@@ -243,6 +243,16 @@ class TestTtsAuraStream(unittest.TestCase):
             tas.precalentar_conexion(forzar=True)
             self.assertTrue(tas._ULTIMO_PRECALENTADO >= t_primera)
 
+    def test_detener_reproduccion_activa_aborta_stream(self):
+        """Verifica que detener_reproduccion_activa llame abort() y close() en el stream activo."""
+        fake_st = MagicMock()
+        fake_st.closed = False
+        tas._STREAM_ACTIVO = fake_st
+        tas.detener_reproduccion_activa()
+        fake_st.abort.assert_called_once()
+        fake_st.close.assert_called_once()
+        self.assertIsNone(tas._STREAM_ACTIVO)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16,10 +16,28 @@ import httpx
 
 _CLIENTE_LOCK = threading.RLock()
 _CLIENTE_HTTP: Optional[httpx.Client] = None
+_STREAM_ACTIVO = None
 URL_AURA_SPEAK = "https://api.deepgram.com/v1/speak"
 MODELO_DEFECTO = "aura-2-celeste-es"
 SAMPLE_RATE = 24000
 CHANNELS = 1
+
+
+def detener_reproduccion_activa():
+    """Detiene y aborta de inmediato el stream activo de sounddevice si está en reproducción."""
+    global _STREAM_ACTIVO
+    with _CLIENTE_LOCK:
+        st = _STREAM_ACTIVO
+        _STREAM_ACTIVO = None
+    if st is not None:
+        try:
+            st.abort()
+        except Exception:
+            pass
+        try:
+            st.close()
+        except Exception:
+            pass
 
 
 def _obtener_cliente() -> httpx.Client:
@@ -124,35 +142,59 @@ def reproducir_stream_aura(
             resp.close()
             return False, False
 
+        stream = None
         try:
-            with sd.RawOutputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16", blocksize=960) as stream:
-                for trozo in resp.iter_bytes(chunk_size=CHUNK_BYTES):
-                    if cancelar_fn and cancelar_fn():
-                        resp.close()
-                        return True, empezo
-                    if not trozo: continue
-                    datos = sobrante + trozo
-                    if len(datos) % 2 != 0:
-                        sobrante, datos = datos[-1:], datos[:-1]
-                    else:
-                        sobrante = b""
-                    if not datos: continue
+            stream = sd.RawOutputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16", blocksize=960)
+            stream.start()
+            global _STREAM_ACTIVO
+            with _CLIENTE_LOCK:
+                _STREAM_ACTIVO = stream
 
-                    if not empezo:
-                        empezo = True
-                        ttfb = int((time.time() - t0) * 1000)
-                        print(f"[voz] motor=deepgram_aura_stream modelo={modelo} ttfb={ttfb}ms", flush=True)
-                        if al_iniciar:
-                            try: al_iniciar()
-                            except Exception: pass
+            for trozo in resp.iter_bytes(chunk_size=CHUNK_BYTES):
+                if cancelar_fn and cancelar_fn():
+                    resp.close()
+                    try: stream.abort()
+                    except Exception: pass
+                    return True, empezo
+                if not trozo: continue
+                datos = sobrante + trozo
+                if len(datos) % 2 != 0:
+                    sobrante, datos = datos[-1:], datos[:-1]
+                else:
+                    sobrante = b""
+                if not datos: continue
 
-                    if al_nivel:
-                        try: al_nivel(_calcular_rms_pcm(datos))
+                if not empezo:
+                    empezo = True
+                    ttfb = int((time.time() - t0) * 1000)
+                    print(f"[voz] motor=deepgram_aura_stream modelo={modelo} ttfb={ttfb}ms", flush=True)
+                    if al_iniciar:
+                        try: al_iniciar()
                         except Exception: pass
 
-                    stream.write(datos)
+                if al_nivel:
+                    try: al_nivel(_calcular_rms_pcm(datos))
+                    except Exception: pass
+
+                if cancelar_fn and cancelar_fn():
+                    resp.close()
+                    try: stream.abort()
+                    except Exception: pass
+                    return True, empezo
+
+                stream.write(datos)
         finally:
             resp.close()
+            with _CLIENTE_LOCK:
+                if _STREAM_ACTIVO is stream:
+                    _STREAM_ACTIVO = None
+            if stream is not None:
+                try:
+                    if not stream.closed:
+                        stream.stop()
+                        stream.close()
+                except Exception:
+                    pass
         return empezo, empezo
 
     try:

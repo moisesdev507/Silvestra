@@ -139,6 +139,11 @@ class Voz:
             self._activos = 0
             self.sincronia_labial.cancelar()
         self.nivel_volumen = 0.0
+        try:
+            import tts_aura_stream
+            tts_aura_stream.detener_reproduccion_activa()
+        except Exception:
+            pass
         self._parar()
 
     def hablar(self, texto, al_terminar=None, emocion=None):
