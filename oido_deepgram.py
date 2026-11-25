@@ -117,6 +117,7 @@ def transcribir(wav_bytes):
         canales = datos.get("results", {}).get("channels", [])
         alternativa = canales[0]["alternatives"][0]
         texto = alternativa.get("transcript", "")
+        confianza = float(alternativa.get("confidence", 1.0) or 1.0)
         segundos = float(datos.get("metadata", {}).get("duration") or 0.0)
     except Exception:
         return None
@@ -126,6 +127,13 @@ def transcribir(wav_bytes):
         texto = " ".join(str(w.get("word", "")) for w in palabras
                          if isinstance(w, dict)).strip()
     if texto:
+        try:
+            import oido_adaptacion
+            if oido_adaptacion.es_transcripcion_sospechosa(texto, confidence=confianza, duracion_seg=segundos):
+                print(f"[oido] Deepgram transcripcion sospechosa (conf={confianza:.2f}, dur={segundos:.2f}s): conmutando a Whisper", flush=True)
+                return None
+        except Exception:
+            pass
         return (texto, segundos)
     if segundos <= CLIP_CORTO_MAX:
         # Nova-3 ya evaluó el clip: devolver ("", duración) evita el fallback

@@ -14,15 +14,20 @@ _SOLO_INVOCACION = re.compile(r"^(?:lyris|liris|iris)\b[\s,.:;!-]*", re.I)
 
 
 def normalizar_transcripcion(texto):
-    """Colapsa invocaciones duplicadas al inicio, conservando la primera."""
+    """Colapsa invocaciones duplicadas y aplica adaptación fonética para habla relajada."""
     t = " ".join(str(texto or "").split())
     duplicado = _DUP_INVOCACION.match(t)
-    if not duplicado:
-        return t
-    primero = _INVOCACION.match(duplicado.group(0)).group(1)
-    resto = t[duplicado.end():].strip()
-    separador = "," if re.search(r"[,.:;!]", duplicado.group(0)) else " "
-    return f"{primero}{separador} {resto}".strip() if resto else primero
+    if duplicado:
+        primero = _INVOCACION.match(duplicado.group(0)).group(1)
+        resto = t[duplicado.end():].strip()
+        separador = "," if re.search(r"[,.:;!]", duplicado.group(0)) else " "
+        t = f"{primero}{separador} {resto}".strip() if resto else primero
+    try:
+        import oido_adaptacion
+        t = oido_adaptacion.adaptar_texto_fonetico(t)
+    except Exception:
+        pass
+    return t
 
 
 def _palabras(texto):
