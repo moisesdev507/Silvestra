@@ -4,6 +4,8 @@ Voz oficial Achernar, audio bidireccional, soporte de tools, inyección de imág
 y auto-reposo inteligente tras 75s de silencio para ahorro de cuota ($0).
 """
 import asyncio
+import datetime
+import os
 import queue
 import threading
 import time
@@ -30,6 +32,21 @@ import kaya_live_tools
 
 MODELO_DEFECTO = "gemini-2.5-flash-native-audio-latest"
 VOZ_DEFECTO = "Achernar"
+RUTA_LOG_LIVE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "kaya_live.log")
+_LOCK_LOG = threading.RLock()
+
+
+def registrar_log_live(mensaje: str):
+    """Guarda evento formateado en kaya_live.log y lo muestra en consola."""
+    ahora = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    linea = f"[{ahora}] [LIVE] {mensaje}"
+    print(f"[LIVE] {mensaje}", flush=True)
+    try:
+        with _LOCK_LOG:
+            with open(RUTA_LOG_LIVE, "a", encoding="utf-8") as f:
+                f.write(linea + "\n")
+    except Exception:
+        pass
 
 
 class SesionKayaLive:
@@ -142,7 +159,7 @@ class SesionKayaLive:
                     media=types.Blob(data=jpeg_bytes, mime_type="image/jpeg")
                 )
             except Exception as e:
-                print(f"[LIVE] Error inyectando imagen JPEG: {e}", flush=True)
+                registrar_log_live(f"Error inyectando imagen JPEG: {e}")
 
     def _hilo_reproductor(self):
         stream = None
@@ -171,7 +188,7 @@ class SesionKayaLive:
                         pass
         except Exception as e:
             if not self._evento_parada.is_set():
-                print(f"[LIVE] Error en reproductor: {e}", flush=True)
+                registrar_log_live(f"Error en reproductor de audio: {e}")
         finally:
             if stream is not None:
                 try:
@@ -207,7 +224,7 @@ class SesionKayaLive:
                 break
             except Exception as e:
                 if not self._evento_parada_async.is_set():
-                    print(f"[LIVE] Error en captura/envío (saliendo): {e}", flush=True)
+                    registrar_log_live(f"Error en captura/envío (saliendo): {e}")
                 break
 
     async def _vigilante_silencio(self):
@@ -215,7 +232,7 @@ class SesionKayaLive:
             await asyncio.sleep(2.0)
             inactivo = time.monotonic() - self._ultimo_contacto
             if inactivo >= self.timeout_silencio:
-                print(f"\n[LIVE] Auto-reposo inteligente ({int(inactivo)}s sin voz). Ahorro de cuota.", flush=True)
+                registrar_log_live(f"Auto-reposo inteligente ({int(inactivo)}s sin voz). Ahorro de cuota.")
                 self._notificar_estado("reposo")
                 self.detener()
                 break
@@ -239,7 +256,10 @@ class SesionKayaLive:
                         c_id = getattr(call, "id", "")
                         c_name = getattr(call, "name", "")
                         c_args = getattr(call, "args", {}) or {}
+                        registrar_log_live(f"Tool Call: {c_name}(args={c_args})")
                         resultado = await kaya_live_tools.despachar_herramienta(c_name, c_args)
+                        res_str = str(resultado)[:180].replace("\n", " ")
+                        registrar_log_live(f"Tool Result ({c_name}): {res_str}")
                         respuestas.append(types.FunctionResponse(id=c_id, name=c_name, response=resultado))
                     if respuestas and self._session is not None:
                         await self._session.send_tool_response(function_responses=respuestas)
@@ -251,7 +271,7 @@ class SesionKayaLive:
                     continue
 
                 if getattr(sc, "interrupted", False):
-                    print("\n[LIVE] Interrupción (barge-in)", flush=True)
+                    registrar_log_live("Interrupción (barge-in)")
                     turno_hablando = False
                     self._notificar_estado("escuchando")
                     self._notificar_nivel_voz(0.0)
@@ -301,7 +321,7 @@ class SesionKayaLive:
             pass
         except Exception as e:
             if not self._evento_parada_async.is_set():
-                print(f"\n[LIVE] Excepción en recepción (saliendo de sesión): {e}", flush=True)
+                registrar_log_live(f"Excepción en recepción (saliendo de sesión): {e}")
                 raise e
 
     def detener(self):

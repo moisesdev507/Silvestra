@@ -114,6 +114,24 @@ def ejecutar_accion_local(instruccion: str, timeout: float = 8.0) -> str:
         except Exception:
             pass
 
+        # 5. Correo (Gmail) y Calendario (Google Workspace)
+        t_min = texto.lower()
+        if any(w in t_min for w in ("correo", "correos", "email", "gmail", "inbox")):
+            try:
+                import google_workspace
+                res_c = google_workspace.resumen_correos()
+                return str(res_c.get("texto") or "No se pudo obtener información del correo.")
+            except Exception as e:
+                return f"Error consultando correos: {e}"
+
+        if any(w in t_min for w in ("calendario", "agenda", "eventos", "citas", "reuniones")):
+            try:
+                import google_workspace
+                res_a = google_workspace.agenda_hoy()
+                return str(res_a.get("texto") or "No se pudo obtener información de la agenda.")
+            except Exception as e:
+                return f"Error consultando agenda: {e}"
+
         # 5. Detectar apertura de aplicación
         app_detectada = acciones.extraer_app_abrir(texto)
         if app_detectada:
