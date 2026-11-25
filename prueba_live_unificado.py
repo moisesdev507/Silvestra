@@ -292,6 +292,54 @@ class TestGeminiLiveUnificado(unittest.TestCase):
         self.assertEqual(blob.mime_type, "audio/pcm;rate=16000")
         self.assertEqual(len(blob.data), 160 * 2)
 
+    def test_calibracion_ruido_vs_voz_y_watchdog(self):
+        import struct
+        # 1. Ruido ambiente (rms ~250, nivel ~0.04) NO se detecta como voz
+        ruido = struct.pack("<480h", *([250] * 480))
+        es_habla, rms, nivel = live_audio.es_voz_activa(ruido)
+        self.assertFalse(es_habla)
+
+        # 2. Voz real (rms ~750, nivel ~0.15) SÍ se detecta como voz
+        voz = struct.pack("<480h", *([750] * 480))
+        es_habla, rms, nivel = live_audio.es_voz_activa(voz)
+        self.assertTrue(es_habla)
+
+        # 3. Sesión: ruido ambiente no actualiza _t_ultima_voz
+        sesion = live_motor.SesionKayaLive()
+        sesion.activo = True
+        sesion._rate_entrada = 48000
+        t_base = time.monotonic() - 10.0
+        sesion._t_ultima_voz = t_base
+
+        sesion._callback_audio_in(ruido, 480, None, None)
+        self.assertEqual(sesion._t_ultima_voz, t_base)
+
+        # 4. Sesión: voz real SÍ actualiza _t_ultima_voz
+        sesion._callback_audio_in(voz, 480, None, None)
+        self.assertGreater(sesion._t_ultima_voz, t_base)
+
+    def test_supresion_doble_voz_en_nacimiento_y_decir(self):
+        from main import Silvestra
+        import nacimiento
+
+        app_mock = MagicMock()
+        coordinador = MagicMock()
+        coordinador.es_modo_principal.return_value = True
+        coordinador.esta_live_activo.return_value = False
+        app_mock.coordinador_live = coordinador
+        app_mock.voz = MagicMock()
+        app_mock.cara = MagicMock()
+
+        # 1. nacimiento.saludar no llama a voz.hablar si Live es el modo principal
+        nacimiento.saludar(app_mock)
+        app_mock.voz.hablar.assert_not_called()
+
+        # 2. Silvestra.decir con con_voz=True no llama a voz.hablar si Live es principal
+        Silvestra.decir(app_mock, "Hola usuario", con_voz=True)
+        app_mock.voz.hablar.assert_not_called()
+        # Pero cara.decir sí se muestra visualmente
+        app_mock.cara.decir.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

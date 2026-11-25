@@ -82,6 +82,9 @@ def preguntar_proposito(app):
 
 def saludar(app):
     """Encola el saludo inicial de inmediato, sin bloquear el hilo de la GUI."""
+    cl = getattr(app, "coordinador_live", None)
+    if cl and hasattr(cl, "es_modo_principal") and cl.es_modo_principal():
+        return
     try:
         import habla_espontanea
         habla_espontanea.generar_saludo_espontaneo(app)

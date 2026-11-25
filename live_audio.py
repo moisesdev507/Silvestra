@@ -17,6 +17,8 @@ CHANNELS = 1
 CHUNK_ENTRADA_MS = 50
 MAX_COLA_ENTRADA = 60
 TIMEOUT_SILENCIO_DEFECTO = 9.0  # Cierre a 9 segundos según especificación
+UMBRAL_RMS_VOZ = 450.0
+UMBRAL_ENERGIA_VOZ = 0.08
 
 _DISYUNTOR_HASTA = 0.0
 _LOCK_DISYUNTOR = threading.RLock()
@@ -129,6 +131,14 @@ def calcular_rms_pcm16(pcm_bytes: bytes) -> float:
         return float(math.sqrt(suma_cuad / num_muestras))
     except Exception:
         return 0.0
+
+
+def es_voz_activa(pcm_bytes: bytes) -> tuple[bool, float, float]:
+    """Discrimina habla real (rms >= 450 o energia >= 0.08) frente a ruido ambiente."""
+    rms = calcular_rms_pcm16(pcm_bytes)
+    energia = calcular_energia_pcm16(pcm_bytes)
+    es_habla = (rms >= UMBRAL_RMS_VOZ or energia >= UMBRAL_ENERGIA_VOZ)
+    return es_habla, rms, energia
 
 
 def remuestrear_pcm16_a_16k(pcm_bytes: bytes, rate_origen: int) -> bytes:

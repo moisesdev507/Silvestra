@@ -8,7 +8,6 @@ from typing import Any, Callable, Optional
 import sounddevice as sd
 from google import genai
 from google.genai import types
-
 import live_audio
 import live_herramientas
 
@@ -16,17 +15,12 @@ MODELO_DEFECTO = "gemini-2.5-flash-native-audio-latest"
 VOZ_DEFECTO = "Achernar"
 
 from live_audio import (
-    _DISYUNTOR_HASTA,
-    _LOCK_DISYUNTOR,
-    activar_enfriamiento_cuota,
-    es_error_cuota,
-    esta_en_enfriamiento_cuota,
+    _DISYUNTOR_HASTA, _LOCK_DISYUNTOR, activar_enfriamiento_cuota,
+    es_error_cuota, esta_en_enfriamiento_cuota,
 )
 
 
 class SesionKayaLive:
-    """Ciclo de vida asíncrono de una sesión interactiva de Gemini Live."""
-
     def __init__(
         self,
         modelo: str = MODELO_DEFECTO,
@@ -38,28 +32,23 @@ class SesionKayaLive:
         on_cierre_automatico: Optional[Callable[[], None]] = None,
         orden_inicial: str = "",
     ):
-        self.modelo = modelo
-        self.voz = voz
+        self.modelo, self.voz = modelo, voz
         self.timeout_silencio = timeout_silencio
-        self.on_estado = on_estado
-        self.on_nivel_voz = on_nivel_voz
-        self.on_transcripcion = on_transcripcion
-        self.on_cierre_automatico = on_cierre_automatico
+        self.on_estado, self.on_nivel_voz = on_estado, on_nivel_voz
+        self.on_transcripcion, self.on_cierre_automatico = on_transcripcion, on_cierre_automatico
         self.orden_inicial = orden_inicial
 
-        self.cola_audio_entrada: queue.Queue = queue.Queue(maxsize=live_audio.MAX_COLA_ENTRADA)
-        self.cola_audio_salida: queue.Queue = queue.Queue()
+        self.cola_audio_entrada = queue.Queue(maxsize=live_audio.MAX_COLA_ENTRADA)
+        self.cola_audio_salida = queue.Queue()
         self.compuerta = live_audio.CompuertaAntiEco(cola_salida=self.cola_audio_salida)
 
         self.activo = False
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._session_genai = None
-        self._hilo_loop: Optional[threading.Thread] = None
-        self._hilo_salida: Optional[threading.Thread] = None
-        self._stream_entrada: Optional[sd.InputStream] = None
-        self._stream_salida: Optional[sd.OutputStream] = None
+        self._loop, self._session_genai = None, None
+        self._hilo_loop, self._hilo_salida = None, None
+        self._stream_entrada, self._stream_salida = None, None
         self._rate_entrada = live_audio.RATE_ENTRADA
         self._t_ultimo_log_voz = 0.0
+        self._en_rafaga_voz = False
 
         self._t_ultima_voz = time.monotonic()
         self._estado_actual = "reposo"
@@ -96,17 +85,17 @@ class SesionKayaLive:
             pcm = live_audio.remuestrear_pcm16_a_16k(pcm, self._rate_entrada)
         chunk_filtrado, silenciado = self.compuerta.filtrar_chunk_entrada(pcm)
         if not silenciado:
-            energia = live_audio.calcular_energia_pcm16(chunk_filtrado)
-            if energia > 0.03:
+            es_habla, rms, energia = live_audio.es_voz_activa(chunk_filtrado)
+            if es_habla:
                 self._t_ultima_voz = time.monotonic()
                 if self._estado_actual != "hablando":
                     self._notificar_estado("escuchando")
                 self._notificar_nivel(energia)
-                rms = live_audio.calcular_rms_pcm16(chunk_filtrado)
-                ahora = time.monotonic()
-                if ahora - getattr(self, "_t_ultimo_log_voz", 0) > 1.2:
-                    self._t_ultimo_log_voz = ahora
+                if not getattr(self, "_en_rafaga_voz", False):
+                    self._en_rafaga_voz = True
                     print(f"[LIVE][AUDIO] Voz detectada (rms={rms:.1f}, nivel={energia:.2f}).", flush=True)
+            elif getattr(self, "_en_rafaga_voz", False):
+                self._en_rafaga_voz = False
         try:
             self.cola_audio_entrada.put_nowait(chunk_filtrado)
         except queue.Full:
@@ -236,41 +225,45 @@ class SesionKayaLive:
             tarea_dog = asyncio.create_task(self._tarea_watchdog())
 
             try:
-                async for resp in session.receive():
+                while self.activo:
+                    async for resp in session.receive():
+                        if not self.activo:
+                            break
+
+                        sc = resp.server_content
+                        if sc:
+                            if getattr(sc, "turn_complete", False):
+                                self._t_ultima_voz = time.monotonic()
+                            if getattr(sc, "interrupted", False):
+                                with self.cola_audio_salida.mutex:
+                                    self.cola_audio_salida.queue.clear()
+                                self._notificar_estado("escuchando")
+                                self._t_ultima_voz = time.monotonic()
+
+                            mt = sc.model_turn
+                            if mt:
+                                for part in mt.parts:
+                                    if getattr(part, "inline_data", None) and part.inline_data.data:
+                                        self.compuerta.marcar_encolado_salida()
+                                        self.cola_audio_salida.put(part.inline_data.data)
+                                    if getattr(part, "text", None):
+                                        self._notificar_texto("kaya", part.text)
+
+                        tc = resp.tool_call
+                        if tc:
+                            self._notificar_estado("pensando")
+                            for call in tc.function_calls:
+                                res_call = await live_herramientas.despachar_herramienta_asincrona(call.name, call.args)
+                                await session.send(
+                                    input=types.LiveClientToolResponse(
+                                        function_responses=[
+                                            types.FunctionResponse(name=call.name, id=call.id, response={"result": res_call})
+                                        ]
+                                    )
+                                )
                     if not self.activo:
                         break
-
-                    sc = resp.server_content
-                    if sc:
-                        if getattr(sc, "turn_complete", False):
-                            self._t_ultima_voz = time.monotonic()
-                        if getattr(sc, "interrupted", False):
-                            with self.cola_audio_salida.mutex:
-                                self.cola_audio_salida.queue.clear()
-                            self._notificar_estado("escuchando")
-                            self._t_ultima_voz = time.monotonic()
-
-                        mt = sc.model_turn
-                        if mt:
-                            for part in mt.parts:
-                                if getattr(part, "inline_data", None) and part.inline_data.data:
-                                    self.compuerta.marcar_encolado_salida()
-                                    self.cola_audio_salida.put(part.inline_data.data)
-                                if getattr(part, "text", None):
-                                    self._notificar_texto("kaya", part.text)
-
-                    tc = resp.tool_call
-                    if tc:
-                        self._notificar_estado("pensando")
-                        for call in tc.function_calls:
-                            res_call = await live_herramientas.despachar_herramienta_asincrona(call.name, call.args)
-                            await session.send(
-                                input=types.LiveClientToolResponse(
-                                    function_responses=[
-                                        types.FunctionResponse(name=call.name, id=call.id, response={"result": res_call})
-                                    ]
-                                )
-                            )
+                    await asyncio.sleep(0.02)
             finally:
                 tarea_audio.cancel()
                 tarea_dog.cancel()

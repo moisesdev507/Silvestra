@@ -217,8 +217,8 @@ class Silvestra:
         self.cara.decir(texto, ms, emocion=emo)
         if con_voz:
             cl = getattr(self, "coordinador_live", None)
-            if cl and cl.esta_live_activo():
-                # En modo Live, el audio sale exclusivamente por Gemini Live (Achernar)
+            if cl and (cl.esta_live_activo() or (hasattr(cl, "es_modo_principal") and cl.es_modo_principal())):
+                # En modo Live o con Live activo, el audio sale por Gemini Live (Achernar)
                 return
             self.ultimo_dicho = texto
             try:
