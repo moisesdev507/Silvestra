@@ -8,8 +8,10 @@ import unicodedata
 import cv2
 import numpy as np
 
-BASE = os.path.dirname(os.path.abspath(__file__))
-RUTA_MODELOS = os.path.join(BASE, "modelos")
+import rutas_app
+
+BASE = rutas_app.dir_usuario()
+RUTA_MODELOS = rutas_app.dir_recursos()
 RUTA_YUNET = os.path.join(RUTA_MODELOS, "face_detection_yunet_2023mar.onnx")
 RUTA_SFACE = os.path.join(RUTA_MODELOS, "face_recognition_sface_2021dec.onnx")
 ARCHIVO_DUENO = os.path.join(BASE, "dueno.npy")

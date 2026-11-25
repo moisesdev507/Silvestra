@@ -5,9 +5,10 @@ import threading
 import time
 
 import acciones
+import rutas_app
 
-BASE = os.path.dirname(os.path.abspath(__file__))
-RUTA = os.path.join(BASE, "modelos")
+BASE = rutas_app.dir_usuario()
+RUTA = rutas_app.dir_recursos()
 ARCHIVO_DUENO = os.path.join(BASE, "dueno.npy")
 M_DETECTOR = "face_detection_yunet_2023mar.onnx"
 M_RECONOCER = "face_recognition_sface_2021dec.onnx"

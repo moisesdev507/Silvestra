@@ -5,8 +5,14 @@ import sys
 import threading
 import traceback
 
+import rutas_app
+
+_DIR_USUARIO = rutas_app.dir_usuario()
+if getattr(sys, "frozen", False):
+    os.chdir(_DIR_USUARIO)
+
 # Diario de errores: como corre sin ventana, todo se guarda en silvestra.log
-_ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "silvestra.log")
+_ruta = os.path.join(_DIR_USUARIO, "silvestra.log")
 try:
     import logging
     _diario = open(_ruta, "a", buffering=1, encoding="utf-8", errors="replace")
@@ -408,6 +414,7 @@ class Silvestra:
 if __name__ == "__main__":
     import onboarding_qt
 
+    rutas_app.preparar_dir_usuario()
     onboarding_qt.cargar_env()
     if not onboarding_qt.asegurar_configuracion():
         print("[main] Configuración inicial cancelada; no se iniciaron motores.", flush=True)

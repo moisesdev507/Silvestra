@@ -3,7 +3,9 @@ import json
 import os
 import time
 
-RUTA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "estado.json")
+import rutas_app
+
+RUTA = os.path.join(rutas_app.dir_usuario(), "estado.json")
 
 
 def cargar():

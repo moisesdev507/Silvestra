@@ -1,5 +1,6 @@
 """Pruebas del onboarding inicial y del empaquetado limpio para amigos."""
 import os
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -7,8 +8,10 @@ from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import construir_exe
 import construir_paquete_amigos as empaquetador
 import onboarding_qt as onboarding
+import rutas_app
 from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton
 
 RAIZ = os.path.dirname(os.path.abspath(__file__))
@@ -169,6 +172,93 @@ class PaqueteTests(unittest.TestCase):
         problemas = empaquetador.auditar(self.paquete)
         self.assertTrue(problemas)
         self.assertTrue(any("filtrado.py" in p for p in problemas), problemas)
+
+
+class RutasTests(unittest.TestCase):
+    """Rutas en desarrollo y simulación del ejecutable congelado."""
+
+    def test_rutas_en_desarrollo(self):
+        self.assertEqual(rutas_app.dir_recursos(), RAIZ)
+        self.assertEqual(rutas_app.dir_usuario(), RAIZ)
+
+    def test_rutas_congeladas_y_preparacion(self):
+        temporal = tempfile.TemporaryDirectory()
+        self.addCleanup(temporal.cleanup)
+        interno = os.path.join(temporal.name, "_internal")
+        ejecutable = os.path.join(temporal.name, "Kaya.exe")
+        parches = (
+            patch.object(sys, "frozen", True, create=True),
+            patch.object(sys, "_MEIPASS", interno, create=True),
+            patch.object(sys, "executable", ejecutable),
+        )
+        for parche in parches:
+            parche.start()
+            self.addCleanup(parche.stop)
+        self.assertEqual(rutas_app.dir_recursos(), interno)
+        self.assertEqual(rutas_app.dir_usuario(), temporal.name)
+        self.assertEqual(rutas_app.ruta_recurso("modelos", "silero_vad.onnx"),
+                         os.path.join(interno, "modelos", "silero_vad.onnx"))
+        base = rutas_app.preparar_dir_usuario()
+        self.assertEqual(base, temporal.name)
+        self.assertTrue(os.path.isfile(os.path.join(base, ".env")))
+        self.assertTrue(os.path.isdir(os.path.join(base, "datos")))
+
+
+class ExeAuditoriaTests(unittest.TestCase):
+    """Auditoría fail-closed del paquete Kaya.exe."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.carpeta = os.path.join(self.tmp.name, "Kaya")
+        os.makedirs(os.path.join(self.carpeta, "_internal"))
+        escribir(os.path.join(self.carpeta, "Kaya.exe"), "binario falso")
+
+    def test_paquete_limpio(self):
+        self.assertEqual(construir_exe.auditar(self.carpeta), [])
+
+    def test_escaneo_excluye_pruebas_y_scripts_de_compilacion(self):
+        mods = construir_exe.modulos_activos()
+        for esperado in ("main", "rutas_app", "onboarding_qt", "oido_ws"):
+            self.assertIn(esperado, mods)
+        for excluido in ("construir_exe", "construir_paquete_amigos",
+                         "prueba_onboarding_paquete", "test_oido_adaptacion"):
+            self.assertNotIn(excluido, mods)
+
+    def test_detecta_codigo_datos_y_secretos(self):
+        interna = os.path.join(self.carpeta, "_internal")
+        escribir(os.path.join(interna, "config.py"), 'CLAVE = "valor"\n')
+        escribir(os.path.join(interna, "config.json"),
+                 '{"clave": "' + CLAVES_PRUEBA["GROQ_API_KEY"] + '"}')
+        escribir(os.path.join(self.carpeta, ".env"), "GROQ_API_KEY=privada\n")
+        escribir(os.path.join(self.carpeta, "silvestra.log"), "registro privado")
+        os.makedirs(os.path.join(self.carpeta, "datos"))
+        problemas = construir_exe.auditar(self.carpeta)
+        for esperado in ("config.py", "config.json", ".env", "silvestra.log", "datos"):
+            self.assertTrue(any(esperado in p for p in problemas), (esperado, problemas))
+
+    def test_distingue_datos_de_biblioteca_y_fuente_de_kaya(self):
+        interna = os.path.join(self.carpeta, "_internal")
+        escribir(os.path.join(interna, "cv2", "config.py"), "RUTA = 1\n")
+        escribir(os.path.join(interna, "google", "genai", "client.py"), "x = 1\n")
+        escribir(os.path.join(interna, "main.py"), "x = 1\n")
+        escribir(os.path.join(self.carpeta, "rutas_app.py"), "x = 1\n")
+        problemas = construir_exe.auditar(self.carpeta)
+        for permitido in ("cv2/config.py", "google/genai/client.py"):
+            self.assertFalse(any(permitido in p for p in problemas), (permitido, problemas))
+        for prohibido in ("_internal/main.py", "rutas_app.py"):
+            self.assertTrue(any(prohibido in p for p in problemas), (prohibido, problemas))
+
+    def test_datos_publicos_no_se_cuentan_como_secretos(self):
+        ruta = os.path.join(self.carpeta, "_internal", "googleapiclient",
+                            "discovery_cache", "documents", "api.json")
+        escribir(ruta, '{"hash": "' + "a" * 40 + '"}')
+        self.assertEqual(construir_exe.auditar(self.carpeta), [])
+
+    def test_falta_el_ejecutable(self):
+        os.remove(os.path.join(self.carpeta, "Kaya.exe"))
+        problemas = construir_exe.auditar(self.carpeta)
+        self.assertTrue(any("Kaya.exe" in p for p in problemas), problemas)
 
 
 if __name__ == "__main__":

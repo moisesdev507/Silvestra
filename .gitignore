@@ -75,3 +75,9 @@ memoria_jarvis.db
 datos/
 dist_amigos/
 *.tmp
+
+# Compilación standalone de Windows (PyInstaller)
+dist/
+build/
+dist_exe/
+*.spec

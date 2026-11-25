@@ -15,6 +15,7 @@ import unicodedata
 
 import acciones
 import estado
+import rutas_app
 
 # Umbral mínimo para coincidencias difusas; las variantes conocidas van por lista exacta.
 UMBRAL_RATIO = 0.55
@@ -71,11 +72,7 @@ VARIANTES_SILVESTRA = {
 }
 RUIDO_VOZ = {"unk", "[unk]", "..."}
 
-RUTA_MODELO = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "modelos",
-    "vosk-model-small-es-0.42",
-)
+RUTA_MODELO = rutas_app.ruta_recurso("modelos", "vosk-model-small-es-0.42")
 
 
 def normalizar(texto):

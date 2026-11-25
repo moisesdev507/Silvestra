@@ -8,6 +8,8 @@ from collections import deque
 
 import numpy as np
 
+import rutas_app
+
 PRERROLL_SEG = 0.80  # 800 ms de audio previo al disparo del VAD
 
 
@@ -25,11 +27,7 @@ class DetectorVozSilero:
         buffer_size=20.0,
     ):
         if ruta_modelo is None:
-            ruta_modelo = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                "modelos",
-                "silero_vad.onnx",
-            )
+            ruta_modelo = rutas_app.ruta_recurso("modelos", "silero_vad.onnx")
         self.ruta_modelo = ruta_modelo
         self.sample_rate = sample_rate
         self.threshold = threshold

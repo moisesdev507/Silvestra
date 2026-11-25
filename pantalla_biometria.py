@@ -2,6 +2,8 @@
 import os
 import time
 
+import rutas_app
+
 _cache = {
     "voz_mtime": 0.0,
     "voz_count": 0,
@@ -10,7 +12,7 @@ _cache = {
     "ultimo_reforzar": 0.0,
 }
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = rutas_app.dir_usuario()
 RUTA_VOZ = os.path.join(BASE_DIR, "voz_dueno.npy")
 RUTA_CARA = os.path.join(BASE_DIR, "dueno.npy")
 

@@ -8,13 +8,14 @@ import threading
 
 import estado
 import persistencia_segura as ps
+import rutas_app
 from PySide6.QtCore import QThread, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QApplication, QDialog, QFormLayout, QHBoxLayout,
                                QLabel, QLineEdit, QPushButton, QVBoxLayout,
                                QWidget)
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+BASE = rutas_app.dir_usuario()
 CLAVES = ("GEMINI_API_KEY", "GROQ_API_KEY", "DEEPGRAM_API_KEY")
 ENLACES = {
     "GEMINI_API_KEY": "https://aistudio.google.com/app/apikey",

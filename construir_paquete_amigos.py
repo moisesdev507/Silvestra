@@ -41,11 +41,17 @@ ENTORNOS = {
 CABECERA_CONFIG = '''"""Configuración limpia de Kaya: las claves se leen de .env, nunca se distribuyen."""
 import os as _os
 
+try:
+    import rutas_app as _rutas
+    _DIR_USUARIO = _rutas.dir_usuario()
+except Exception:
+    _DIR_USUARIO = _os.path.dirname(_os.path.abspath(__file__))
+
 
 def _leer_env():
     datos = {}
     try:
-        with open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), ".env"),
+        with open(_os.path.join(_DIR_USUARIO, ".env"),
                   "r", encoding="utf-8", errors="replace") as archivo:
             for linea in archivo:
                 linea = linea.strip()

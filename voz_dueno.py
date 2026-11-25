@@ -11,6 +11,7 @@ import numpy as np
 
 import acciones
 import estado
+import rutas_app
 from voz_dueno_banco import (
     filtrar_voz_activa,
     preparar_audio_biometria,
@@ -20,9 +21,9 @@ from voz_dueno_banco import (
     agregar_muestra_banco,
 )
 
-BASE = os.path.dirname(os.path.abspath(__file__))
-ARCHIVO_VOZ = os.path.join(BASE, "voz_dueno.npy")
-MODELO_ONNX = os.path.join(BASE, "modelos", "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx")
+ARCHIVO_VOZ = os.path.join(rutas_app.dir_usuario(), "voz_dueno.npy")
+MODELO_ONNX = rutas_app.ruta_recurso(
+    "modelos", "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx")
 GRACIA_DUENO_SEG = 90.0  # ventana de gracia tras verificación biométrica positiva
 
 _extractor = None
