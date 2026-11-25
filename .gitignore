@@ -70,3 +70,8 @@ memoria_jarvis.db
 *.db-wal
 *.db-shm
 *.pem
+
+# Onboarding y distribución: jamás versionar datos privados ni paquetes generados
+datos/
+dist_amigos/
+*.tmp

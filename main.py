@@ -102,7 +102,8 @@ class Silvestra:
         except Exception as e:
             print(f"[cognicion] Integración global no disponible: {type(e).__name__}", flush=True)
         http_client = httpx.Client(limits=httpx.Limits(max_keepalive_connections=10, max_connections=20))
-        self.cliente = Groq(api_key=config.CLAVE, http_client=http_client)
+        self.cliente = Groq(api_key=(os.environ.get("GROQ_API_KEY") or config.CLAVE),
+                            http_client=http_client)
         self.cerebro = Cerebro(self.cliente, self.memoria, app=self)
         self.voz = Voz()
         self.oido = Oido(self.cliente, self.memoria.vocabulario)
@@ -405,4 +406,10 @@ class Silvestra:
 
 
 if __name__ == "__main__":
+    import onboarding_qt
+
+    onboarding_qt.cargar_env()
+    if not onboarding_qt.asegurar_configuracion():
+        print("[main] Configuración inicial cancelada; no se iniciaron motores.", flush=True)
+        sys.exit(0)
     Silvestra().iniciar()
