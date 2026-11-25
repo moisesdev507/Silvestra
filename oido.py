@@ -24,11 +24,10 @@ from oido_vad import DetectorVozSilero
 
 
 # Contexto y vocabulario para guiar a Whisper evitando deformaciones o alucinaciones.
-PROMPT_WHISPER = (
-    "Conversación en español latinoamericano con la asistente Lyris. "
-    "Órdenes comunes: Lyris, preséntate, baila, para de bailar, mira mi pantalla, "
-    "Visual Studio Code, qué hora es, busca en internet."
-)
+try:
+    from identidad_kaya import PROMPT_WHISPER
+except Exception:
+    PROMPT_WHISPER = "Conversación en español con la asistente Kaya."
 
 
 def _barge_in_habilitado():

@@ -7,12 +7,21 @@ from unittest.mock import MagicMock, patch
 
 import habla_espontanea
 import identidad_kaya
+import oido
+import oido_deepgram
 import voz_rapida
 
 
 class TestIdentidadKaya(unittest.TestCase):
+    def test_keyterm_deepgram_y_prompt_whisper(self):
+        """Verifica que oido_deepgram y oido tengan configurado Kaya y no Lyris."""
+        self.assertIn("Kaya", oido_deepgram.KEYTERM)
+        self.assertNotIn("Lyris", oido_deepgram.KEYTERM)
+        self.assertIn("Kaya", oido.PROMPT_WHISPER)
+        self.assertNotIn("Lyris", oido.PROMPT_WHISPER)
+
     def test_deteccion_positiva_variantes_kaya(self):
-        """Verifica que 'Kaya', 'Kaia', 'Caya' y 'Oye calla, qué hora es' se detecten como invocación."""
+        """Verifica que 'Kaya', 'Kaia', 'Caya' y 'Oye calla/calle' se detecten como invocación."""
         positivas = [
             ("Kaya qué hora es", "kaya"),
             ("Hola kaia, cómo estás", "kaia"),
@@ -21,6 +30,9 @@ class TestIdentidadKaya(unittest.TestCase):
             ("Calla, dime el clima", "calla"),
             ("Hey calla", "calla"),
             ("kalla, detente", "kalla"),
+            ("Calle, ¿puedes revisar mi pantalla?", "calle"),
+            ("Oye calle, qué hora es", "calle"),
+            ("calle revisa esto", "calle"),
         ]
         for texto, alias_esperado in positivas:
             detectado, alias, orden = identidad_kaya.detectar_invocacion(texto)
@@ -28,7 +40,7 @@ class TestIdentidadKaya(unittest.TestCase):
             self.assertEqual(alias, alias_esperado, f"Alias incorrecto en: {texto}")
 
     def test_rechazo_falsos_positivos_calla_verbal(self):
-        """Verifica que el uso verbal de 'calla' sea rechazado."""
+        """Verifica que el uso verbal o sustantivo de 'calla' / 'calle' sea rechazado."""
         negativas = [
             "él no se calla nunca",
             "no calla esa música",
@@ -36,6 +48,11 @@ class TestIdentidadKaya(unittest.TestCase):
             "te calla de inmediato",
             "quédate callada por favor",
             "ni calla ni deja hablar",
+            "estoy en la calle",
+            "cruzó la calle corriendo",
+            "por la calle principal",
+            "de la calle",
+            "una calle oscura",
         ]
         for texto in negativas:
             detectado, alias, orden = identidad_kaya.detectar_invocacion(texto)

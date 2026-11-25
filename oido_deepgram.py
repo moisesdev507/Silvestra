@@ -10,7 +10,10 @@ import config
 import httpx
 
 URL = "https://api.deepgram.com/v1/listen"
-KEYTERM = "Lyris:10,Liris:6,Iris:5"
+try:
+    from identidad_kaya import KEYTERM_DEEPGRAM as KEYTERM
+except Exception:
+    KEYTERM = "Kaya:10,Kaia:6,Caya:5"
 TIMEOUT = 6.0
 CLIP_CORTO_MAX = 1.25
 _bloqueo = threading.RLock()
