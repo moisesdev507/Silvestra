@@ -91,8 +91,10 @@ class SesionKayaLive:
                 if self._estado_actual != "hablando":
                     self._notificar_estado("escuchando")
                 self._notificar_nivel(energia)
-                if not getattr(self, "_en_rafaga_voz", False):
+                ahora = time.monotonic()
+                if not getattr(self, "_en_rafaga_voz", False) or (ahora - getattr(self, "_t_ultimo_log_voz", 0.0) >= 1.2):
                     self._en_rafaga_voz = True
+                    self._t_ultimo_log_voz = ahora
                     print(f"[LIVE][AUDIO] Voz detectada (rms={rms:.1f}, nivel={energia:.2f}).", flush=True)
             elif getattr(self, "_en_rafaga_voz", False):
                 self._en_rafaga_voz = False

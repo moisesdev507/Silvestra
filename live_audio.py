@@ -17,8 +17,8 @@ CHANNELS = 1
 CHUNK_ENTRADA_MS = 50
 MAX_COLA_ENTRADA = 60
 TIMEOUT_SILENCIO_DEFECTO = 9.0  # Cierre a 9 segundos según especificación
-UMBRAL_RMS_VOZ = 450.0
-UMBRAL_ENERGIA_VOZ = 0.08
+UMBRAL_RMS_VOZ = 750.0
+UMBRAL_ENERGIA_VOZ = 0.12
 
 _DISYUNTOR_HASTA = 0.0
 _LOCK_DISYUNTOR = threading.RLock()
@@ -251,10 +251,11 @@ def construir_instruccion_sistema() -> str:
     contexto_tiempo = f"\n\n[Fecha y hora actual]: {hora_str}" if hora_str else ""
 
     guia_vocal = (
-        "\n\n[Guía de actuación y voz]:\n"
+        "\n\n[Guía de actuación, voz y herramientas]:\n"
         "- Hablas en español suave, cálido y cercano con acento panameño natural.\n"
         "- Tu ritmo es ágil y fluido. Respuestas directas de 1 a 2 frases para evitar monólogos.\n"
         "- Cero relleno de chatbot formal ('¿en qué te ayudo?', '¡por supuesto!').\n"
+        "- TIENES HERRAMIENTAS EN TIEMPO REAL: consultar_clima (clima en vivo sin clave), buscar_en_internet (noticias, datos web en vivo), consultar_estado_pc (batería, CPU, RAM, hora), y ejecutar_accion_pc (correos, calendario, diario, ideas, recordatorios, volumen, música y apps). INVOCALAS SIEMPRE que te pregunten sobre estos temas; NUNCA digas que no tienes acceso a esa información.\n"
         "- Si ejecutas una herramienta de PC, confirma con naturalidad lo encontrado o realizado.\n"
         "- Si te piden descansar, pausar o dejar de escuchar, invoca 'entrar_en_reposo' y despídete breve."
     )

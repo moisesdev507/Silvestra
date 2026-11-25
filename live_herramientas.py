@@ -10,6 +10,7 @@ Delega el 100% de las acciones a los módulos existentes del proyecto:
 - telemetria.py
 Garantiza ejecución silenciosa sin disparar voz duplicada.
 """
+import asyncio
 import concurrent.futures
 import datetime
 import os
@@ -283,6 +284,27 @@ def declarar_declaraciones_herramientas() -> List[types.Tool]:
             ),
         ),
         types.FunctionDeclaration(
+            name="consultar_clima",
+            description="Consulta el clima en tiempo real (temperatura actual, sensación térmica, estado del cielo y pronóstico) para cualquier ciudad (por defecto Panamá).",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "ciudad": types.Schema(type="STRING", description="Nombre de la ciudad (ej. 'Panamá', 'Chiriquí', 'Madrid')."),
+                },
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="buscar_en_internet",
+            description="Busca información actualizada en la web en tiempo real para preguntas de actualidad, datos en vivo, noticias o consultas externas.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "consulta": types.Schema(type="STRING", description="Tema o pregunta a buscar en la web."),
+                },
+                required=["consulta"],
+            ),
+        ),
+        types.FunctionDeclaration(
             name="consultar_estado_pc",
             description="Consulta la telemetría del equipo (batería, memoria RAM, CPU y hora actual).",
             parameters=types.Schema(type="OBJECT", properties={}),
@@ -307,6 +329,14 @@ async def despachar_herramienta_asincrona(nombre: str, args: Dict[str, Any]) -> 
     if nombre == "ejecutar_accion_pc":
         instruccion = args.get("instruccion", "")
         return await loop.run_in_executor(None, ejecutar_accion_local, instruccion)
+    elif nombre == "consultar_clima":
+        ciudad = args.get("ciudad") or "Panamá"
+        import consulta_web
+        return await loop.run_in_executor(None, consulta_web.consultar_clima, ciudad)
+    elif nombre == "buscar_en_internet":
+        consulta = args.get("consulta", "")
+        import consulta_web
+        return await loop.run_in_executor(None, consulta_web.buscar_web, consulta)
     elif nombre == "consultar_estado_pc":
         return await loop.run_in_executor(None, consultar_sistema)
     elif nombre == "entrar_en_reposo":

@@ -66,6 +66,17 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         _reg_turno(cerebro, texto_orig, resp, al_frase)
         return resp, accion_atajo, emo_atajo
 
+    # Atajo de consulta de clima en tiempo real o búsqueda web
+    try:
+        import consulta_web
+        res_web = consulta_web.responder_consulta_web_o_clima(texto)
+        if res_web:
+            r_txt, r_act, r_emo = res_web
+            _reg_turno(cerebro, texto_orig, r_txt, al_frase)
+            return r_txt, r_act, r_emo
+    except Exception:
+        pass
+
     app = getattr(cerebro, "app", None)
     import vision_pantalla
     if vision_pantalla.detectar_peticion_vision(texto):
