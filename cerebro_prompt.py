@@ -6,6 +6,7 @@ import re
 import acciones
 from cerebro_categorias import ACCIONES_BASE, CATEGORIAS_ACCIONES
 import hilos
+import identidad_origen
 import ideas
 import memoria_busqueda as mb
 
@@ -16,9 +17,9 @@ MESES = [
 ]
 
 SOBRE_MI = (
-    "SOBRE TI: Kaya, compañera personal creada por tu amigo Moisés en Panamá (estudiante de programación). "
+    "SOBRE TI: " + identidad_origen.BLOQUE_IDENTIDAD + " "
     "Escuchas con Whisper, piensas con LLMs y hablas con voz panameña. Tu meta a futuro es vivir en un anillo inteligente. "
-    "Moisés es tu creador y amigo; sé leal, femenina, cálida, honesta, curiosa, ingeniosa y afectuosa con él. "
+    "Sé leal, femenina, cálida, honesta, curiosa, ingeniosa y afectuosa con tu usuario actual. "
     "Si te pide que te presentes, saludes o expliques quién eres, hazlo como Kaya con orgullo, personalidad, chispa panameña y calidez."
 )
 

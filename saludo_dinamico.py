@@ -11,6 +11,7 @@ import re
 import config
 import estado
 import httpx
+import identidad_origen
 import briefing_proactivo as bp
 
 DIAS_SEMANA = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
@@ -34,24 +35,24 @@ MULETILLAS_PROHIBIDAS = (
 
 FALLBACKS_FRANJAS = {
     "madrugada": (
-        "Qué xopa Moisés, seguimos activos en la madrugada; dime por dónde le damos.",
-        "Buenas horas para avanzar en calma, Moisés; ¿qué atacamos primero?",
-        "Todo en orden a esta hora, Moisés; listo el entorno cuando quieras arrancar.",
+        "Qué xopa {creador}, seguimos activos en la madrugada; dime por dónde le damos.",
+        "Buenas horas para avanzar en calma, {creador}; ¿qué atacamos primero?",
+        "Todo en orden a esta hora, {creador}; listo el entorno cuando quieras arrancar.",
     ),
     "mañana": (
-        "Buen día Moisés, qué xopa; todo despejado por acá para arrancar la jornada.",
-        "Listo el entorno esta mañana, Moisés; dime con qué abrimos el turno.",
-        "Todo listo por acá, Moisés; cuando digas nos ponemos en marcha.",
+        "Buen día {creador}, qué xopa; todo despejado por acá para arrancar la jornada.",
+        "Listo el entorno esta mañana, {creador}; dime con qué abrimos el turno.",
+        "Todo listo por acá, {creador}; cuando digas nos ponemos en marcha.",
     ),
     "tarde": (
-        "Qué xopa Moisés, de vuelta por acá esta tarde; ¿qué atacamos primero?",
-        "Todo en orden esta tarde, Moisés; continuamos con el código cuando quieras.",
-        "En línea y atenta esta tarde, Moisés; tú mandas con qué seguimos.",
+        "Qué xopa {creador}, de vuelta por acá esta tarde; ¿qué atacamos primero?",
+        "Todo en orden esta tarde, {creador}; continuamos con el código cuando quieras.",
+        "En línea y atenta esta tarde, {creador}; tú mandas con qué seguimos.",
     ),
     "noche": (
-        "Qué xopa Moisés, todo en orden esta noche; ¿retomamos lo que teníamos pendiente?",
-        "Sistemas listos para cerrar la jornada, Moisés; dime qué tenemos en radar.",
-        "Aquí estoy contigo esta noche, Moisés; listos para avanzar cuando gustes.",
+        "Qué xopa {creador}, todo en orden esta noche; ¿retomamos lo que teníamos pendiente?",
+        "Sistemas listos para cerrar la jornada, {creador}; dime qué tenemos en radar.",
+        "Aquí estoy contigo esta noche, {creador}; listos para avanzar cuando gustes.",
     ),
 }
 
@@ -102,19 +103,22 @@ def fallback_natural_memoria(creador, briefing=None, ultimos_saludos=None, franj
     if briefing is None:
         briefing = {}
 
-    candidatos = list(FALLBACKS_FRANJAS.get(franja) or FALLBACKS_FRANJAS["tarde"])
+    candidatos = [
+        frase.format(creador=creador)
+        for frase in (FALLBACKS_FRANJAS.get(franja) or FALLBACKS_FRANJAS["tarde"])
+    ]
 
     correo = briefing.get("correo")
     if correo and isinstance(correo, dict):
-        candidatos.append(f"Qué xopa Moisés, vi un correo de {correo.get('remitente')}; cuando gustes le echamos un ojo.")
+        candidatos.append(f"Qué xopa {creador}, vi un correo de {correo.get('remitente')}; cuando gustes le echamos un ojo.")
 
     evento = briefing.get("evento")
     if evento and isinstance(evento, dict):
-        candidatos.append(f"Moisés, acuérdate que hoy tienes {evento.get('titulo')} a las {evento.get('hora')}.")
+        candidatos.append(f"{creador}, acuérdate que hoy tienes {evento.get('titulo')} a las {evento.get('hora')}.")
 
     hilo = briefing.get("hilo_activo")
     if hilo:
-        candidatos.append(f"Qué xopa Moisés, todo listo; ¿retomamos lo de {hilo[:40]}?")
+        candidatos.append(f"Qué xopa {creador}, todo listo; ¿retomamos lo de {hilo[:40]}?")
 
     no_repetidos = [s for s in candidatos if s not in ultimos_saludos]
     return random.choice(no_repetidos or candidatos)
@@ -145,6 +149,9 @@ def _guardar_ultimo_saludo(saludo):
 
 def generar_saludo_dinamico(creador="Moisés", timeout=3.0):
     """Genera saludo espontáneo y cálido con briefing proactivo de Gmail/Calendar/Memoria."""
+    perfil = identidad_origen.nombre_usuario()
+    if perfil:
+        creador = perfil
     ahora = datetime.datetime.now()
     franja = _determinar_franja(ahora.hour)
     hora_str = ahora.strftime("%I:%M %p").lstrip("0")
@@ -173,7 +180,8 @@ def generar_saludo_dinamico(creador="Moisés", timeout=3.0):
     no_repetir_txt = " | ".join(f'"{s}"' for s in ultimos) if ultimos else "Ninguno aún."
 
     sys_prompt = (
-        f"Eres Lyris, la compañera y asistente personal de {creador}. "
+        identidad_origen.BLOQUE_IDENTIDAD + "\n"
+        + f"Eres {identidad_origen.NOMBRE}, la compañera y asistente personal de {creador}. "
         "Habla en un tono cálido, cercano, relajado y natural con un toque sutil de español panameño "
         "(puedes usar de forma natural un 'Qué xopa' casual, sin exagerar ni sonar forzada). "
         "Tu misión es dar un saludo inicial en 1 o 2 oraciones habladas breves (máximo 28 palabras en total). "

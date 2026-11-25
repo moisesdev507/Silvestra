@@ -4,7 +4,18 @@ import random
 import threading
 import time
 
+import identidad_origen
+
 DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+
+
+def _usuario_actual(app, respaldo=None):
+    """El perfil manda: un amigo es usuario, nunca se le llama creador."""
+    perfil = identidad_origen.nombre_usuario()
+    if perfil:
+        return perfil
+    memoria = getattr(app, "memoria", None) if app else None
+    return str(getattr(memoria, "creador", None) or respaldo or identidad_origen.CREADOR_CORTO)
 
 
 def _franja_y_emocion():
@@ -40,7 +51,7 @@ def generar_saludo_espontaneo(app, al_generar=None):
     """Genera una frase de saludo viva y personalizada usando el carril rápido del cerebro."""
     def _tarea():
         franja, emocion, saludo_base = _franja_y_emocion()
-        creador = getattr(getattr(app, "memoria", None), "creador", "Moisés") or "Moisés"
+        usuario = _usuario_actual(app)
         tema = _tema_reciente(app)
 
         frase = None
@@ -49,7 +60,8 @@ def generar_saludo_espontaneo(app, al_generar=None):
             try:
                 dia_str = DIAS[datetime.datetime.now().astimezone().weekday()]
                 prompt_sistema = (
-                    f"Eres Kaya, la compañera y amiga personal de {creador} en Panamá. "
+                    identidad_origen.BLOQUE_IDENTIDAD + "\n"
+                    + f"Eres Kaya, la compañera y amiga personal de {usuario} en Panamá. "
                     "Hablas con calidez, cercanía, personalidad propia y chispa panameña natural. "
                     "Genera exactamente 1 sola frase corta y espontánea para saludarlo al encender tu sistema. "
                     "PROHIBIDO usar clichés de chatbot o mayordomo ('sistemas en línea', 'lista para servirte', 'en qué te ayudo', 'cómo puedo asistirte'). "
@@ -68,7 +80,7 @@ def generar_saludo_espontaneo(app, al_generar=None):
                 frase = None
 
         if not frase:
-            frase = fallback_saludo_offline(creador)
+            frase = fallback_saludo_offline(usuario)
 
         if callable(al_generar):
             al_generar(frase, emocion)
@@ -114,9 +126,9 @@ def humanizar_resultado_accion(orden, resultado_crudo, app=None):
     cerebro = getattr(app, "cerebro", None) if app else None
     if cerebro and hasattr(cerebro, "_pedir"):
         try:
-            creador = getattr(getattr(app, "memoria", None), "creador", "Moisés") or "Moisés"
             prompt_sistema = (
-                f"Eres Kaya, la compañera personal de {creador} en Panamá. "
+                identidad_origen.BLOQUE_IDENTIDAD + "\n"
+                + f"Eres Kaya, la compañera personal de {_usuario_actual(app)} en Panamá. "
                 "Comunica el siguiente resultado real del computador en exactamente 1 o 2 frases cortas habladas, "
                 "con tono natural, fresco y cercano. "
                 "REGLA CRÍTICA: Mantén con total precisión los números, porcentajes y cifras reales proporcionadas; "

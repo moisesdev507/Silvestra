@@ -5,6 +5,7 @@ import threading
 import time
 
 import estado
+import identidad_origen
 from saludo_dinamico import (
     _guardar_ultimo_saludo,
     _log_saludo,
@@ -84,6 +85,14 @@ def saludar(app):
     """Encola el saludo inicial de inmediato, sin bloquear el hilo de la GUI."""
     cl = getattr(app, "coordinador_live", None)
     if cl and hasattr(cl, "es_modo_principal") and cl.es_modo_principal():
+        return
+    if identidad_origen.consumir_primer_despertar():
+        saludo = identidad_origen.saludo_primer_despertar()
+        _guardar_ultimo_saludo(saludo)
+        if hasattr(app, "cola"):
+            app.cola.put(("saludo_inicial", (saludo, "alegre")))
+        elif hasattr(app, "decir"):
+            app.decir(saludo, 4000)
         return
     try:
         import habla_espontanea

@@ -7,6 +7,7 @@ import tempfile
 import threading
 
 import estado
+import identidad_origen
 import persistencia_segura as ps
 import rutas_app
 from PySide6.QtCore import QThread, Qt, QUrl, Signal
@@ -117,8 +118,7 @@ def guardar_configuracion(nombre, claves, base=None, ruta_env=None):
     try:
         ruta_datos = os.path.join(base, "datos")
         os.makedirs(ruta_datos, exist_ok=True)
-        if not ps.guardar_json_atomico(
-                os.path.join(ruta_datos, "perfil_usuario.json"), {"nombre": nombre}):
+        if not identidad_origen.preparar_perfil_usuario(nombre, base=base):
             return False, "No se pudo guardar el perfil en datos/."
         ruta_memoria = os.path.join(base, "memoria.json")
         memoria = ps.cargar_json_seguro(ruta_memoria, {})

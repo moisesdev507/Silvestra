@@ -11,6 +11,8 @@ import threading
 import time
 from typing import Optional
 
+import identidad_origen
+
 RATE_ENTRADA = 16000
 RATE_SALIDA = 24000
 CHANNELS = 1
@@ -278,25 +280,31 @@ def registrar_tiempo_primera_voz():
         print(f"[tiempo] arranque_primera_voz={ms}ms", flush=True)
 
 
-def construir_instruccion_arranque_rapido() -> str:
-    """Prompt ultracompacto para el primer saludo sin recuerdos pesados."""
+def construir_instruccion_arranque_rapido(primer_despertar: bool = False, nombre_usuario: str = "") -> str:
+    """Prompt ultracompacto con identidad raíz y primer turno opcional de despertar."""
     hora_str = obtener_hora_local_breve()
     ctx_h = f" {hora_str}" if hora_str else ""
+    quien = str(nombre_usuario or "").strip() or identidad_origen.CREADOR_CORTO
+    if primer_despertar:
+        turno = f" Primer turno: saluda a {quien} presentándote así y dale la bienvenida."
+    else:
+        turno = f" Primer turno: saluda alegremente a {quien} y confirma que estás lista."
     return (
-        "Eres Kaya, compañera y asistente personal de Moisés en Panamá. "
-        "Femenina, cálida, ingeniosa, leal y afectuosa. Hablas en español de Panamá con respuestas breves de 1 frase."
-        f"{ctx_h} Saluda alegremente a Moisés en tu primer turno confirmando que estás lista. "
-        "Tienes visión de pantalla: usa revisar_pantalla si te lo piden."
+        identidad_origen.IDENTIDAD_COMPACTA
+        + " Femenina, cálida, ingeniosa. Español panameño, 1 frase."
+        + ctx_h + turno
+        + " Usa revisar_pantalla si piden ver pantalla."
     )
 
 
-def construir_instruccion_sistema(rapido: bool = False) -> str:
-    """Carga alma.txt, contexto de tiempo y guía vocal en Panamá."""
+def construir_instruccion_sistema(
+    rapido: bool = False, primer_despertar: bool = False, nombre_usuario: str = ""
+) -> str:
+    """Carga identidad raíz, alma.txt, contexto de tiempo y guía vocal en Panamá."""
     if rapido:
-        return construir_instruccion_arranque_rapido()
-    base = (
-        "Eres Kaya, compañera y asistente personal creada por tu amigo Moisés en Panamá. "
-        "Moisés es tu creador y amigo; sé leal, femenina, cálida, honesta, curiosa, ingeniosa y afectuosa. "
+        return construir_instruccion_arranque_rapido(primer_despertar, nombre_usuario)
+    estilo = (
+        "Eres Kaya, asistente personal con carácter propio. "
         "Hablas en español natural de Panamá con respuestas breves (1 a 2 frases por defecto)."
     )
     ruta_alma = os.path.join(os.path.dirname(os.path.abspath(__file__)), "alma.txt")
@@ -305,9 +313,10 @@ def construir_instruccion_sistema(rapido: bool = False) -> str:
             with open(ruta_alma, "r", encoding="utf-8") as f:
                 c = f.read().strip()
                 if c:
-                    base = c
+                    estilo = c
         except Exception:
             pass
+    base = identidad_origen.BLOQUE_IDENTIDAD + "\n" + estilo
 
     hora_str = obtener_hora_local_breve()
     contexto_tiempo = f"\n\n[Fecha y hora actual]: {hora_str}" if hora_str else ""
@@ -318,7 +327,7 @@ def construir_instruccion_sistema(rapido: bool = False) -> str:
         "- Tu ritmo es ágil y fluido. Respuestas cortas, conversacionales y directas de 1 a 3 frases, sin listas ni rodeos salvo que te pidan detalle.\n"
         "- Cero relleno de chatbot formal ('¿en qué te ayudo?', '¡por supuesto!').\n"
         "- TIENES HERRAMIENTAS EN TIEMPO REAL: consultar_clima (clima en vivo sin clave), buscar_en_internet (noticias, datos web en vivo), consultar_estado_pc (batería, CPU, RAM, hora), y ejecutar_accion_pc (correos, calendario, diario, ideas, recordatorios, volumen, música y apps). INVOCALAS SIEMPRE que te pregunten sobre estos temas; NUNCA digas que no tienes acceso a esa información.\n"
-        "- PUEDES VER LA PANTALLA: si Moisés te pide mirar, revisar o describir lo que hay en pantalla, invoca 'revisar_pantalla' con su pregunta; nunca digas que no puedes verla.\n"
+        "- PUEDES VER LA PANTALLA: si tu usuario te pide mirar, revisar o describir lo que hay en pantalla, invoca 'revisar_pantalla' con su pregunta; nunca digas que no puedes verla.\n"
         "- También tienes leer_portapapeles, listar_ventanas, ventana_activa, listar_procesos, activar_hud y control_multimedia; úsalas cuando te lo pidan.\n"
         "- DIARIO ÍNTIMO: si te piden escribir o anotar en tu diario, invoca 'escribir_en_diario' con el tema. Redacta tú en primera persona (yo/me/mi) sobre lo que viviste, aprendiste, sentiste o conversaste; NUNCA guardes ni repitas el texto literal del usuario como si fuera su nota.\n"
         "- Si ejecutas una herramienta de PC, confirma con naturalidad lo encontrado o realizado.\n"
@@ -335,6 +344,6 @@ def construir_instruccion_sistema(rapido: bool = False) -> str:
         pass
 
     total = base + contexto_tiempo + guia_vocal + memoria_txt
-    if len(total) > 3200:
-        total = total[:3180].rsplit("\n", 1)[0] + "\n..."
+    if len(total) > 4200:
+        total = total[:4180].rsplit("\n", 1)[0] + "\n..."
     return total

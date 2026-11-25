@@ -3,6 +3,7 @@ import asyncio, queue, threading, time
 from typing import Any, Callable, Optional
 from google import genai
 from google.genai import types
+import identidad_origen
 import live_audio, live_herramientas
 
 MODELO_DEFECTO, VOZ_DEFECTO = "gemini-2.5-flash-native-audio-latest", "Achernar"
@@ -165,12 +166,16 @@ class SesionKayaLive:
         if not api_key:
             return
         client = genai.Client(api_key=api_key, http_options={"api_version": "v1alpha"})
+        despertar = identidad_origen.consumir_primer_despertar()
+        nombre_actual = identidad_origen.nombre_usuario()
+        rapido = bool(self.orden_inicial and ("enciende" in self.orden_inicial or "encendió" in self.orden_inicial))
         cfg = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=self.voz))
             ),
-            system_instruction=types.Content(parts=[types.Part.from_text(text=live_audio.construir_instruccion_sistema(rapido=bool(self.orden_inicial and ("enciende" in self.orden_inicial or "encendió" in self.orden_inicial))))]),
+            system_instruction=types.Content(parts=[types.Part.from_text(text=live_audio.construir_instruccion_sistema(
+                rapido=rapido, primer_despertar=despertar, nombre_usuario=nombre_actual))]),
             tools=live_herramientas.declarar_declaraciones_herramientas(),
             realtime_input_config=types.RealtimeInputConfig(
                 automatic_activity_detection=types.AutomaticActivityDetection(silence_duration_ms=420)
@@ -186,7 +191,10 @@ class SesionKayaLive:
             self._t_ultima_voz = time.monotonic()
 
             orden = (self.orden_inicial or "").strip()
-            texto_inicio = orden if (orden and orden.lower() not in ("kaya", "kaia", "silvestra", "oye kaya")) else "Hola Kaya, dime, ¿estás ahí?"
+            if despertar:
+                texto_inicio = identidad_origen.instruccion_primer_despertar(nombre_actual)
+            else:
+                texto_inicio = orden if (orden and orden.lower() not in ("kaya", "kaia", "silvestra", "oye kaya")) else "Hola Kaya, dime, ¿estás ahí?"
             try:
                 await session.send_client_content(turns=types.Content(role="user", parts=[types.Part.from_text(text=texto_inicio)]), turn_complete=True)
             except Exception as e:
