@@ -27,8 +27,8 @@ CATEGORIAS_ACCIONES = {
         {"musica_youtube", "poner_musica", "musica", "pausar_musica", "reanudar_musica", "siguiente_cancion", "anterior_cancion", "subir_volumen", "bajar_volumen", "silenciar", "volumen", "buscar_youtube"}
     ),
     "pantalla": (
-        {"pantalla", "mira", "ves", "ver", "leer", "captura", "copiloto", "ventana", "minimizar", "escritorio", "bloquear"},
-        {"mirar_pantalla", "captura_pantalla", "guardar_captura", "minimizar_todo", "bloquear_pantalla"}
+        {"pantalla", "mira", "ves", "ver", "leer", "captura", "copiloto", "ventana", "minimizar", "escritorio", "bloquear", "revisar pantalla"},
+        {"mirar_pantalla", "revisar_pantalla", "captura_pantalla", "guardar_captura", "minimizar_todo", "bloquear_pantalla"}
     ),
     "laptop": (
         {"laptop", "pc", "computadora", "windows", "apagar", "reiniciar", "suspender", "sesion"},

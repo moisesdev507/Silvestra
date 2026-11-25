@@ -78,11 +78,11 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         pass
 
     app = getattr(cerebro, "app", None)
-    import vision_pantalla
-    if vision_pantalla.detectar_peticion_vision(texto):
-        ok_v, resp_v = vision_pantalla.capturar_y_analizar_pantalla(texto, app=app)
-        _reg_turno(cerebro, texto_orig, resp_v, al_frase)
-        return resp_v, None, "atenta"
+    import capacidades_extra as cap
+    res_cap = cap.detectar_y_ejecutar(texto, app=app, incluir_portapapeles=False)
+    if res_cap:
+        _reg_turno(cerebro, texto_orig, res_cap, al_frase)
+        return res_cap, None, "atenta"
 
     import portapapeles as pp
     ctx_pp = pp.construir_contexto_portapapeles(texto)
@@ -96,12 +96,6 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         ok_r, msg_r = cerebro_rag.indexar_ruta(ruta_idx)
         _reg_turno(cerebro, texto_orig, msg_r, al_frase)
         return msg_r, None, "alegre" if ok_r else "seria"
-
-    import pantalla_remota_accion as pra
-    if pra.detectar_orden_hud(texto):
-        msg = pra.activar_hud(app=app)
-        _reg_turno(cerebro, texto, msg, al_frase)
-        return msg, "activar_hud", "alegre"
 
     import cerebro_mentor
     orden_m = cerebro_mentor.detectar_orden_mentora(texto)

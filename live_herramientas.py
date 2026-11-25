@@ -20,6 +20,7 @@ from typing import Any, Callable, Dict, List, Optional
 from google.genai import types
 
 import acciones
+import live_herramientas_extra
 
 _OJOS_ACTIVOS = True
 _LOCK_OJOS = threading.RLock()
@@ -218,13 +219,13 @@ def ejecutar_accion_local(instruccion: str, timeout: float = 8.0) -> str:
         t_norm = texto.lower()
         if any(v in t_norm for v in ("subir volumen", "sube el volumen")):
             ok, msg = acciones.ejecutar("subir_volumen")
-            return "Volumen subido." if ok else str(msg)
+            return "Volumen subido." if ok else f"No pude subir el volumen: {msg}"
         if any(v in t_norm for v in ("bajar volumen", "baja el volumen")):
             ok, msg = acciones.ejecutar("bajar_volumen")
-            return "Volumen bajado." if ok else str(msg)
+            return "Volumen bajado." if ok else f"No pude bajar el volumen: {msg}"
         if any(v in t_norm for v in ("silenciar", "mute", "silencia el volumen")):
             ok, msg = acciones.ejecutar("silenciar")
-            return "Sonido silenciado/alternado." if ok else str(msg)
+            return "Sonido silenciado/alternado." if ok else f"No pude silenciar el volumen: {msg}"
 
         # 11. Intento de interpretación de comando estructurado
         nom, arg = acciones.interpretar(texto)
@@ -235,6 +236,11 @@ def ejecutar_accion_local(instruccion: str, timeout: float = 8.0) -> str:
                 return capturado or (msg if ok else f"No se pudo completar: {msg}")
             except Exception as e:
                 return f"Error ejecutando acción '{nom}': {e}"
+
+        # 12. Capacidades compartidas: visión, ventanas, procesos, HUD y multimedia
+        res_extra = live_herramientas_extra.ejecutar_por_texto(texto)
+        if res_extra:
+            return str(res_extra)
 
         return f"Orden '{texto}' procesada en la PC."
 
@@ -320,11 +326,14 @@ def declarar_declaraciones_herramientas() -> List[types.Tool]:
             ),
         ),
     ]
-    return [types.Tool(function_declarations=herramientas)]
+    return [types.Tool(function_declarations=herramientas + live_herramientas_extra.declaraciones_extra())]
 
 
 async def despachar_herramienta_asincrona(nombre: str, args: Dict[str, Any]) -> str:
     """Ejecuta una herramienta en hilo secundario para no bloquear el streaming."""
+    res_extra = await live_herramientas_extra.despachar(nombre, args)
+    if res_extra is not None:
+        return res_extra
     loop = asyncio.get_running_loop()
     if nombre == "ejecutar_accion_pc":
         instruccion = args.get("instruccion", "")

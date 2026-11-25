@@ -22,13 +22,15 @@ def _youtube_buscar(arg):
 
 def _tecla(codigo):
     def f(arg=None):
-        guion = f"(New-Object -ComObject WScript.Shell).SendKeys([char]{codigo})"
-        for _ in range(5 if codigo != 173 else 1):
-            subprocess.Popen(
-                ["powershell", "-NoProfile", "-Command", guion],
-                creationflags=0x08000000,
-            )
-        return True, ""
+        try:
+            import ctypes
+            vk = {175: 0xAF, 174: 0xAE, 173: 0xAD}.get(codigo)
+            for _ in range(5 if codigo != 173 else 1):
+                ctypes.windll.user32.keybd_event(vk, 0, 0, 0)
+                ctypes.windll.user32.keybd_event(vk, 0, 2, 0)
+            return True, ""
+        except Exception:
+            return False, "No pude cambiar el volumen."
     return f
 
 
@@ -68,6 +70,11 @@ def _listar_archivos(arg=None):
     return habilidades_archivos.listar_archivos(arg)
 
 
+def _revisar_pantalla(arg=None):
+    import capacidades_extra
+    return capacidades_extra.revisar_pantalla(arg or "")
+
+
 def _aprender_habilidad(arg=None):
     import aprendiz_habilidades
     return aprendiz_habilidades.aprender_habilidad(arg)
@@ -100,6 +107,7 @@ ACCIONES = {
     "escribir_archivo": (_escribir_archivo, True, "escribe contenido en un archivo. Obligatorio: ruta | texto completo redactado (ej: ACCION: escribir_archivo | archivo.txt | ideas o notas redactadas)"),
     "leer_archivo": (_leer_archivo, True, "lee un archivo de texto seguro autorizado"),
     "listar_archivos": (_listar_archivos, False, "lista los archivos existentes en el workspace de Lyris"),
+    "revisar_pantalla": (_revisar_pantalla, False, "mira y describe lo que hay en la pantalla del usuario"),
     "aprender_habilidad": (_aprender_habilidad, True, "aprende una nueva habilidad programando código seguro"),
     "confirmar_habilidad": (_confirmar_habilidad, False, "aprueba y activa una habilidad aprendida pendiente"),
 }

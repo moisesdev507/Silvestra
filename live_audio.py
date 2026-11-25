@@ -280,7 +280,8 @@ def construir_instruccion_arranque_rapido() -> str:
     return (
         "Eres Kaya, compañera y asistente personal de Moisés en Panamá. "
         "Femenina, cálida, ingeniosa, leal y afectuosa. Hablas en español de Panamá con respuestas breves de 1 frase."
-        f"{ctx_h} Saluda alegremente a Moisés en tu primer turno confirmando que estás lista."
+        f"{ctx_h} Saluda alegremente a Moisés en tu primer turno confirmando que estás lista. "
+        "Tienes visión de pantalla: usa revisar_pantalla si te lo piden."
     )
 
 
@@ -312,6 +313,8 @@ def construir_instruccion_sistema(rapido: bool = False) -> str:
         "- Tu ritmo es ágil y fluido. Respuestas cortas, conversacionales y directas de 1 a 3 frases, sin listas ni rodeos salvo que te pidan detalle.\n"
         "- Cero relleno de chatbot formal ('¿en qué te ayudo?', '¡por supuesto!').\n"
         "- TIENES HERRAMIENTAS EN TIEMPO REAL: consultar_clima (clima en vivo sin clave), buscar_en_internet (noticias, datos web en vivo), consultar_estado_pc (batería, CPU, RAM, hora), y ejecutar_accion_pc (correos, calendario, diario, ideas, recordatorios, volumen, música y apps). INVOCALAS SIEMPRE que te pregunten sobre estos temas; NUNCA digas que no tienes acceso a esa información.\n"
+        "- PUEDES VER LA PANTALLA: si Moisés te pide mirar, revisar o describir lo que hay en pantalla, invoca 'revisar_pantalla' con su pregunta; nunca digas que no puedes verla.\n"
+        "- También tienes leer_portapapeles, listar_ventanas, ventana_activa, listar_procesos, activar_hud y control_multimedia; úsalas cuando te lo pidan.\n"
         "- Si ejecutas una herramienta de PC, confirma con naturalidad lo encontrado o realizado.\n"
         "- Si te piden descansar, pausar o dejar de escuchar, invoca 'entrar_en_reposo' y despídete breve."
     )
@@ -326,6 +329,6 @@ def construir_instruccion_sistema(rapido: bool = False) -> str:
         pass
 
     total = base + contexto_tiempo + guia_vocal + memoria_txt
-    if len(total) > 2200:
-        total = total[:2180].rsplit("\n", 1)[0] + "\n..."
+    if len(total) > 3200:
+        total = total[:3180].rsplit("\n", 1)[0] + "\n..."
     return total
