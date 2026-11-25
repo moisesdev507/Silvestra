@@ -16,6 +16,12 @@ PROMPT_WHISPER = (
 # Variantes fonéticas aceptadas en cualquier posición de la transcripción
 ALIAS_DIRECTOS = {"kaya", "kaia", "caya", "kalla"}
 
+# Deformaciones fonéticas o ecos pegados que deben podarse del inicio de la orden
+DEFORMACIONES_FONETICAS = {
+    "araya", "aya", "alla", "raya", "calla", "calle", "caia", "kaya", "kaia", "caya",
+    "kalla", "lyris", "liris", "lirys", "iris", "viris", "silvestra", "silvestre"
+}
+
 # Alias secundarios / anteriores reconocidos
 ALIAS_SECUNDARIOS = {
     "lyris", "liris", "lirys", "iris", "lyra", "liria", "viris", "silvestra", "silvestre"
@@ -147,7 +153,7 @@ def _extraer_orden(ps, indice):
     despues = [p for p in ps[indice + 1:] if normalizar_palabra(p) not in todos_alias]
     while antes and normalizar_palabra(antes[0]) in relleno:
         antes.pop(0)
-    while despues and normalizar_palabra(despues[0]) in relleno:
+    while despues and (normalizar_palabra(despues[0]) in relleno or normalizar_palabra(despues[0]) in DEFORMACIONES_FONETICAS):
         despues.pop(0)
     return " ".join(despues if despues else antes).strip()
 

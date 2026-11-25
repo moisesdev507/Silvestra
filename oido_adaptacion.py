@@ -90,10 +90,15 @@ def es_transcripcion_sospechosa(texto, confidence=1.0, duracion_seg=0.0):
         return True
 
     ps = txt.split()
+    conf = float(confidence) if confidence is not None else 1.0
 
-    # 2. Incoherencia de longitud: audio largo (> 3.5s) pero apenas 1-2 palabras transcritas
+    # 2. Incoherencia de longitud: audio largo (> 3.5s) pero apenas 1-2 palabras transcritas.
+    # Si la confianza es alta (>= 0.92) y no tiene tokens anómalos, se preserva para evitar ~2.5s de Whisper.
     if duracion_seg and duracion_seg >= 3.5 and len(ps) <= 2:
-        return True
+        if conf >= 0.92 and not any(len(p) == 1 and p not in ("y", "o", "a", "e", "u") for p in ps):
+            pass
+        else:
+            return True
 
     # 3. Preguntas rotas o truncadas que terminan en preposición / conector sin sentido
     t_low = txt.lower().rstrip("?.!,:;")

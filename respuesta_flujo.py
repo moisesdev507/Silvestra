@@ -41,6 +41,13 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         _reg_turno(cerebro, texto_orig, (resp := f"Abriendo {app_local}."), al_frase)
         return resp, f"abrir_app_local | {app_local}", "alegre"
 
+    # Atajo multimedia rápido (volumen, silencio, música)
+    atajo_media = acciones.atajo_multimedia_directo(texto)
+    if atajo_media:
+        resp_m, act_m, emo_m = atajo_media
+        _reg_turno(cerebro, texto_orig, resp_m, al_frase)
+        return resp_m, act_m, emo_m
+
     # Modos y rutinas compuestas: se resuelven en local, sin llamar al LLM
     resp_modo = acciones.modo_local(texto, getattr(cerebro, "app", None))
     if resp_modo:
@@ -125,26 +132,8 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
             msg = rec_mgr.poner_recordatorio(texto)
         else:
             ts, hora_str, que = recordatorios.parsear_tiempo(texto)
-            if ts:
-                import datetime
-                import time
-                tz = recordatorios._obtener_tz()
-                dt_target = datetime.datetime.fromtimestamp(ts, tz) if tz else datetime.datetime.fromtimestamp(ts)
-                item = {
-                    "id": int(time.time() * 1000),
-                    "texto": que,
-                    "timestamp": ts,
-                    "hora_exacta": hora_str,
-                    "fecha": dt_target.strftime("%Y-%m-%d"),
-                    "completado": False,
-                }
-                datos = recordatorios._cargar()
-                datos.append(item)
-                recordatorios._guardar(datos)
-                creador = getattr(getattr(app, "memoria", None), "creador", "Moisés") or "Moisés"
-                msg = f"Listo, {creador}. Te recordaré {que} a las {hora_str}."
-            else:
-                msg = "No entendí la hora o el tiempo para el recordatorio."
+            creador = getattr(getattr(app, "memoria", None), "creador", "Moisés") or "Moisés"
+            msg = f"Listo, {creador}. Te recordaré {que} a las {hora_str}." if ts else "No entendí la hora o el tiempo para el recordatorio."
         _reg_turno(cerebro, texto, msg, al_frase)
         return msg, None, "alegre"
 

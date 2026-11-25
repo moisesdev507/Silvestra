@@ -5,6 +5,7 @@ función lanza excepciones y todas devuelven un dict con ``texto`` y ``ok``.
 El flujo OAuth y los mocks están en ``google_workspace_oauth.py``.
 """
 import datetime as dt
+import re
 
 from google_workspace_oauth import (
     MENSAJE_CONFIG, conectar, reiniciar, set_servicio_mock, set_servicios_mock,
@@ -108,8 +109,55 @@ def crear_evento_calendario(titulo, fecha_iso, duracion_min=60):
                      + (f". Enlace: {enlace[:160]}" if enlace else ".")}
 
 
+def _limpiar_texto_tts(texto: str) -> str:
+    """Elimina entidades HTML, caracteres invisibles Unicode, tags y normaliza espacios para voz natural."""
+    if not texto:
+        return ""
+    import html
+    t = html.unescape(str(texto))
+    # Quitar tags HTML si vienen en snippets
+    t = re.sub(r"<[^>]+>", " ", t)
+    # Quitar emails entre <...>
+    t = re.sub(r"<[^@\s]+@[^@\s]+>", " ", t)
+    # Quitar entidades residuales tipo &nbsp;
+    t = re.sub(r"&[a-zA-Z0-9#]+;", " ", t)
+    # Quitar caracteres invisibles / formato Unicode:
+    # \u034f (grapheme joiner), \u200b-\u200f (zero width, marcas bidi), \ufeff (BOM), \u00a0 (nbsp), \xad (soft hyphen)
+    t = re.sub(r"[\u034f\u200b-\u200f\u2028-\u202f\ufeff\u00ad\xa0]", " ", t)
+    # Limpiar comillas, corchetes y caracteres técnicos raros
+    t = t.replace('"', '').replace("'", "").replace("[", "").replace("]", "")
+    # Espacios múltiples
+    t = " ".join(t.split()).strip()
+    return t
+
+
+def _limpiar_remitente(remitente: str) -> str:
+    """Extrae el nombre limpio del remitente, sin dirección de correo."""
+    raw = str(remitente or "").strip()
+    if "<" in raw and ">" in raw:
+        nombre = raw.split("<", 1)[0].strip()
+        if nombre:
+            return _limpiar_texto_tts(nombre)
+        dir_mail = raw.split("<", 1)[1].split(">", 1)[0].strip()
+        usuario = dir_mail.split("@", 1)[0]
+        return _limpiar_texto_tts(usuario.replace(".", " ").replace("_", " "))
+    r = _limpiar_texto_tts(raw)
+    if "@" in r and " " not in r:
+        r = r.split("@", 1)[0].replace(".", " ").replace("_", " ").strip()
+    return r or "un remitente"
+
+
+def _formatear_frase_correo(rem: str, asu: str) -> str:
+    """Genera una frase corta y natural para TTS sobre un correo."""
+    rem_limpio = _limpiar_remitente(rem)
+    asu_limpio = _limpiar_texto_tts(asu)
+    if asu_limpio and asu_limpio.lower() != "sin asunto":
+        return f"Tienes un correo de {rem_limpio} sobre {asu_limpio}."
+    return f"Tienes un correo de {rem_limpio}."
+
+
 def resumen_correos(limite=5, solo_no_leidos=True):
-    """Remitente, asunto y snippet de los últimos correos de Gmail."""
+    """Remitente, asunto y snippet de los últimos correos de Gmail formateados para TTS."""
     servicios, error = conectar()
     if error:
         return _fallo(error, correos=[])
@@ -119,22 +167,26 @@ def resumen_correos(limite=5, solo_no_leidos=True):
         mensajes = servicios["gmail"].users().messages().list(
             userId="me", q=consulta, maxResults=limite).execute() or {}
         correos = []
+        frases_habladas = []
         for mensaje in mensajes.get("messages", [])[:limite]:
             detalle = servicios["gmail"].users().messages().get(
                 userId="me", id=mensaje.get("id"), format="metadata",
                 metadataHeaders=["From", "Subject"]).execute() or {}
             cabeceras = {h.get("name", "").lower(): h.get("value", "")
                          for h in (detalle.get("payload") or {}).get("headers", [])}
-            correos.append({"remitente": cabeceras.get("from", "desconocido"),
-                            "asunto": cabeceras.get("subject", "sin asunto"),
-                            "snippet": detalle.get("snippet", "")[:180]})
+            rem = _limpiar_remitente(cabeceras.get("from", "desconocido"))
+            asu = _limpiar_texto_tts(cabeceras.get("subject", "sin asunto"))
+            snip = _limpiar_texto_tts(detalle.get("snippet", ""))
+            correos.append({"remitente": rem, "asunto": asu, "snippet": snip})
+            # Frase natural para voz sin truncamientos rotos
+            frase = _formatear_frase_correo(rem, asu).rstrip(".")
+            frases_habladas.append(frase)
     except Exception as exc:
         return _fallo(f"No se pudo leer Gmail ({type(exc).__name__})", correos=[])
     if not correos:
         return {"ok": True, "correos": [], "texto": "No hay correos nuevos por ahora."}
-    texto = " | ".join(f"{c['asunto']} — {c['remitente']}: {c['snippet'][:80]}"
-                       for c in correos[:8])
-    return {"ok": True, "correos": correos, "texto": "Correos: " + texto}
+    texto = ". ".join(frases_habladas) + "."
+    return {"ok": True, "correos": correos, "texto": texto}
 
 
 def buscar_drive(consulta, limite=5):

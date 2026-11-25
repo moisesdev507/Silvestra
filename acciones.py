@@ -28,6 +28,7 @@ def _tecla(codigo):
                 ["powershell", "-NoProfile", "-Command", guion],
                 creationflags=0x08000000,
             )
+        return True, ""
     return f
 
 
@@ -277,6 +278,41 @@ def extraer_app_abrir(texto):
     return next((k for k in apps if normalizar(k) == objetivo), None)
 
 
+def atajo_multimedia_directo(texto):
+    """Detecta órdenes inequívocas de volumen o música devolviendo (respuesta, accion, emocion)."""
+    import re
+    import unicodedata
+    norm = "".join(c for c in unicodedata.normalize("NFD", str(texto or "").lower())
+                   if unicodedata.category(c) != "Mn").strip()
+    if not norm:
+        return None
+
+    # 1. Volumen / Silencio
+    if re.search(r"\b(?:sube|subir|aumenta|aumentar|mas)\s+(?:el\s+)?volumen\b", norm):
+        return "Subiendo volumen.", "subir_volumen", "alegre"
+    if re.search(r"\b(?:baja|bajar|reduce|reducir|menos)\s+(?:el\s+)?volumen\b", norm):
+        return "Bajando volumen.", "bajar_volumen", "atenta"
+    if re.search(r"\b(?:silencia|silenciar|mute|mutea|desmutea)\b", norm):
+        return "Sonido silenciado o reactivado.", "silenciar", "neutral"
+    if re.search(r"\b(?:pausa|pausar|deten|detener)\s+(?:la\s+)?(?:musica|cancion|reproduccion)\b", norm):
+        return "Pausando reproducción.", "pausar_musica", "neutral"
+    if re.search(r"\b(?:reanuda|reanudar|continua|continuar)\s+(?:la\s+)?(?:musica|cancion|reproduccion)\b", norm):
+        return "Reanudando reproducción.", "reanudar_musica", "alegre"
+    if re.search(r"\b(?:siguiente|pasa\s+la)\s+(?:cancion|pista|musica)\b", norm):
+        return "Siguiente canción.", "siguiente_cancion", "alegre"
+
+    # 2. Música en YouTube: 'pon música de X', 'reproduce música Y'
+    m_musica = re.search(r"\b(?:pon|reproduce|escuchar|buscar)\s+(?:musica\s+(?:de\s+)?|cancion\s+(?:de\s+)?|en\s+youtube\s+)(.+)", norm)
+    if not m_musica and re.search(r"\b(?:pon|reproduce)\s+musica\b", norm):
+        return "Poniendo música en YouTube.", "musica_youtube | música", "alegre"
+    if m_musica:
+        tema = m_musica.group(1).replace("en youtube", "").strip()
+        if tema:
+            return f"Poniendo {tema} en YouTube.", f"musica_youtube | {tema}", "alegre"
+
+    return None
+
+
 def interpretar(linea):
     """'buscar | recetas de arroz' -> ('buscar', 'recetas de arroz')."""
     if not linea:
@@ -319,6 +355,6 @@ def ejecutar(nombre, arg=None):
             return ret
         if isinstance(ret, str):
             return True, ret
-        return True, "Listo."
+        return True, ""
     except Exception as e:
         return False, "No pude hacerlo: " + str(e)[:100]
