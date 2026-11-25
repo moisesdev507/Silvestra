@@ -222,6 +222,6 @@ def responder_telemetria(texto):
         return (f"En la unidad principal tienes {d['libre_gb']:.0f} GB libres de "
                 f"{d['total_gb']:.0f} GB, {d['usado_pct']}% ocupado.")
     if _palabra(t, "laptop", "sistema", "ram", "memoria", "cpu",
-                "procesador", "como va"):
+                "procesador", "como va", "compu", "computador", "computadora", "pc"):
         return estado_sistema()["texto"]
     return None

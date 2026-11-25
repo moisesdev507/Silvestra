@@ -37,7 +37,13 @@ def _barge_in_habilitado():
 
 
 def _barge_in(app, datos, comandos_corte, rec_vosk):
-    """Interrumpe solo ante una orden clara; ignora ruido y parciales vacíos."""
+    """Interrumpe con filtro seguro anti-eco o comando claro de corte."""
+    try:
+        import charla_continua
+        if charla_continua.evaluar_barge_in_seguro(app, datos):
+            return True
+    except Exception:
+        pass
     if rec_vosk is None or not (app and hasattr(app, "voz") and app.voz.ocupada()):
         return False
     try:

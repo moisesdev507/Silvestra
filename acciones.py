@@ -121,7 +121,14 @@ def telemetria_local(texto):
     """Atajo local de hardware: frase breve o None si no aplica (nunca falla)."""
     try:
         import telemetria
-        return telemetria.responder_telemetria(texto)
+        crudo = telemetria.responder_telemetria(texto)
+        if crudo:
+            try:
+                import habla_espontanea
+                return habla_espontanea.humanizar_resultado_accion(texto, crudo)
+            except Exception:
+                return crudo
+        return None
     except Exception:
         return None
 

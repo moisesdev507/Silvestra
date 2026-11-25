@@ -5,7 +5,7 @@ import time
 
 TIEMPO_ORDEN = 20.0
 TIEMPO_RESPUESTA = 12.0
-TIEMPO_SEGUIMIENTO = 18.0
+TIEMPO_SEGUIMIENTO = 10.0
 DURACION_ECO = 0.4
 FUERTES = {"kaya", "kaia", "caya", "kalla", "lyris", "liris", "lirys", "iris", "viris", "silvestra"}
 DEBILES = {"calla", "luis", "libres"}
@@ -18,7 +18,6 @@ _SEPARADOR = re.compile(r"[^\wáéíóúñü]+", re.UNICODE)
 
 
 def _inicio_captura(app):
-    """Ancla la ventana al inicio de captura, no al fin de la transcripción."""
     inicio = getattr(getattr(app, "oido", None), "t_captura_inicio", None)
     return inicio if inicio is not None else time.monotonic()
 
@@ -58,7 +57,6 @@ def detectar(texto, en_baile=False):
     if not t_limpio:
         return False, "", ""
 
-    # Parada directa de baile si la cara está bailando activamente
     if en_baile:
         for pb in ORDENES_PARAR_BAILE:
             if t_limpio == pb or t_limpio.startswith(pb + " ") or t_limpio.endswith(" " + pb):
@@ -68,7 +66,6 @@ def detectar(texto, en_baile=False):
     if not ps:
         return False, "", ""
 
-    # Detección delegada a identidad_kaya (Kaya, Kaia, Caya, Kalla, Calla vocativo y alias previos)
     try:
         import identidad_kaya
         ok_k, alias_k, ord_k = identidad_kaya.detectar_invocacion(texto)
@@ -77,17 +74,13 @@ def detectar(texto, en_baile=False):
     except Exception:
         pass
 
-    # 1. Palabras fuertes (lyris, viris, liris, lyrys...)
     for i, p in enumerate(ps):
         if p in FUERTES:
             return True, p, _extraer_orden_posicional(ps, i)
 
-    # 2. Confusiones fonéticas débiles ("libres", "liernes", "luis"):
-    # Válidas SOLO al inicio de la frase, como invocación aislada o en modo baile
     if len(ps) == 1 and ps[0] in DEBILES:
         return True, ps[0], ""
 
-    # Si está al inicio ("libres para de bailar") o al final, o si está bailando
     if ps[0] in DEBILES:
         return True, ps[0], _extraer_orden_posicional(ps, 0, es_debil=True)
 
@@ -137,7 +130,6 @@ def permitir_transcripcion(app):
 
 
 def palabra_clave_config():
-    """Lee el interruptor del HUD una sola vez (lo actualiza en vivo el propio HUD)."""
     try:
         import estado
         return bool(estado.cargar().get("palabra_clave", True))
@@ -146,10 +138,9 @@ def palabra_clave_config():
 
 
 def dueno_verificado(app):
-    """Escucha directa: exige CAM++ positivo cuando la verificación está activa."""
     vd = getattr(app, "voz_dueno", None)
     if vd is None or not getattr(vd, "activa", False):
-        return True  # política fail-open si CAM++ no está desplegado
+        return True
     try:
         vd.evaluar_entrada_voz("")
         uv = getattr(vd, "ultima_verificacion", {})
@@ -366,10 +357,18 @@ class GestorInvocacion:
                 self._iniciar_turno(texto)
             return
         if esperando or seguimiento:
-            # Eco/fragmento corto: se ignora sin cerrar la ventana activa.
             if corto or len(str(texto).strip()) < 3 or not texto_valido(texto):
                 print(f"[invocacion] transcripcion ignorada motivo=eco_o_bucle: '{texto}'", flush=True)
                 return
+            try:
+                import charla_continua
+                if charla_continua.es_cierre_conversacion(texto):
+                    charla_continua.cerrar_ventana_charla()
+                    self._reposo()
+                    self.app.decir(charla_continua.respuesta_cierre_amable(), emocion="calida")
+                    return
+            except Exception:
+                pass
             self._iniciar_turno(texto)
 
     def _iniciar_turno(self, orden):
@@ -419,7 +418,6 @@ class GestorInvocacion:
             respondido = self.en_turno
         self._reposo()
         if respondido:
-            # Tras responder, 18 s de escucha continua para repreguntas o correcciones.
             with self.bloqueo:
                 self.seguimiento_activo = True
                 self.limite_seguimiento = time.monotonic() + TIEMPO_SEGUIMIENTO

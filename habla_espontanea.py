@@ -93,3 +93,45 @@ def micro_reaccion(tipo="pausa"):
     elif tipo == "reanudar":
         return random.choice(["Aquí sigo.", "De vuelta.", "Te escucho."])
     return "Listo."
+
+
+def humanizar_resultado_accion(orden, resultado_crudo, app=None):
+    """Pasa un dato crudo de hardware o acción local por el cerebro para darle voz natural de Kaya.
+    
+    Preserva estrictamente todas las cifras y métricas reales sin inventar ni usar clichés robóticos.
+    """
+    crudo = str(resultado_crudo or "").strip()
+    if not crudo:
+        return ""
+
+    cerebro = getattr(app, "cerebro", None) if app else None
+    if cerebro and hasattr(cerebro, "_pedir"):
+        try:
+            creador = getattr(getattr(app, "memoria", None), "creador", "Moisés") or "Moisés"
+            prompt_sistema = (
+                f"Eres Kaya, la compañera personal de {creador} en Panamá. "
+                "Comunica el siguiente resultado real del computador en exactamente 1 o 2 frases cortas habladas, "
+                "con tono natural, fresco y cercano. "
+                "REGLA CRÍTICA: Mantén con total precisión los números, porcentajes y cifras reales proporcionadas; "
+                "PROHIBIDO inventar métricas, alterar números o agregar saludos/despedidas robóticas."
+            )
+            mensajes = [
+                {"role": "system", "content": prompt_sistema},
+                {"role": "user", "content": f"Orden: '{orden}'. Datos reales: {crudo}"}
+            ]
+            resp = cerebro._pedir(mensajes, tarea="charla")
+            if resp and isinstance(resp, str):
+                limpio = resp.strip().strip('"').strip("'")
+                if len(limpio) >= 12 and any(c.isdigit() for c in limpio if any(d.isdigit() for d in crudo)):
+                    return limpio
+        except Exception:
+            pass
+
+    # Fallback conversacional limpio que preserva intactos los datos
+    prefijos = [
+        "Mira, te cuento: ",
+        "Por aquí veo que ",
+        "El equipo anda así: ",
+        "Revisando por acá: "
+    ]
+    return random.choice(prefijos) + crudo
