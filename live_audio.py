@@ -3,6 +3,7 @@
 Implementa la ventana de cola antieco (~320 ms) para parlantes, asegurando
 que la salida de audio nunca interrumpa a Kaya a mitad de frase.
 """
+import asyncio
 import datetime
 import math
 import os
@@ -18,12 +19,25 @@ RATE_SALIDA = 24000
 CHANNELS = 1
 CHUNK_ENTRADA_MS = 50
 MAX_COLA_ENTRADA = 60
-TIMEOUT_SILENCIO_DEFECTO = 9.0  # Cierre a 9 segundos según especificación
 UMBRAL_RMS_VOZ = 480.0
 UMBRAL_ENERGIA_VOZ = 0.08
 
 _DISYUNTOR_HASTA = 0.0
 _LOCK_DISYUNTOR = threading.RLock()
+
+
+def timeout_silencio_configurado(valor=None) -> float:
+    """KAYA_TIMEOUT_SILENCIO (12 s por defecto) con guarda de valores inválidos."""
+    if valor is None:
+        valor = os.environ.get("KAYA_TIMEOUT_SILENCIO", "12")
+    try:
+        segundos = float(valor)
+    except (TypeError, ValueError):
+        segundos = 12.0
+    return segundos if segundos >= 2.0 else 12.0
+
+
+TIMEOUT_SILENCIO_DEFECTO = timeout_silencio_configurado()
 
 
 def es_error_cuota(exc: Exception) -> bool:
@@ -213,6 +227,25 @@ def cerrar_stream(stream):
         except Exception:
             pass
     return None
+
+
+def cerrar_sesion_live(session, loop):
+    """Cierra el WebSocket de Gemini Live sin bloquear el hilo que llama."""
+    cierre = getattr(session, "close", None)
+    if not callable(cierre) or loop is None:
+        return
+    try:
+        def _hacer():
+            try:
+                asyncio.create_task(cierre())
+            except Exception:
+                pass
+        if getattr(loop, "is_running", lambda: False)():
+            loop.call_soon_threadsafe(_hacer)
+        else:
+            loop.run_until_complete(cierre())
+    except Exception:
+        pass
 
 
 def calcular_energia_pcm16(pcm_bytes: bytes) -> float:

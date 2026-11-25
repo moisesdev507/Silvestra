@@ -4,7 +4,7 @@ from typing import Any, Callable, Optional
 from google import genai
 from google.genai import types
 import identidad_origen
-import live_audio, live_herramientas
+import live_audio, live_herramientas, puerta_audio_live
 
 MODELO_DEFECTO, VOZ_DEFECTO = "gemini-2.5-flash-native-audio-latest", "Achernar"
 from live_audio import activar_enfriamiento_cuota, es_error_cuota, esta_en_enfriamiento_cuota
@@ -31,17 +31,15 @@ class SesionKayaLive:
         self.cola_audio_entrada = queue.Queue(maxsize=live_audio.MAX_COLA_ENTRADA)
         self.cola_audio_salida = queue.Queue()
         self.compuerta = live_audio.CompuertaAntiEco(cola_salida=self.cola_audio_salida)
+        self.puerta = puerta_audio_live.PuertaAudioLive(timeout_silencio=self.timeout_silencio)
 
         self.activo = False
         self._loop, self._session_genai = None, None
         self._hilo_loop, self._hilo_salida = None, None
         self._stream_entrada, self._stream_salida = None, None
         self._rate_entrada = live_audio.RATE_ENTRADA
-        self._t_ultimo_log_voz = 0.0
-        self._en_rafaga_voz = False
-        self._t_ultima_voz = time.monotonic()
-        self._estado_actual = "reposo"
-        self._candado = threading.RLock()
+        self._t_ultimo_log_voz, self._en_rafaga_voz = 0.0, False
+        self._estado_actual, self._candado = "reposo", threading.RLock()
 
     def _notificar_estado(self, estado: str):
         with self._candado:
@@ -72,27 +70,16 @@ class SesionKayaLive:
         pcm = bytes(indata)
         if self._rate_entrada != live_audio.RATE_ENTRADA:
             pcm = live_audio.remuestrear_pcm16_a_16k(pcm, self._rate_entrada)
-        chunk_filtrado, silenciado = self.compuerta.filtrar_chunk_entrada(pcm)
-        if not silenciado:
-            # 1. El 100% del audio con compuerta abierta se envía de forma continua
-            try:
-                self.cola_audio_entrada.put_nowait(chunk_filtrado)
-            except queue.Full:
-                pass
-            # 2. El umbral RMS se usa ÚNICAMENTE para reiniciar el watchdog y emitir log
-            es_habla, rms, energia = live_audio.es_voz_activa(chunk_filtrado)
-            if es_habla:
-                self._t_ultima_voz = time.monotonic()
-                if self._estado_actual != "hablando":
-                    self._notificar_estado("escuchando")
-                self._notificar_nivel(energia)
-                ahora = time.monotonic()
-                if not getattr(self, "_en_rafaga_voz", False) or (ahora - getattr(self, "_t_ultimo_log_voz", 0.0) >= 1.5):
-                    self._en_rafaga_voz = True
-                    self._t_ultimo_log_voz = ahora
-                    print(f"[LIVE][AUDIO] Voz detectada (rms={rms:.1f}, nivel={energia:.2f}).", flush=True)
-            elif getattr(self, "_en_rafaga_voz", False):
-                self._en_rafaga_voz = False
+        chunk, silenciado = self.compuerta.filtrar_chunk_entrada(pcm)
+        if silenciado or not puerta_audio_live.encolar_autorizados(
+                self.puerta, chunk, self.cola_audio_entrada):
+            return
+        self._notificar_estado("escuchando")
+        self._notificar_nivel(live_audio.calcular_energia_pcm16(chunk))
+        ahora = time.monotonic()
+        if not self._en_rafaga_voz or ahora - self._t_ultimo_log_voz >= 1.5:
+            self._en_rafaga_voz, self._t_ultimo_log_voz = True, ahora
+            print("[LIVE][AUDIO] Gate local abierto por voz.", flush=True)
 
     def _bucle_reproduccion_salida(self):
         try:
@@ -108,16 +95,15 @@ class SesionKayaLive:
                 except queue.Empty:
                     if self._estado_actual == "hablando" and not self.compuerta.esta_en_ventana_eco():
                         self._notificar_estado("escuchando")
-                        self._t_ultima_voz = time.monotonic()
+                        self.puerta.notificar_actividad()
                     continue
 
                 if not chunk:
                     continue
 
                 self._notificar_estado("hablando")
-                energia = live_audio.calcular_energia_pcm16(chunk)
-                self._notificar_nivel(energia)
-
+                self._notificar_nivel(live_audio.calcular_energia_pcm16(chunk))
+                self.puerta.marcar_reproduccion(True)
                 self.compuerta.marcar_inicio_escritura()
                 try:
                     import numpy as np
@@ -127,6 +113,7 @@ class SesionKayaLive:
                     print(f"[LIVE][AUDIO] Error salida: {err}", flush=True)
                 finally:
                     self.compuerta.marcar_fin_escritura()
+                    self.puerta.marcar_reproduccion(False)
         finally:
             self._stream_salida = live_audio.cerrar_stream(self._stream_salida)
 
@@ -147,12 +134,8 @@ class SesionKayaLive:
     async def _tarea_watchdog(self):
         while self.activo:
             await asyncio.sleep(0.5)
-            if self._estado_actual == "hablando":
-                self._t_ultima_voz = time.monotonic()
-                continue
-            silencio = time.monotonic() - self._t_ultima_voz
-            if silencio >= self.timeout_silencio:
-                print(f"[LIVE] Watchdog de silencio ({self.timeout_silencio:.1f}s) alcanzado. Cerrando sesión.", flush=True)
+            if self.puerta.debe_cerrar():
+                print(f"[LIVE] Inactividad {self.timeout_silencio:.1f}s: cerrando micrófono y Live.", flush=True)
                 self.detener()
                 if callable(self.on_cierre_automatico):
                     try:
@@ -188,17 +171,20 @@ class SesionKayaLive:
         async with client.aio.live.connect(model=self.modelo, config=cfg) as session:
             self._session_genai = session
             self._notificar_estado("escuchando")
-            self._t_ultima_voz = time.monotonic()
+            self.puerta.notificar_actividad()
 
             orden = (self.orden_inicial or "").strip()
             if despertar:
                 texto_inicio = identidad_origen.instruccion_primer_despertar(nombre_actual)
+            elif orden:
+                texto_inicio = orden if orden.lower() not in ("kaya", "kaia", "silvestra", "oye kaya") else ""
             else:
-                texto_inicio = orden if (orden and orden.lower() not in ("kaya", "kaia", "silvestra", "oye kaya")) else "Hola Kaya, dime, ¿estás ahí?"
-            try:
-                await session.send_client_content(turns=types.Content(role="user", parts=[types.Part.from_text(text=texto_inicio)]), turn_complete=True)
-            except Exception as e:
-                print(f"[LIVE] Error enviando orden inicial: {e}", flush=True)
+                texto_inicio = ""
+            if texto_inicio:
+                try:
+                    await session.send_client_content(turns=types.Content(role="user", parts=[types.Part.from_text(text=texto_inicio)]), turn_complete=True)
+                except Exception as e:
+                    print(f"[LIVE] Error enviando orden inicial: {e}", flush=True)
 
             tarea_audio = asyncio.create_task(self._tarea_envio_audio(session))
             tarea_dog = asyncio.create_task(self._tarea_watchdog())
@@ -209,11 +195,11 @@ class SesionKayaLive:
                         if not self.activo: break
                         sc = resp.server_content
                         if sc:
-                            if getattr(sc, "turn_complete", False): self._t_ultima_voz = time.monotonic()
+                            if getattr(sc, "turn_complete", False): self.puerta.notificar_actividad()
                             if getattr(sc, "interrupted", False):
                                 with self.cola_audio_salida.mutex: self.cola_audio_salida.queue.clear()
                                 self._notificar_estado("escuchando")
-                                self._t_ultima_voz = time.monotonic()
+                                self.puerta.notificar_actividad()
                             mt = sc.model_turn
                             if mt:
                                 for part in mt.parts:
@@ -243,6 +229,9 @@ class SesionKayaLive:
             return True
         self.activo = True
         self.compuerta.registrar_info_inicio()
+        self.puerta.reiniciar()
+        with self.cola_audio_entrada.mutex:
+            self.cola_audio_entrada.queue.clear()
 
         try:
             self._stream_entrada, self._rate_entrada = live_audio.crear_input_stream(self._callback_audio_in)
@@ -311,6 +300,7 @@ class SesionKayaLive:
         if not self.activo:
             return
         self.activo = False
+        self.puerta.desactivar()
         self._notificar_estado("reposo")
         self._stream_entrada = live_audio.cerrar_stream(self._stream_entrada)
         self._stream_salida = live_audio.cerrar_stream(self._stream_salida)
@@ -322,3 +312,11 @@ class SesionKayaLive:
                 self._loop.call_soon_threadsafe(_cancelar_todas)
             except Exception:
                 pass
+            live_audio.cerrar_sesion_live(self._session_genai, self._loop)
+
+    def alternar_microfono(self) -> bool:
+        """Cierra o abre la captura Live; devuelve True si queda abierta."""
+        if self.activo:
+            self.detener()
+            return False
+        return self.iniciar()

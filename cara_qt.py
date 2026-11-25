@@ -10,6 +10,7 @@ import acciones
 import cara_nucleo
 import cara_presentacion
 import menu_hud
+import micro_orbe
 from burbuja import Burbuja, Entrada
 from cara_dibujo import TAM, pintar
 from cara_movimiento import CaraMovimientoMixin
@@ -225,7 +226,7 @@ class Cara(CaraMovimientoMixin, QWidget):
         pintar(self)
         cara_nucleo.registrar_cuadro(self, time.time() - t0)
 
-        # Reducción de tasa de refresco en reposo para mantener baja la CPU
+        # Reposo: baja tasa de refresco.
         reposo_ahora = (
             not self.hablando
             and not self.escuchando
@@ -241,7 +242,9 @@ class Cara(CaraMovimientoMixin, QWidget):
     @cara_presentacion.proteger_evento
     def mousePressEvent(self, e):
         if e.button() == Qt.LeftButton:
-            self.arrastre = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            punto = e.globalPosition().toPoint()
+            self.arrastre = punto - self.frameGeometry().topLeft()
+            micro_orbe.registrar_pulsacion(self, punto)
             self._tocar()
             e.accept()
 
@@ -255,12 +258,12 @@ class Cara(CaraMovimientoMixin, QWidget):
     @cara_presentacion.proteger_evento
     def mouseReleaseEvent(self, e):
         self.arrastre = None
+        micro_orbe.finalizar_pulsacion(self, e.globalPosition().toPoint())
         e.accept()
 
     @cara_presentacion.proteger_evento
     def mouseDoubleClickEvent(self, e):
-        # Doble clic abre el diálogo "Opciones HUD..." de menu_hud sin reenviar
-        # el evento: la guarda evita abrir dos veces si Qt lo redispacha.
+        # Doble clic: menú HUD (guarda anti-redespacho).
         if e.button() != Qt.LeftButton:
             return
         e.accept()

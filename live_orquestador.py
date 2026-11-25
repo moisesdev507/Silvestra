@@ -7,10 +7,12 @@ Gestiona las transiciones en PortAudio y sincroniza el orbe de cara_qt:
 4. Cierra limpiamente la sesión Live a los 9 segundos de silencio volviendo a espera local.
 """
 import os
+import queue
 import threading
 import time
 from typing import Optional
 
+import despertar_local
 import live_audio
 import live_motor
 
@@ -21,6 +23,7 @@ class CoordinadorLiveSilvestra:
     def __init__(self, app):
         self.app = app
         self.sesion_live: Optional[live_motor.SesionKayaLive] = None
+        self.despertar_local: Optional[despertar_local.EscuchaDespertarLocal] = None
         self._bloqueo = threading.RLock()
         self._generacion = 0
         self.modo_live_habilitado = bool(
@@ -82,6 +85,8 @@ class CoordinadorLiveSilvestra:
         try:
             import voz_ws
             voz_ws.detener()
+            if not habilitado:
+                self.detener_despertar_local()
             voz = getattr(self.app, "voz", None)
             if not habilitado and voz is not None and hasattr(voz, "reanudar"):
                 voz.reanudar()
@@ -99,12 +104,14 @@ class CoordinadorLiveSilvestra:
         if estado == "escuchando":
             self.app.cola.put(("cara_metodo", ("poner_escuchando", True)))
             self.app.cola.put(("cara_metodo", ("poner_hablando", False)))
+            self.app.cola.put(("micro_live_estado", False))
         elif estado == "hablando":
             self.app.cola.put(("cara_metodo", ("poner_hablando", True)))
             self.app.cola.put(("cara_metodo", ("poner_escuchando", False)))
-        elif estado in ("reposo", "conectando"):
+        elif estado in ("reposo", "en_reposo", "conectando"):
             self.app.cola.put(("cara_metodo", ("poner_hablando", False)))
             self.app.cola.put(("cara_metodo", ("poner_escuchando", False)))
+            self.app.cola.put(("micro_live_estado", True))
 
     def _al_nivel_voz(self, nivel: float):
         cara = getattr(self.app, "cara", None)
@@ -144,11 +151,64 @@ class CoordinadorLiveSilvestra:
                 pass
 
     def _al_cierre_automatico(self):
-        """Invocado por el watchdog de 9 segundos de silencio o cierre de Live."""
-        print("[COORDINADOR] Regresando a escucha local por palabra clave.", flush=True)
+        """Tras 12 s sin voz: reposo Live con wake-word local y 0 tokens."""
+        print("[COORDINADOR] Reposo Live: escuchando 'Kaya' en local (0 tokens).", flush=True)
         with self._bloqueo:
             self.sesion_live = None
-        self._reanudar_captura_local()
+        self._iniciar_despertar_local()
+
+    def _iniciar_despertar_local(self):
+        with self._bloqueo:
+            actual = self.despertar_local
+            if actual is not None and actual.activa:
+                return
+            wake = despertar_local.EscuchaDespertarLocal(self._al_despertar_local)
+            self.despertar_local = wake
+        if not wake.iniciar():
+            with self._bloqueo:
+                if self.despertar_local is wake:
+                    self.despertar_local = None
+
+    def detener_despertar_local(self):
+        with self._bloqueo:
+            wake = self.despertar_local
+            self.despertar_local = None
+        if wake is not None:
+            try:
+                wake.detener()
+            except Exception as exc:
+                print(f"[COORDINADOR] Cierre wake local: {exc}", flush=True)
+
+    def _al_despertar_local(self, texto, audio_inicial):
+        """El hilo monitor del wake-word reactiva Live sin tocar el orbe."""
+        print("[COORDINADOR] 'Kaya' detectado en local: reconectando Gemini Live.", flush=True)
+
+        def _reactivar():
+            self.detener_despertar_local()
+            if self.intentar_activar_live("", audio_inicial=audio_inicial):
+                self.app.cola.put(("micro_live_estado", False))
+
+        threading.Thread(target=_reactivar, daemon=True, name="live-wake").start()
+
+    def alternar_microfono(self) -> bool:
+        """Acción principal del orbe: cerrar o abrir el micrófono Live."""
+        with self._bloqueo:
+            sesion = self.sesion_live
+        if sesion is not None and sesion.activo:
+            self.detener_despertar_local()
+            self._detener_sesion_seguro(sesion)
+            with self._bloqueo:
+                if self.sesion_live is sesion:
+                    self.sesion_live = None
+            self._iniciar_despertar_local()
+            self.app.cola.put(("micro_live_estado", True))
+            return False
+        self.detener_despertar_local()
+        if self.intentar_activar_live(""):
+            self.app.cola.put(("micro_live_estado", False))
+            return True
+        self._iniciar_despertar_local()
+        return False
 
     def precalentar_en_paralelo(self):
         """Inicia la sesión Live en fondo de inmediato mientras cara_qt termina de dibujar."""
@@ -162,7 +222,7 @@ class CoordinadorLiveSilvestra:
                 self.intentar_activar_live("¡Hola Kaya! Ya encendió el equipo, saluda breve.")
         threading.Thread(target=_arranque_fondo, daemon=True, name="live-precalentar").start()
 
-    def intentar_activar_live(self, orden_inicial: str = "") -> bool:
+    def intentar_activar_live(self, orden_inicial: str = "", audio_inicial=None) -> bool:
         """Intenta activar Gemini Live al detectar invocación. Devuelve True si Live tomó el turno."""
         if not self.modo_live_habilitado or self.modo_voz_configurado() == "clasico" or live_motor.esta_en_enfriamiento_cuota():
             return False
@@ -189,6 +249,13 @@ class CoordinadorLiveSilvestra:
                 self._reanudar_captura_local()
                 return False
 
+            if audio_inicial:
+                for frame in audio_inicial:
+                    try:
+                        self.sesion_live.cola_audio_entrada.put_nowait(frame)
+                    except queue.Full:
+                        break
+
             print("[COORDINADOR] Sesión Gemini Live iniciada exitosamente.", flush=True)
             return True
 
@@ -205,6 +272,7 @@ class CoordinadorLiveSilvestra:
 
     def cerrar(self):
         """Cierre de aplicación: desengancha la sesión Live y la cierra en fondo."""
+        self.detener_despertar_local()
         with self._bloqueo:
             sesion = self.sesion_live
             self.sesion_live = None
@@ -220,6 +288,22 @@ class CoordinadorLiveSilvestra:
 
 def despachar_evento_live(app, tipo: str, texto) -> bool:
     """Atiende eventos de UI y sincronización visual de Live."""
+    if tipo == "toggle_micro_live":
+        coordinator = getattr(app, "coordinador_live", None)
+        if coordinator is not None:
+            threading.Thread(
+                target=coordinator.alternar_microfono,
+                daemon=True, name="orbe-mic",
+            ).start()
+        return True
+    if tipo == "micro_live_estado":
+        cara = getattr(app, "cara", None)
+        if cara is not None:
+            cerrado = bool(texto)
+            cara.micro_live_cerrado = cerrado
+            cara.poner_escuchando(not cerrado)
+            cara.update()
+        return True
     if tipo == "cara_metodo":
         if isinstance(texto, (tuple, list)) and len(texto) >= 2:
             metodo, val = texto[0], texto[1]

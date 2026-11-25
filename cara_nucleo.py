@@ -54,6 +54,8 @@ def color_estado(viva, escuchando, hablando, feliz=False, base=None, silenciada=
 
 
 def esta_silenciada(cara):
+    if getattr(cara, "micro_live_cerrado", False):
+        return True
     valor = getattr(cara, "voz_silenciada", None)
     if valor is None:
         app = getattr(cara, "silvestra_app", None) or getattr(cara, "_ref_app", None)

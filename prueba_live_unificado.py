@@ -50,16 +50,17 @@ class TestGeminiLiveUnificado(unittest.TestCase):
         self.assertEqual(c_res, chunk)
         self.assertFalse(sil)
 
-    def test_watchdog_silencio_9_segundos(self):
-        # 1. Blindaje: rechazar valores menores a 2.0s y fijar 9.0s por defecto
+    def test_watchdog_silencio_12_segundos(self):
+        # 1. Blindaje: rechazar valores menores a 2.0s y fijar 12.0s por defecto
         sesion_defecto = live_motor.SesionKayaLive(timeout_silencio=0.1)
-        self.assertEqual(sesion_defecto.timeout_silencio, 9.0)
+        self.assertEqual(sesion_defecto.timeout_silencio, 12.0)
 
         # 2. Con timeout válido >= 2.0s
         cierre = []
         sesion = live_motor.SesionKayaLive(timeout_silencio=2.0, on_cierre_automatico=lambda: cierre.append(True))
         sesion.activo = True
-        sesion._t_ultima_voz = time.monotonic() - 3.0  # Simular silencio pasado
+        sesion.puerta.activar()
+        sesion.puerta.notificar_actividad(instante=time.monotonic() - 3.0)
 
         async def _correr():
             await sesion._tarea_watchdog()
@@ -245,13 +246,14 @@ class TestGeminiLiveUnificado(unittest.TestCase):
         sesion = live_motor.SesionKayaLive()
         sesion.compuerta = compuerta
         sesion.activo = True
+        sesion.puerta.activar()
         sesion._rate_entrada = 48000
-        t_prev = time.monotonic() - 5.0
-        sesion._t_ultima_voz = t_prev
+        t_prev = sesion.puerta.ultima_actividad
+        time.sleep(0.02)  # resolución de time.monotonic() en Windows ≈ 15.6 ms
 
         sesion._callback_audio_in(pcm_48k, len(muestras_48k), None, None)
         self.assertFalse(sesion.cola_audio_entrada.empty())
-        self.assertGreater(sesion._t_ultima_voz, t_prev)
+        self.assertGreater(sesion.puerta.ultima_actividad, t_prev)
 
         session_mock = MagicMock()
         session_mock.send_realtime_input = unittest.mock.AsyncMock()
@@ -297,25 +299,27 @@ class TestGeminiLiveUnificado(unittest.TestCase):
         es_habla, rms, nivel = live_audio.es_voz_activa(voz)
         self.assertTrue(es_habla)
 
-        # 3. Sesión: con compuerta abierta, el 100% del audio (incluyendo silencio) se envía a cola_audio_entrada
+        # 3. Con el gate abierto, el silencio se descarta localmente (0 tokens)
         sesion = live_motor.SesionKayaLive()
         sesion.activo = True
+        sesion.puerta.activar()
         sesion._rate_entrada = 48000
-        t_base = time.monotonic() - 10.0
-        sesion._t_ultima_voz = t_base
+        t_base = sesion.puerta.ultima_actividad
 
         sesion._callback_audio_in(ruido, 480, None, None)
-        # El audio se encoló para streaming continuo aunque sea silencio
+        self.assertTrue(sesion.cola_audio_entrada.empty())
+        self.assertEqual(sesion.puerta.ultima_actividad, t_base)
+
+        # 4. Con voz activa sí se libera audio y se refresca el watchdog
+        time.sleep(0.02)
+        sesion._callback_audio_in(voz, 480, None, None)
         self.assertFalse(sesion.cola_audio_entrada.empty())
-        # Pero el watchdog NO se reinició (se mantiene t_base)
-        self.assertEqual(sesion._t_ultima_voz, t_base)
+        self.assertGreater(sesion.puerta.ultima_actividad, t_base)
 
-        # 4. Sesión: con voz activa sí actualiza _t_ultima_voz
+        sesion.puerta.notificar_actividad(instante=t_base)
+        time.sleep(0.02)
         sesion._callback_audio_in(voz, 480, None, None)
-        self.assertGreater(sesion._t_ultima_voz, t_base)
-
-        sesion._callback_audio_in(voz, 480, None, None)
-        self.assertGreater(sesion._t_ultima_voz, t_base)
+        self.assertGreater(sesion.puerta.ultima_actividad, t_base)
 
     def test_herramientas_clima_y_busqueda_web(self):
         import consulta_web

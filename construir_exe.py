@@ -24,7 +24,8 @@ PATRONES_SECRETO = empaquetador.PATRONES_SECRETO
 # (cv2 necesita su config.py; google.genai, sherpa_onnx y websockets los leen como
 # datos). El código de Kaya SIEMPRE queda compilado dentro del PYZ: cualquier .py
 # en la raíz o directamente bajo _internal/ se considera fuente expuesta.
-BIBLIOTECAS_RUNTIME = ("cv2", "google", "sherpa_onnx", "websockets")
+BIBLIOTECAS_RUNTIME = ("cv2", "google", "sherpa_onnx", "vosk", "websockets")
+MODELO_VOSK = "modelos/vosk-model-small-es-0.42"
 # Esquemas públicos de Google API: contienen hashes de 40 hex, no claves privadas.
 DATOS_PUBLICOS = ("_internal/googleapiclient/discovery_cache/",)
 
@@ -102,6 +103,8 @@ def preparar_staging(staging):
         origen = os.path.join(BASE, nombre)
         if os.path.isdir(origen):
             shutil.copytree(origen, os.path.join(staging, nombre), dirs_exist_ok=True)
+    if not os.path.isdir(os.path.join(staging, MODELO_VOSK)):
+        raise RuntimeError(f"Falta el modelo Vosk para el wake-word local: {MODELO_VOSK}")
 
     _escribir(os.path.join(staging, ".env.example"), ENV_EJEMPLO)
     _escribir(os.path.join(staging, "LEEME_KAYA_EXE.txt"), LEEME)
@@ -125,6 +128,8 @@ def comando_pyinstaller(staging):
            "--noconfirm", "--clean", "--name", NOMBRE]
     for modulo in modulos_activos():
         cmd.extend(("--hidden-import", modulo))
+    cmd.extend(("--hidden-import", "vosk"))
+    cmd.extend(("--collect-binaries", "vosk"))
     for nombre in recursos_para_empaquetar(staging):
         origen = os.path.join(staging, nombre)
         cmd.extend(("--add-data", origen + os.pathsep + nombre))
