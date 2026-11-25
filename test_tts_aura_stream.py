@@ -243,15 +243,56 @@ class TestTtsAuraStream(unittest.TestCase):
             tas.precalentar_conexion(forzar=True)
             self.assertTrue(tas._ULTIMO_PRECALENTADO >= t_primera)
 
-    def test_detener_reproduccion_activa_aborta_stream(self):
-        """Verifica que detener_reproduccion_activa llame abort() y close() en el stream activo."""
-        fake_st = MagicMock()
-        fake_st.closed = False
-        tas._STREAM_ACTIVO = fake_st
+    def test_detener_reproduccion_activa_cooperativa(self):
+        """Verifica que detener_reproduccion_activa active el Event cooperativo sin abort() externo."""
+        tas._EVENTO_CANCELAR_STREAM.clear()
         tas.detener_reproduccion_activa()
-        fake_st.abort.assert_called_once()
-        fake_st.close.assert_called_once()
-        self.assertIsNone(tas._STREAM_ACTIVO)
+        self.assertTrue(tas._EVENTO_CANCELAR_STREAM.is_set())
+        tas._EVENTO_CANCELAR_STREAM.clear()
+
+    @patch("config.DEEPGRAM_API_KEY", "fake_key_12345")
+    def test_cancelacion_cooperativa_desde_otro_hilo(self):
+        """Verifica que cancelar desde otro hilo corte en < 50 ms sin llamar abort() ni close() cruzado."""
+        import threading
+        import time
+
+        # Simular un stream infinito de datos
+        def generador_infinito():
+            bloque = b"\x00\x10" * 480  # 960 bytes
+            for _ in range(50):
+                time.sleep(0.01)
+                yield bloque
+
+        fake_resp = FakeResponse(generador_infinito(), status_code=200)
+        fake_stream = MagicMock()
+        fake_stream.closed = False
+
+        with patch.object(tas, "_obtener_cliente") as mock_cli, \
+             patch("sounddevice.RawOutputStream", return_value=fake_stream):
+            mock_inst = MagicMock()
+            mock_inst.send.return_value = fake_resp
+            mock_cli.return_value = mock_inst
+
+            t0 = time.time()
+
+            def hilo_cancelador():
+                time.sleep(0.02)
+                tas.detener_reproduccion_activa()
+
+            hilo = threading.Thread(target=hilo_cancelador)
+            hilo.start()
+
+            ok = tas.reproducir_stream_aura("Texto largo para interrumpir")
+            duracion = time.time() - t0
+            hilo.join()
+
+            self.assertTrue(ok)
+            self.assertTrue(duracion < 0.25, f"La cancelación tardó demasiado: {duracion}s")
+            # abort() NO debe ser llamado desde fuera
+            fake_stream.abort.assert_not_called()
+            # El stream debe haber sido cerrado limpiamente en finally
+            fake_stream.stop.assert_called_once()
+            fake_stream.close.assert_called_once()
 
 
 if __name__ == "__main__":

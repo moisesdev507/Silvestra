@@ -221,21 +221,23 @@ class FlujoMicrofono:
             if self._stream is None or not getattr(self._stream, "active", False):
                 try:
                     import sounddevice as sd
-                    if self._stream is not None:
-                        try:
-                            self._stream.stop()
-                            self._stream.close()
-                        except Exception:
-                            pass
-                        self._stream = None
-                    self._stream = sd.InputStream(
-                        samplerate=self.rate,
-                        channels=1,
-                        dtype="int16",
-                        blocksize=self.blocksize,
-                        callback=self._callback,
-                    )
-                    self._stream.start()
+                    import audio_lock
+                    with audio_lock.bloqueo_portaudio():
+                        if self._stream is not None:
+                            try:
+                                self._stream.stop()
+                                self._stream.close()
+                            except Exception:
+                                pass
+                            self._stream = None
+                        self._stream = sd.InputStream(
+                            samplerate=self.rate,
+                            channels=1,
+                            dtype="int16",
+                            blocksize=self.blocksize,
+                            callback=self._callback,
+                        )
+                        self._stream.start()
                     self._activo = True
                 except Exception as e:
                     self._stream = None
@@ -275,8 +277,10 @@ class FlujoMicrofono:
         with self._lock:
             if self._stream is not None:
                 try:
-                    self._stream.stop()
-                    self._stream.close()
+                    import audio_lock
+                    with audio_lock.bloqueo_portaudio():
+                        self._stream.stop()
+                        self._stream.close()
                 except Exception:
                     pass
                 self._stream = None

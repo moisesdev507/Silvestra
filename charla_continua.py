@@ -24,6 +24,7 @@ _t_inicio_habla_asistente = 0.0
 _bloques_bajos_tolerados = 0
 _diag_total_bloques = 0
 _diag_max_rms = 0.0
+_T_ARRANQUE_PROCESO = time.monotonic()
 
 
 def barge_in_habilitado():
@@ -140,6 +141,9 @@ def evaluar_barge_in_seguro(app, datos_audio):
         _diag_max_rms = rms
 
     ahora = time.monotonic()
+    if (ahora - _T_ARRANQUE_PROCESO) < 2.5:
+        # Gracia de arranque: permitir estabilización de hardware de audio sin cortes falsos
+        return False
     if _t_inicio_habla_asistente == 0.0:
         _t_inicio_habla_asistente = ahora
 

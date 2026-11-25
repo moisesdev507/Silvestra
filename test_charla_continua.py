@@ -13,6 +13,7 @@ import telemetria
 class TestCharlaContinua(unittest.TestCase):
     def setUp(self):
         charla_continua.cerrar_ventana_charla()
+        charla_continua._T_ARRANQUE_PROCESO = 0.0
 
     def tearDown(self):
         charla_continua.cerrar_ventana_charla()
@@ -108,6 +109,31 @@ class TestCharlaContinua(unittest.TestCase):
     def test_barge_in_habilitado(self):
         """Verifica que barge_in_habilitado() retorne True por defecto."""
         self.assertTrue(charla_continua.barge_in_habilitado())
+
+    def test_barge_in_diagnostico_y_corte_cooperativo(self):
+        """Valida que evaluar_barge_in_seguro registre bloques > 0 y active el corte cooperativo de voz."""
+        import tts_aura_stream
+        app = SimpleNamespace(
+            voz=SimpleNamespace(
+                ocupada=lambda: True,
+                detener=MagicMock(side_effect=lambda motivo='': tts_aura_stream.detener_reproduccion_activa())
+            ),
+            cola=SimpleNamespace(put=MagicMock())
+        )
+        charla_continua.reiniciar_estado_barge_in()
+        charla_continua._T_ARRANQUE_PROCESO = 0.0  # Asegurar fin de la gracia de arranque
+
+        audio_voz = np.full(1600, 700, dtype=np.int16)
+        corta1 = charla_continua.evaluar_barge_in_seguro(app, audio_voz)
+        self.assertFalse(corta1)
+        self.assertGreater(charla_continua._diag_total_bloques, 0)
+
+        time.sleep(0.20)
+        corta2 = charla_continua.evaluar_barge_in_seguro(app, audio_voz)
+        self.assertTrue(corta2)
+        app.voz.detener.assert_called_with(motivo="barge_in")
+        self.assertTrue(tts_aura_stream._EVENTO_CANCELAR_STREAM.is_set())
+        tts_aura_stream._EVENTO_CANCELAR_STREAM.clear()
 
     def test_humanizar_resultado_accion_preserva_cifras(self):
         """Verifica que humanizar_resultado_accion conserve cifras reales sin clichés robóticos."""

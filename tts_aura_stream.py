@@ -16,7 +16,7 @@ import httpx
 
 _CLIENTE_LOCK = threading.RLock()
 _CLIENTE_HTTP: Optional[httpx.Client] = None
-_STREAM_ACTIVO = None
+_EVENTO_CANCELAR_STREAM = threading.Event()
 URL_AURA_SPEAK = "https://api.deepgram.com/v1/speak"
 MODELO_DEFECTO = "aura-2-celeste-es"
 SAMPLE_RATE = 24000
@@ -24,20 +24,8 @@ CHANNELS = 1
 
 
 def detener_reproduccion_activa():
-    """Detiene y aborta de inmediato el stream activo de sounddevice si está en reproducción."""
-    global _STREAM_ACTIVO
-    with _CLIENTE_LOCK:
-        st = _STREAM_ACTIVO
-        _STREAM_ACTIVO = None
-    if st is not None:
-        try:
-            st.abort()
-        except Exception:
-            pass
-        try:
-            st.close()
-        except Exception:
-            pass
+    """Señala de inmediato la cancelación cooperativa al hilo dueño del stream."""
+    _EVENTO_CANCELAR_STREAM.set()
 
 
 def _obtener_cliente() -> httpx.Client:
@@ -128,7 +116,8 @@ def reproducir_stream_aura(
         print(f"[voz] sounddevice no disponible ({e}), usando fallback", flush=True)
         return False
 
-    CHUNK_BYTES = 1920  # ~40 ms de audio linear16 a 24 kHz (25 updates/seg)
+    CHUNK_BYTES = 1920  # ~40 ms de audio linear16 a 24 kHz
+    SUB_CHUNK_BYTES = 960  # ~20 ms para chequear cancelación en cada sub-bloque
 
     def _ejecutar_transmision() -> tuple[bool, bool]:
         t0 = time.time()
@@ -143,18 +132,20 @@ def reproducir_stream_aura(
             return False, False
 
         stream = None
+        _EVENTO_CANCELAR_STREAM.clear()
         try:
-            stream = sd.RawOutputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16", blocksize=960)
-            stream.start()
-            global _STREAM_ACTIVO
-            with _CLIENTE_LOCK:
-                _STREAM_ACTIVO = stream
+            try:
+                import audio_lock
+                with audio_lock.bloqueo_portaudio():
+                    stream = sd.RawOutputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16", blocksize=480)
+                    stream.start()
+            except Exception:
+                stream = sd.RawOutputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16", blocksize=480)
+                stream.start()
 
             for trozo in resp.iter_bytes(chunk_size=CHUNK_BYTES):
-                if cancelar_fn and cancelar_fn():
+                if _EVENTO_CANCELAR_STREAM.is_set() or (cancelar_fn and cancelar_fn()):
                     resp.close()
-                    try: stream.abort()
-                    except Exception: pass
                     return True, empezo
                 if not trozo: continue
                 datos = sobrante + trozo
@@ -176,25 +167,30 @@ def reproducir_stream_aura(
                     try: al_nivel(_calcular_rms_pcm(datos))
                     except Exception: pass
 
-                if cancelar_fn and cancelar_fn():
-                    resp.close()
-                    try: stream.abort()
-                    except Exception: pass
-                    return True, empezo
-
-                stream.write(datos)
+                # Escribir en sub-bloques de ~20 ms revisando cancelación
+                for offset in range(0, len(datos), SUB_CHUNK_BYTES):
+                    if _EVENTO_CANCELAR_STREAM.is_set() or (cancelar_fn and cancelar_fn()):
+                        resp.close()
+                        return True, empezo
+                    sub_bloque = datos[offset:offset + SUB_CHUNK_BYTES]
+                    stream.write(sub_bloque)
         finally:
             resp.close()
-            with _CLIENTE_LOCK:
-                if _STREAM_ACTIVO is stream:
-                    _STREAM_ACTIVO = None
+            _EVENTO_CANCELAR_STREAM.clear()
             if stream is not None:
                 try:
-                    if not stream.closed:
-                        stream.stop()
-                        stream.close()
+                    import audio_lock
+                    with audio_lock.bloqueo_portaudio():
+                        if not stream.closed:
+                            stream.stop()
+                            stream.close()
                 except Exception:
-                    pass
+                    try:
+                        if not stream.closed:
+                            stream.stop()
+                            stream.close()
+                    except Exception:
+                        pass
         return empezo, empezo
 
     try:
