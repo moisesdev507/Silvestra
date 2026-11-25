@@ -7,6 +7,7 @@ import datetime
 import math
 import os
 import struct
+import threading
 import time
 from typing import Optional
 
@@ -16,6 +17,29 @@ CHANNELS = 1
 CHUNK_ENTRADA_MS = 50
 MAX_COLA_ENTRADA = 60
 TIMEOUT_SILENCIO_DEFECTO = 9.0  # Cierre a 9 segundos según especificación
+
+_DISYUNTOR_HASTA = 0.0
+_LOCK_DISYUNTOR = threading.RLock()
+
+
+def es_error_cuota(exc: Exception) -> bool:
+    if exc is None:
+        return False
+    texto = str(exc).lower()
+    return "429" in texto or "resource_exhausted" in texto or "quota" in texto
+
+
+def esta_en_enfriamiento_cuota() -> bool:
+    with _LOCK_DISYUNTOR:
+        return time.monotonic() < _DISYUNTOR_HASTA
+
+
+def activar_enfriamiento_cuota(minutos: float = 15.0):
+    global _DISYUNTOR_HASTA
+    with _LOCK_DISYUNTOR:
+        _DISYUNTOR_HASTA = time.monotonic() + (minutos * 60.0)
+    print(f"[LIVE] Disyuntor de cuota activado por {minutos:.0f} minutos. Conmutando a modo clásico.", flush=True)
+
 
 DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
@@ -46,11 +70,13 @@ class CompuertaAntiEco:
         self.cola_salida = cola_salida
         self._reproduciendo_salida = False
         self._ultimo_fin_salida = 0.0
+        self._abierta = False
 
     def marcar_inicio_escritura(self):
         """Marca inicio de reproducción al parlante."""
         self._reproduciendo_salida = True
         self._ultimo_fin_salida = time.monotonic()
+        self._abierta = False
 
     def marcar_fin_escritura(self):
         """Marca fin de reproducción en el parlante."""
@@ -60,6 +86,7 @@ class CompuertaAntiEco:
     def marcar_encolado_salida(self):
         """Actualiza marca temporal al recibir nuevo audio de salida."""
         self._ultimo_fin_salida = time.monotonic()
+        self._abierta = False
 
     def esta_en_ventana_eco(self) -> bool:
         """Devuelve True si está reproduciendo o dentro de la ventana de gracia."""
@@ -77,7 +104,11 @@ class CompuertaAntiEco:
         if not chunk:
             return b"", False
         if self.esta_en_ventana_eco():
+            self._abierta = False
             return bytes(len(chunk)), True
+        if not self._abierta:
+            self._abierta = True
+            print("[LIVE][AUDIO] Compuerta antieco ABIERTA: escuchando usuario.", flush=True)
         return chunk, False
 
     def registrar_info_inicio(self):
@@ -85,6 +116,59 @@ class CompuertaAntiEco:
             print("[LIVE][AUDIO] Compuerta antieco: DESACTIVADA (modo audífonos).", flush=True)
         else:
             print(f"[LIVE][AUDIO] Compuerta antieco: ACTIVA (parlantes, ventana={int(self.eco_cola_ms)}ms).", flush=True)
+
+
+def calcular_rms_pcm16(pcm_bytes: bytes) -> float:
+    """Calcula el valor RMS directo del audio PCM 16-bit."""
+    if not pcm_bytes or len(pcm_bytes) < 2:
+        return 0.0
+    num_muestras = len(pcm_bytes) // 2
+    try:
+        valores = struct.unpack(f"<{num_muestras}h", pcm_bytes[:num_muestras * 2])
+        suma_cuad = sum(v * v for v in valores)
+        return float(math.sqrt(suma_cuad / num_muestras))
+    except Exception:
+        return 0.0
+
+
+def remuestrear_pcm16_a_16k(pcm_bytes: bytes, rate_origen: int) -> bytes:
+    """Remuestrea linealmente audio PCM int16 mono a 16000 Hz si la tarjeta abrió a 44.1k/48k."""
+    if not pcm_bytes or rate_origen == RATE_ENTRADA:
+        return pcm_bytes
+    try:
+        import numpy as np
+        audio = np.frombuffer(pcm_bytes, dtype=np.int16)
+        num_muestras_salida = int(len(audio) * (RATE_ENTRADA / float(rate_origen)))
+        if num_muestras_salida <= 0:
+            return b""
+        indices = np.linspace(0, len(audio) - 1, num_muestras_salida)
+        remuestreado = np.interp(indices, np.arange(len(audio)), audio).astype(np.int16)
+        return remuestreado.tobytes()
+    except Exception:
+        return pcm_bytes
+
+
+def crear_input_stream(callback_audio):
+    """Crea e inicia el InputStream de sounddevice asegurando compatibilidad con Windows."""
+    import sounddevice as sd
+    # Intentar primero a 16000 Hz nativo
+    for rate_candidato in (RATE_ENTRADA, 48000, 44100):
+        try:
+            bs = int(rate_candidato * (CHUNK_ENTRADA_MS / 1000.0))
+            stream = sd.InputStream(
+                samplerate=rate_candidato,
+                channels=CHANNELS,
+                dtype="int16",
+                blocksize=bs,
+                callback=callback_audio,
+            )
+            stream.start()
+            if rate_candidato != RATE_ENTRADA:
+                print(f"[LIVE][AUDIO] Micrófono abierto a {rate_candidato}Hz con remuestreo a 16000Hz.", flush=True)
+            return stream, rate_candidato
+        except Exception as err:
+            continue
+    raise RuntimeError("No se pudo abrir ningún InputStream de micrófono para Gemini Live.")
 
 
 def calcular_energia_pcm16(pcm_bytes: bytes) -> float:

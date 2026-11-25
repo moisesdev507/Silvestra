@@ -15,29 +15,13 @@ import live_herramientas
 MODELO_DEFECTO = "gemini-2.5-flash-native-audio-latest"
 VOZ_DEFECTO = "Achernar"
 
-# Disyuntor global de cuota para Gemini Live (15 minutos de enfriamiento)
-_DISYUNTOR_HASTA = 0.0
-_LOCK_DISYUNTOR = threading.RLock()
-
-
-def es_error_cuota(exc: Exception) -> bool:
-    """Detecta si una excepción corresponde a cuota agotada (429 o RESOURCE_EXHAUSTED)."""
-    if exc is None:
-        return False
-    texto = str(exc).lower()
-    return "429" in texto or "resource_exhausted" in texto or "quota" in texto
-
-
-def esta_en_enfriamiento_cuota() -> bool:
-    with _LOCK_DISYUNTOR:
-        return time.monotonic() < _DISYUNTOR_HASTA
-
-
-def activar_enfriamiento_cuota(minutos: float = 15.0):
-    global _DISYUNTOR_HASTA
-    with _LOCK_DISYUNTOR:
-        _DISYUNTOR_HASTA = time.monotonic() + (minutos * 60.0)
-    print(f"[LIVE] Disyuntor de cuota activado por {minutos:.0f} minutos. Conmutando a modo clásico.", flush=True)
+from live_audio import (
+    _DISYUNTOR_HASTA,
+    _LOCK_DISYUNTOR,
+    activar_enfriamiento_cuota,
+    es_error_cuota,
+    esta_en_enfriamiento_cuota,
+)
 
 
 class SesionKayaLive:
@@ -74,6 +58,8 @@ class SesionKayaLive:
         self._hilo_salida: Optional[threading.Thread] = None
         self._stream_entrada: Optional[sd.InputStream] = None
         self._stream_salida: Optional[sd.OutputStream] = None
+        self._rate_entrada = live_audio.RATE_ENTRADA
+        self._t_ultimo_log_voz = 0.0
 
         self._t_ultima_voz = time.monotonic()
         self._estado_actual = "reposo"
@@ -106,14 +92,21 @@ class SesionKayaLive:
         if not self.activo:
             return
         pcm = bytes(indata)
+        if self._rate_entrada != live_audio.RATE_ENTRADA:
+            pcm = live_audio.remuestrear_pcm16_a_16k(pcm, self._rate_entrada)
         chunk_filtrado, silenciado = self.compuerta.filtrar_chunk_entrada(pcm)
         if not silenciado:
             energia = live_audio.calcular_energia_pcm16(chunk_filtrado)
-            if energia > 0.05:
+            if energia > 0.03:
                 self._t_ultima_voz = time.monotonic()
                 if self._estado_actual != "hablando":
                     self._notificar_estado("escuchando")
                 self._notificar_nivel(energia)
+                rms = live_audio.calcular_rms_pcm16(chunk_filtrado)
+                ahora = time.monotonic()
+                if ahora - getattr(self, "_t_ultimo_log_voz", 0) > 1.2:
+                    self._t_ultimo_log_voz = ahora
+                    print(f"[LIVE][AUDIO] Voz detectada (rms={rms:.1f}, nivel={energia:.2f}).", flush=True)
         try:
             self.cola_audio_entrada.put_nowait(chunk_filtrado)
         except queue.Full:
@@ -138,6 +131,7 @@ class SesionKayaLive:
             except queue.Empty:
                 if self._estado_actual == "hablando" and not self.compuerta.esta_en_ventana_eco():
                     self._notificar_estado("escuchando")
+                    self._t_ultima_voz = time.monotonic()
                 continue
 
             if not chunk:
@@ -168,10 +162,13 @@ class SesionKayaLive:
             try:
                 data = await asyncio.to_thread(self.cola_audio_entrada.get, timeout=0.1)
                 if data:
-                    await session.send(input={"data": data, "mime_type": "audio/pcm;rate=16000"})
+                    await session.send_realtime_input(
+                        media=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
+                    )
             except queue.Empty:
                 await asyncio.sleep(0.01)
-            except Exception:
+            except Exception as e:
+                print(f"[LIVE][AUDIO] Error enviando audio a Gemini: {e}", flush=True)
                 break
 
     async def _tarea_watchdog(self):
@@ -245,10 +242,13 @@ class SesionKayaLive:
 
                     sc = resp.server_content
                     if sc:
+                        if getattr(sc, "turn_complete", False):
+                            self._t_ultima_voz = time.monotonic()
                         if getattr(sc, "interrupted", False):
                             with self.cola_audio_salida.mutex:
                                 self.cola_audio_salida.queue.clear()
                             self._notificar_estado("escuchando")
+                            self._t_ultima_voz = time.monotonic()
 
                         mt = sc.model_turn
                         if mt:
@@ -288,14 +288,7 @@ class SesionKayaLive:
         self.compuerta.registrar_info_inicio()
 
         try:
-            self._stream_entrada = sd.InputStream(
-                samplerate=live_audio.RATE_ENTRADA,
-                channels=live_audio.CHANNELS,
-                dtype="int16",
-                blocksize=int(live_audio.RATE_ENTRADA * (live_audio.CHUNK_ENTRADA_MS / 1000.0)),
-                callback=self._callback_audio_in,
-            )
-            self._stream_entrada.start()
+            self._stream_entrada, self._rate_entrada = live_audio.crear_input_stream(self._callback_audio_in)
         except Exception as e:
             print(f"[LIVE][AUDIO] Error iniciando micrófono: {e}", flush=True)
             self.detener()

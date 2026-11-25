@@ -19,8 +19,15 @@ import live_orquestador
 class TestGeminiLiveUnificado(unittest.TestCase):
 
     def setUp(self):
-        with live_motor._LOCK_DISYUNTOR:
-            live_motor._DISYUNTOR_HASTA = 0.0
+        with live_audio._LOCK_DISYUNTOR:
+            live_audio._DISYUNTOR_HASTA = 0.0
+        try:
+            import estado
+            d = estado.cargar()
+            d["modo_voz_principal"] = "gemini_live"
+            estado.guardar(d)
+        except Exception:
+            pass
 
     def test_compuerta_anti_eco_ventana_gracia(self):
         q_salida = queue.Queue()
@@ -226,6 +233,64 @@ class TestGeminiLiveUnificado(unittest.TestCase):
         # 2. Seleccionar 'gemini_live' en Ajustes
         coordinador.actualizar_modo_voz("gemini_live")
         self.assertTrue(coordinador.es_modo_principal())
+
+    def test_ciclo_completo_audio_habla_desbloqueo_y_captura_remuestreada(self):
+        import struct
+        from google.genai import types
+
+        q_salida = queue.Queue()
+        compuerta = live_audio.CompuertaAntiEco(modo_audifonos=False, eco_cola_ms=100.0, cola_salida=q_salida)
+
+        # 1. Kaya habla: compuerta bloquea el mic
+        compuerta.marcar_inicio_escritura()
+        chunk_prueba = b"\x10\x00" * 160
+        c_res, silenciado = compuerta.filtrar_chunk_entrada(chunk_prueba)
+        self.assertTrue(silenciado)
+        self.assertEqual(c_res, bytes(len(chunk_prueba)))
+
+        # 2. Kaya termina de hablar y pasa la ventana de gracia (100ms)
+        compuerta.marcar_fin_escritura()
+        time.sleep(0.12)
+        c_res, silenciado = compuerta.filtrar_chunk_entrada(chunk_prueba)
+        self.assertFalse(silenciado)
+        self.assertEqual(c_res, chunk_prueba)
+
+        # 3. Audio de usuario capturado a 48kHz se remuestrea a 16kHz
+        muestras_48k = [800] * 480  # 10ms a 48kHz
+        pcm_48k = struct.pack(f"<{len(muestras_48k)}h", *muestras_48k)
+        pcm_16k = live_audio.remuestrear_pcm16_a_16k(pcm_48k, 48000)
+        self.assertEqual(len(pcm_16k), 160 * 2)  # 160 muestras int16
+
+        # 4. Envío a Gemini Live mediante send_realtime_input
+        sesion = live_motor.SesionKayaLive()
+        sesion.compuerta = compuerta
+        sesion.activo = True
+        sesion._rate_entrada = 48000
+        t_prev = time.monotonic() - 5.0
+        sesion._t_ultima_voz = t_prev
+
+        # Simular callback de audio de entrada del usuario
+        indata = pcm_48k
+        sesion._callback_audio_in(indata, len(muestras_48k), None, None)
+
+        # Verificar que el audio se encoló en cola_audio_entrada y reinició watchdog
+        self.assertFalse(sesion.cola_audio_entrada.empty())
+        self.assertGreater(sesion._t_ultima_voz, t_prev)
+
+        # Enviar chunk a session simulada con send_realtime_input
+        session_mock = MagicMock()
+        session_mock.send_realtime_input = unittest.mock.AsyncMock()
+
+        async def _enviar_test():
+            item = sesion.cola_audio_entrada.get_nowait()
+            await session_mock.send_realtime_input(media=types.Blob(data=item, mime_type="audio/pcm;rate=16000"))
+
+        asyncio.run(_enviar_test())
+        session_mock.send_realtime_input.assert_called_once()
+        args, kwargs = session_mock.send_realtime_input.call_args
+        blob = kwargs.get("media")
+        self.assertEqual(blob.mime_type, "audio/pcm;rate=16000")
+        self.assertEqual(len(blob.data), 160 * 2)
 
 
 if __name__ == "__main__":
