@@ -132,7 +132,40 @@ def ejecutar_accion_local(instruccion: str, timeout: float = 8.0) -> str:
             except Exception as e:
                 return f"Error consultando agenda: {e}"
 
-        # 5. Detectar apertura de aplicación
+        # 6. Diario personal de Kaya (leer / forzar escritura)
+        if "diario" in t_min:
+            try:
+                import diario
+                d = diario.Diario(app_muda)
+                if any(w in t_min for w in ("escribe", "anota", "escribir", "guardar", "redacta")):
+                    threading.Thread(target=d.escribir_entrada, kwargs={"forzar": True}, daemon=True).start()
+                    return "Anotando una nueva entrada en mi diario personal."
+                else:
+                    ent = d.obtener_ultima_entrada()
+                    if ent:
+                        return f"Mi última entrada del diario dice: {ent}"
+                    return "Todavía no he escrito entradas en mi diario personal."
+            except Exception as e:
+                return f"Error con el diario: {e}"
+
+        # 7. Ideas y notas pendientes (ideas.py / hilos.py)
+        if any(w in t_min for w in ("mis ideas", "que ideas tienes", "ideas pendientes", "lista de ideas")):
+            try:
+                import ideas
+                res_i = ideas.resumen()
+                return f"Ideas registradas: {res_i}" if res_i else "No hay ideas anotadas por ahora."
+            except Exception as e:
+                return f"Error leyendo ideas: {e}"
+
+        if any(w in t_min for w in ("pendientes", "hilos abiertos", "que tenemos pendiente")):
+            try:
+                import hilos
+                res_h = hilos.resumen()
+                return f"Temas e hilos pendientes: {res_h}" if res_h else "No hay pendientes registrados."
+            except Exception as e:
+                return f"Error leyendo pendientes: {e}"
+
+        # 8. Detectar apertura de aplicación
         app_detectada = acciones.extraer_app_abrir(texto)
         if app_detectada:
             try:

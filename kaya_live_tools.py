@@ -140,7 +140,7 @@ def ejecutar_accion_pc(instruccion: str) -> str:
 DECLARACIONES_HERRAMIENTAS = [
     types.FunctionDeclaration(
         name="ejecutar_accion_pc",
-        description="USA ESTA HERRAMIENTA SIEMPRE que el usuario pida acciones en la PC: revisar/leer correos o Gmail, consultar calendario/agenda de Google, abrir o cerrar programas/apps (Chrome, Bloc de notas, Spotify, Calculadora), controlar volumen o silenciar, recordatorios ('recuérdame en 10 mins...'), crear/leer archivos, minimizar ventanas o activar el HUD.",
+        description="USA ESTA HERRAMIENTA SIEMPRE para cualquier habilidad personal de Kaya y acciones en la PC: leer o escribir en tu diario personal ('qué dice tu diario', 'anota en tu diario'), revisar ideas o hilos pendientes, leer/resumir correos o Gmail, consultar agenda o calendario de Google, abrir o cerrar programas/apps (Chrome, Bloc de notas, Spotify, Calculadora), subir/bajar volumen o silenciar, programar recordatorios ('recuérdame en 10 mins...'), crear/leer archivos locales, minimizar ventanas o activar el HUD.",
         parameters=types.Schema(
             type="OBJECT",
             properties={"instruccion": types.Schema(type="STRING", description="Instrucción en lenguaje natural o comando de la acción pedida por el usuario.")},

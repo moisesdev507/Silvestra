@@ -42,6 +42,18 @@ class TestKayaLivePuente(unittest.TestCase):
             res = kaya_live_puente.ejecutar_accion_local("cuanta batería tengo")
             self.assertEqual(res, "Batería al 80%")
 
+    def test_ejecutar_accion_diario(self):
+        """Verifica que la consulta del diario devuelva la última entrada sin hablar por voz."""
+        with patch("diario.Diario.obtener_ultima_entrada", return_value="Reflexionando con Moisés"):
+            res = kaya_live_puente.ejecutar_accion_local("qué dice tu diario")
+            self.assertIn("Reflexionando con Moisés", res)
+
+    def test_ejecutar_accion_ideas_y_pendientes(self):
+        """Verifica que consultas de ideas o hilos pendientes devuelvan el resumen."""
+        with patch("ideas.resumen", return_value="integrar IoT (pedida 3 veces)"):
+            res = kaya_live_puente.ejecutar_accion_local("cuáles son mis ideas pendientes")
+            self.assertIn("integrar IoT", res)
+
     def test_cargar_contexto_memoria_live(self):
         """Verifica que cargar_contexto_memoria_live retorne formato adecuado."""
         ctx = kaya_live_puente.cargar_contexto_memoria_live()
@@ -55,7 +67,6 @@ class TestKayaLivePuente(unittest.TestCase):
             {"role": "user", "content": "Estoy avanzando con el proyecto de tesis de software"},
             {"role": "assistant", "content": "¡Qué bien! Cuéntame qué llevas hecho."},
         ]
-        # No debe lanzar excepción
         kaya_live_puente.guardar_turno_o_resumen_memoria(turnos)
 
 
