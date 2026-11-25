@@ -26,6 +26,13 @@ def sonar_invocacion(app):
     if voz is None:
         return False
     try:
+        import voz_ws
+        if voz_ws.disponible() and voz_ws.reproducir(FRASE_INVOCACION):
+            print(f"[voz] micro_invocacion='{FRASE_INVOCACION}' (celeste_ws)", flush=True)
+            return True
+    except Exception:
+        pass
+    try:
         audio = voz_cache.obtener_audio_cache(FRASE_INVOCACION, "neutral")
         if not audio:
             threading.Thread(target=_preparar, args=(voz,), daemon=True).start()

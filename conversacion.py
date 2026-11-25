@@ -188,6 +188,11 @@ def fin_voz(app):
     elif getattr(app, "conversacion", False) and not getattr(app, "escuchando", False):
         import eventos_rearme
         eventos_rearme.rearmar(app)
+        try:
+            import seguimiento_voz
+            seguimiento_voz.abrir(app=app)
+        except Exception:
+            pass
 
 
 def despertar(app):

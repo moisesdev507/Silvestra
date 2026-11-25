@@ -233,11 +233,12 @@ class Oido:
                     if _barge_in(app, datos, comandos_corte, rec_vosk):
                         continue
 
-                # Streaming: enviar el bloque apenas llega, sin esperar la frase completa
-                self._sesion_ws_actual.enviar(datos.tobytes())
-
-                # Alimentar bloques int16 al VAD neuronal
+                # Alimentar bloques int16 al VAD neuronal antes de decidir qué
+                # conservar: el fallback HTTP solo debe llevar voz, no silencio
+                # previo (evita 2.90s -> 5.40s por duplicación de búfer).
                 self._vad.alimentar(datos)
+                en_segmento = bool(hablo or self._vad.detectando_voz())
+                self._sesion_ws_actual.enviar(datos.tobytes(), conservar=en_segmento)
 
                 if not hablo:
                     if self._vad.detectando_voz():

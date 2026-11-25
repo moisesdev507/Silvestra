@@ -15,7 +15,8 @@ MODELO = "nova-3"
 IDIOMA = "es-419"
 ENDPOINTING_MS = 350
 TIMEOUT_APERTURA = 3.0
-TIMEOUT_CIERRE = 3.0
+TIMEOUT_CIERRE = 0.45
+MENSAJE_FINALIZE = '{"type": "Finalize"}'
 
 try:
     from identidad_kaya import KEYTERM_DEEPGRAM as KEYTERM
@@ -47,9 +48,23 @@ def _conectar(url, clave):
         url,
         additional_headers={"Authorization": f"Token {clave}"},
         open_timeout=TIMEOUT_APERTURA,
-        close_timeout=1.0,
+        close_timeout=0.3,
         ping_interval=None,
     )
+
+
+def _es_cierre_limpio(exc):
+    """Deepgram cierra con 1000 al terminar el endpointing: no es un fallo."""
+    texto = str(exc)
+    return "1000" in texto or "ConnectionClosedOK" in type(exc).__name__
+
+
+def _es_final(mensaje):
+    """True si Deepgram envió el resultado final del segmento."""
+    if not isinstance(mensaje, str):
+        return False
+    compacto = mensaje.replace(" ", "")
+    return '"FinalResults"' in compacto or '"is_final":true' in compacto
 
 
 def _texto_mensaje(mensaje):
@@ -97,10 +112,12 @@ class SesionStreaming:
             print(f"[oido] WS no disponible ({str(exc)[:80]}): fallback HTTP listo.", flush=True)
             return False
 
-    def enviar(self, chunk):
+    def enviar(self, chunk, conservar=True):
+        """Envía el bloque al WS; ``conservar=False`` evita duplicar silencio en el fallback."""
         if not chunk:
             return
-        self.chunks.append(bytes(chunk))
+        if conservar:
+            self.chunks.append(bytes(chunk))
         if not self.activa:
             return
         try:
@@ -108,7 +125,10 @@ class SesionStreaming:
         except Exception as exc:
             self.activa = False
             self.fallo = exc
-            print(f"[oido] WS cortado ({str(exc)[:80]}): usando HTTP al cerrar.", flush=True)
+            if _es_cierre_limpio(exc):
+                print("[oido] WS cerrado por Deepgram (1000): usando resultados recibidos.", flush=True)
+            else:
+                print(f"[oido] WS cortado ({str(exc)[:80]}): usando HTTP al cerrar.", flush=True)
 
     def _leer_resultados(self):
         fin = time.monotonic() + TIMEOUT_CIERRE
@@ -123,7 +143,7 @@ class SesionStreaming:
             texto = _texto_mensaje(mensaje)
             if texto:
                 self.texto_final = texto
-            if isinstance(mensaje, str) and '"FinalResults"' in mensaje:
+            if _es_final(mensaje):
                 break
 
     def cerrar(self):
@@ -137,16 +157,17 @@ class SesionStreaming:
         self.activa = False
 
     def finalizar(self):
-        """Cierra limpiamente y devuelve (texto, duración) o None."""
+        """Pide el resultado final con Finalize, espera is_final y cierra con 1000."""
         try:
             if self.activa and self.ws is not None:
                 try:
-                    self.ws.send(b"")
+                    self.ws.send(MENSAJE_FINALIZE)
                 except Exception as exc:
                     self.activa = False
                     self.fallo = exc
-                else:
-                    self._leer_resultados()
+                    if not _es_cierre_limpio(exc):
+                        print(f"[oido] Finalize no enviado ({str(exc)[:60]}).", flush=True)
+                self._leer_resultados()
         finally:
             self.cerrar()
 
@@ -156,7 +177,8 @@ class SesionStreaming:
             print(f"[tiempo] clasico_stt={ms}ms (ws)", flush=True)
             return self.texto_final, duracion
 
-        print("[oido] WS sin transcripción: fallback HTTP.", flush=True)
+        print(f"[oido] WS sin transcripción: fallback HTTP "
+              f"({len(self.chunks)} bloques de voz, {duracion:.2f}s).", flush=True)
         return self._fallback_http()
 
     def _fallback_http(self):

@@ -138,6 +138,16 @@ class Voz:
             pass
         self._parar()
 
+    def reanudar(self):
+        """Limpia pausa/cancelación heredada de Gemini Live antes de Celeste."""
+        import tts_aura_stream
+        tts_aura_stream.reanudar_stream()
+        with self._estado_lock:
+            self.version += 1
+            self._activos = 0
+            self._pausada = False
+        self.nivel_volumen = 0.0
+
     def hablar(self, texto, al_terminar=None, emocion=None):
         if not isinstance(texto, str) or not texto.strip():
             if callable(al_terminar):

@@ -16,6 +16,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import estado  # noqa: E402
 import oido_ws  # noqa: E402
 import voz_ws  # noqa: E402
+from prueba_clasico_ws_regresion import (  # noqa: E402,F401
+    TestCelesteTrasCambio, TestVentanaConversacionContinua, TestWSDeepgramSinDuplicar,
+)
 from prueba_presentacion_visual import TestPresentacionVisual  # noqa: E402,F401
 
 _REDACCION = (

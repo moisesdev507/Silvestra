@@ -82,6 +82,9 @@ class CoordinadorLiveSilvestra:
         try:
             import voz_ws
             voz_ws.detener()
+            voz = getattr(self.app, "voz", None)
+            if not habilitado and voz is not None and hasattr(voz, "reanudar"):
+                voz.reanudar()
             if habilitado:
                 self._pausar_captura_local()
             else:

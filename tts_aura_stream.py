@@ -23,9 +23,17 @@ SAMPLE_RATE = 24000
 CHANNELS = 1
 
 
-def detener_reproduccion_activa():
+def detener_reproduccion_activa(motivo="cambio_de_motor"):
     """Señala de inmediato la cancelación cooperativa al hilo dueño del stream."""
+    if _EVENTO_CANCELAR_STREAM.is_set():
+        return
     _EVENTO_CANCELAR_STREAM.set()
+    print(f"[voz] audio cancelado motivo={motivo}", flush=True)
+
+
+def reanudar_stream():
+    """Limpia la cancelación heredada para que Celeste pueda volver a hablar."""
+    _EVENTO_CANCELAR_STREAM.clear()
 
 
 def _obtener_cliente() -> httpx.Client:
@@ -103,8 +111,15 @@ def reproducir_stream_aura(
     if not txt: return False
 
     clave = str(getattr(config, "DEEPGRAM_API_KEY", "") or os.environ.get("DEEPGRAM_API_KEY", "")).strip()
-    if not clave: return False
-    if cancelar_fn and cancelar_fn(): return True
+    if not clave:
+        print("[voz] streaming omitido: sin clave Deepgram", flush=True)
+        return False
+    if _EVENTO_CANCELAR_STREAM.is_set():
+        print("[voz] streaming omitido: cancelación pendiente heredada", flush=True)
+        _EVENTO_CANCELAR_STREAM.clear()
+    if cancelar_fn and cancelar_fn():
+        print("[voz] streaming omitido: cancelación activa en la voz", flush=True)
+        return True
 
     modelo = str(os.environ.get("LYRIS_AURA_MODELO") or getattr(config, "MODELO_AURA", "") or MODELO_DEFECTO).strip()
     url = f"{URL_AURA_SPEAK}?model={modelo}&encoding=linear16&sample_rate={SAMPLE_RATE}&container=none"
@@ -134,17 +149,14 @@ def reproducir_stream_aura(
         stream = None
         _EVENTO_CANCELAR_STREAM.clear()
         try:
-            try:
-                import audio_lock
-                with audio_lock.bloqueo_portaudio():
-                    stream = sd.RawOutputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16", blocksize=480)
-                    stream.start()
-            except Exception:
+            import audio_lock
+            with audio_lock.bloqueo_portaudio():
                 stream = sd.RawOutputStream(samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16", blocksize=480)
                 stream.start()
 
             for trozo in resp.iter_bytes(chunk_size=CHUNK_BYTES):
                 if _EVENTO_CANCELAR_STREAM.is_set() or (cancelar_fn and cancelar_fn()):
+                    print(f"[voz] audio cancelado durante streaming frase='{txt[:28]}'", flush=True)
                     resp.close()
                     return True, empezo
                 if not trozo: continue
@@ -170,6 +182,7 @@ def reproducir_stream_aura(
                 # Escribir en sub-bloques de ~20 ms revisando cancelación
                 for offset in range(0, len(datos), SUB_CHUNK_BYTES):
                     if _EVENTO_CANCELAR_STREAM.is_set() or (cancelar_fn and cancelar_fn()):
+                        print(f"[voz] audio cancelado en sub-bloque frase='{txt[:28]}'", flush=True)
                         resp.close()
                         return True, empezo
                     sub_bloque = datos[offset:offset + SUB_CHUNK_BYTES]

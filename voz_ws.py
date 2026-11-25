@@ -36,9 +36,12 @@ def reproducir(texto, cancelar_fn=None, al_iniciar=None, al_nivel=None):
                 pass
 
     try:
-        return tts_aura_stream.reproducir_stream_aura(
+        ok = tts_aura_stream.reproducir_stream_aura(
             texto, cancelar_fn, al_primer_audio, al_nivel
         )
+        if not ok:
+            print(f"[voz] streaming omitido sin audio para '{texto[:28]}'", flush=True)
+        return ok
     except Exception as exc:
         print(f"[voz] streaming no disponible ({exc}), usando fallback local.", flush=True)
         return False

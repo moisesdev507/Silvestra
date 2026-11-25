@@ -3,6 +3,8 @@ import re
 import threading
 import time
 
+import seguimiento_voz
+
 TIEMPO_ORDEN = 20.0
 TIEMPO_RESPUESTA = 12.0
 TIEMPO_SEGUIMIENTO = 10.0
@@ -351,6 +353,7 @@ class GestorInvocacion:
                 self._iniciar_turno(orden)
             else:
                 _micro_voz(self.app)
+                seguimiento_voz.abrir(gestor=self, app=self.app)
                 with self.bloqueo:
                     self.esperando_orden = True
                     self.limite_orden = _inicio_captura(self.app) + TIEMPO_ORDEN
@@ -422,9 +425,7 @@ class GestorInvocacion:
             respondido = self.en_turno
         self._reposo()
         if respondido:
-            with self.bloqueo:
-                self.seguimiento_activo = True
-                self.limite_seguimiento = time.monotonic() + TIEMPO_SEGUIMIENTO
+            seguimiento_voz.abrir(gestor=self, app=self.app)
 
 
 def instalar(app):
