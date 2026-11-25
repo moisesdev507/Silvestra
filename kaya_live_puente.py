@@ -9,9 +9,33 @@ import os
 import re
 import threading
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import acciones
+
+
+_CALLBACK_REPOSO: Optional[Callable[[], None]] = None
+_LOCK_REPOSO = threading.RLock()
+
+
+def registrar_callback_reposo(cb: Optional[Callable[[], None]]):
+    """Registra callback invocado cuando Kaya decide entrar en reposo por voz."""
+    global _CALLBACK_REPOSO
+    with _LOCK_REPOSO:
+        _CALLBACK_REPOSO = cb
+
+
+def solicitar_reposo_desde_live(motivo: str = "orden_voz") -> str:
+    """Dispara el callback de reposo tras la despedida."""
+    with _LOCK_REPOSO:
+        cb = _CALLBACK_REPOSO
+    if callable(cb):
+        try:
+            # Ejecutar de forma segura
+            threading.Thread(target=cb, name="kaya-solicitar-reposo", daemon=True).start()
+        except Exception:
+            pass
+    return "Entrando en modo reposo. Te escucharé cuando me llames por mi nombre."
 
 
 class AdaptadorVozMuda:

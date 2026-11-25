@@ -188,8 +188,28 @@ class Silvestra:
 
         self.cara.root.after(100, self.revisar_cola)
 
+        self.orquestador_live = None
+        es_modo_clasico = "--clasico" in sys.argv or os.environ.get("KAYA_MODO", "").strip().lower() == "clasico"
+
+        if not es_modo_clasico:
+            try:
+                import kaya_live_orquestador
+                self.orquestador_live = kaya_live_orquestador.OrquestadorKayaLive(
+                    app_clasica=self,
+                    cara=self.cara,
+                    iniciar_en_live=True,
+                )
+                # En modo Live, redirigir controles de la esfera al orquestador
+                self.cara._al_escribir = self.orquestador_live.al_escribir
+                # Iniciar orquestador Live tras breve delay para que la cara esté lista
+                self.cara.root.after(200, self.orquestador_live.iniciar)
+            except Exception as e:
+                print(f"[main] No se pudo iniciar orquestador Live: {e}. Quedando en modo clásico.", flush=True)
+                self.orquestador_live = None
+
         if self.memoria.nombre:
-            self.cara.root.after(500, self.saludar)
+            if es_modo_clasico or self.orquestador_live is None:
+                self.cara.root.after(500, self.saludar)
         else:
             self.cara.root.after(800, self.nacer)
 
@@ -204,6 +224,11 @@ class Silvestra:
             self.cara.fijar_emocion(emo)
         self.cara.decir(texto, ms, emocion=emo)
         if con_voz:
+            orq = getattr(self, "orquestador_live", None)
+            if orq and hasattr(orq, "coordinar_aviso_externo"):
+                es_rec = "recordatorio" in str(texto).lower() or "⏰" in str(texto)
+                if orq.coordinar_aviso_externo(texto, es_recordatorio=es_rec):
+                    return
             self.ultimo_dicho = texto
             try:
                 import naturalidad
@@ -329,6 +354,11 @@ class Silvestra:
             self.casa.reloj.stop()
         except Exception:
             pass
+        if getattr(self, "orquestador_live", None):
+            try:
+                self.orquestador_live.cerrar()
+            except Exception:
+                pass
         for objeto, metodo, args in (
             (getattr(self, "palabra_clave", None), "detener", ()),
             (getattr(self, "invocacion", None), "detener", ()),

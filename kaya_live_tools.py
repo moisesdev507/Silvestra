@@ -132,12 +132,25 @@ def gestionar_memoria_temas(accion: str, tema: str = "", detalle: str = "") -> s
         return f"Error gestionando memoria de temas: {e}"
 
 
+def entrar_en_reposo(motivo: str = "") -> str:
+    """Pasa a Kaya a modo reposo y espera de activación por palabra clave."""
+    return kaya_live_puente.solicitar_reposo_desde_live(motivo or "orden_voz")
+
+
 def ejecutar_accion_pc(instruccion: str) -> str:
     """Ejecuta cualquier orden sobre el computador del usuario vía kaya_live_puente."""
     return kaya_live_puente.ejecutar_accion_local(instruccion)
 
 
 DECLARACIONES_HERRAMIENTAS = [
+    types.FunctionDeclaration(
+        name="entrar_en_reposo",
+        description="Invoca esta herramienta cuando el usuario te pida descansar, pausar, dejar de escuchar, dormir o guardar silencio.",
+        parameters=types.Schema(
+            type="OBJECT",
+            properties={"motivo": types.Schema(type="STRING", description="Razón o frase del usuario para entrar en reposo.")},
+        ),
+    ),
     types.FunctionDeclaration(
         name="ejecutar_accion_pc",
         description="USA ESTA HERRAMIENTA SIEMPRE para cualquier habilidad personal de Kaya y acciones en la PC: leer o escribir en tu diario personal ('qué dice tu diario', 'anota en tu diario'), revisar ideas o hilos pendientes, leer/resumir correos o Gmail, consultar agenda o calendario de Google, abrir o cerrar programas/apps (Chrome, Bloc de notas, Spotify, Calculadora), subir/bajar volumen o silenciar, programar recordatorios ('recuérdame en 10 mins...'), crear/leer archivos locales, minimizar ventanas o activar el HUD.",
@@ -211,6 +224,7 @@ async def despachar_herramienta(nombre: str, args: Dict[str, Any]) -> Any:
     nom = (nombre or "").strip()
     mapa = {
         "ejecutar_accion_pc": lambda: ejecutar_accion_pc(args.get("instruccion", "")),
+        "entrar_en_reposo": lambda: entrar_en_reposo(args.get("motivo", "")),
         "consultar_sistema": lambda: consultar_sistema(),
         "buscar_en_web": lambda: buscar_en_web(args.get("consulta", "")),
         "ver_pantalla": lambda: ver_pantalla(args.get("pregunta", "")),
