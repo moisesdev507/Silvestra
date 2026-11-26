@@ -144,7 +144,14 @@ class IdentidadDespertarTests(unittest.TestCase):
             identidad_origen.preparar_perfil_usuario("Alex")
             sesion = live_motor.SesionKayaLive(
                 orden_inicial="¡Hola Kaya! Ya encendió el equipo, saluda breve.")
-            sesion.activo = False
+            sesion.activo = True
+
+            async def _receive_vacio():
+                sesion.activo = False
+                if False:
+                    yield None
+
+            sesion_falsa.receive = MagicMock(return_value=_receive_vacio())
             sesion._tarea_envio_audio = AsyncMock()
             sesion._tarea_watchdog = AsyncMock()
             with patch.object(live_motor.live_audio, "obtener_api_key", return_value="clave-falsa"), \

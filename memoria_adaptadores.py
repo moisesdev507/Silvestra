@@ -53,6 +53,8 @@ def procesar_candidato(memoria, candidato, texto_usuario="", fuente="recuerdo_mo
 def procesar_extraccion(memoria, candidato, historial):
     if historial_prohibido(historial):
         return {"aceptado": False, "motivo": "directiva_no_guardar"}
+    if memoria_filtro.es_ruido_extraccion(candidato):
+        return {"aceptado": False, "motivo": "ruido_extraccion"}
     frase = memoria_formacion.normalizar(candidato)
     freq = max(1, sum(frase in memoria_formacion.normalizar(m.get("content", ""))
         for m in (historial or []) if m.get("role") == "user"))

@@ -79,6 +79,54 @@ def declaraciones_extra() -> List[types.FunctionDeclaration]:
             ),
         ),
         types.FunctionDeclaration(
+            name="recordar_dato",
+            description=(
+                "Guarda en la memoria permanente de Kaya un dato importante que el usuario "
+                "dijo sobre su vida, familia, gustos, trabajo, estudios o proyectos. "
+                "Úsala cuando pidan 'recuerda esto' o cuando cuenten algo duradero."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "hecho": types.Schema(
+                        type="STRING",
+                        description="Hecho concreto y explícito a recordar (una sola frase).",
+                    ),
+                },
+                required=["hecho"],
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="consultar_memoria",
+            description=(
+                "Consulta la memoria permanente compartida y responde con honestidad qué recuerda "
+                "Kaya sobre el usuario o sobre un tema concreto."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "tema": types.Schema(
+                        type="STRING",
+                        description="Tema a consultar; deja vacío o usa 'mí' para lo que sabe del usuario.",
+                    ),
+                },
+            ),
+        ),
+        types.FunctionDeclaration(
+            name="olvidar_dato",
+            description="Borra de la memoria permanente los recuerdos relacionados con un tema que el usuario pida olvidar.",
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "tema": types.Schema(
+                        type="STRING",
+                        description="Tema o dato concreto que debe olvidarse.",
+                    ),
+                },
+                required=["tema"],
+            ),
+        ),
+        types.FunctionDeclaration(
             name="escribir_en_diario",
             description=(
                 "Escribe una entrada breve en el diario íntimo de Kaya, en primera persona y con su propia voz. "
@@ -128,7 +176,54 @@ async def despachar(nombre: str, args: Dict[str, Any]) -> Any:
         return await loop.run_in_executor(
             None, lambda: diario_intimo.escribir(tema, app=None)
         )
+    if nombre == "recordar_dato":
+        return await loop.run_in_executor(None, recordar_dato, str(args.get("hecho", "")))
+    if nombre == "consultar_memoria":
+        return await loop.run_in_executor(None, consultar_memoria, str(args.get("tema", "")))
+    if nombre == "olvidar_dato":
+        return await loop.run_in_executor(None, olvidar_dato, str(args.get("tema", "")))
     return None
+
+
+def _memoria_principal():
+    """Instancia real compartida con la voz clásica; nunca crea una copia."""
+    try:
+        import memoria
+        return memoria.instancia_principal()
+    except Exception:
+        return None
+
+
+def recordar_dato(hecho):
+    """Guarda un hecho explícito en la memoria compartida."""
+    mem = _memoria_principal()
+    if mem is None:
+        return "Todavía no tengo la memoria lista."
+    dato = str(hecho or "").strip()
+    if not dato:
+        return "No me dijiste qué dato quieres que recuerde."
+    ok = mem.recordar(dato, origen="explicito", texto_usuario=f"Recuerda que {dato}",
+                      fuente="orden_explicita")
+    return f"Listo, guardé en memoria: {dato}" if ok else "No pude guardar ese dato de forma segura."
+
+
+def consultar_memoria(tema):
+    """Responde qué recuerda la instancia principal de Memoria."""
+    mem = _memoria_principal()
+    if mem is None:
+        return "Todavía no tengo la memoria lista."
+    return mem.consultar(str(tema or "").strip() or None)
+
+
+def olvidar_dato(tema):
+    """Borra recuerdos del tema indicado de la memoria compartida."""
+    mem = _memoria_principal()
+    if mem is None:
+        return "Todavía no tengo la memoria lista."
+    dato = str(tema or "").strip()
+    if not dato:
+        return "No me dijiste qué dato quieres que olvide."
+    return mem.olvidar(dato)
 
 
 def ejecutar_por_texto(texto: str) -> Any:
@@ -139,4 +234,7 @@ def ejecutar_por_texto(texto: str) -> Any:
         return None
 
 
-__all__ = ["declaraciones_extra", "despachar", "ejecutar_por_texto"]
+__all__ = [
+    "declaraciones_extra", "despachar", "ejecutar_por_texto",
+    "recordar_dato", "consultar_memoria", "olvidar_dato",
+]

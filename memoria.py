@@ -18,6 +18,11 @@ from memoria_facade_mantenimiento import MantenimientoMemoria
 _memoria_instancia = None
 
 
+def instancia_principal():
+    """Devuelve la Memoria real creada por main.py; nunca crea una copia."""
+    return _memoria_instancia
+
+
 class Memoria(MantenimientoMemoria):
     def __init__(self, ruta_db=None, ruta_json=None, usuario_id="local"):
         global _memoria_instancia
@@ -165,6 +170,7 @@ class Memoria(MantenimientoMemoria):
             if getattr(self, "bloqueo_invitado", False):
                 return
             from memoria_adaptadores import historial_prohibido, procesar_extraccion
+            from memoria_filtro import es_ruido_extraccion
             if historial_prohibido(historial):
                 return
             if not historial or len(historial) < 2:
@@ -187,8 +193,9 @@ class Memoria(MantenimientoMemoria):
                 "1. Extrae ÚNICAMENTE lo que el usuario afirmó directamente sobre su vida real o proyectos personales. Cero suposiciones. Cero salud íntima ni contraseñas.\n"
                 "2. PROHIBIDO guardar recuerdos sobre comandos, pruebas, pedidos a Silvestra, HUD, casa inteligente, hora, clima, saludos ni interacciones con la asistente.\n"
                 "3. PROHIBIDO especular o usar frases como 'el usuario parece tener interés en...'. Cada hecho debe ser concreto, útil y en UNA sola línea.\n"
-                "4. Si no hay hechos personales nuevos o relevantes, responde 'NINGUNO'.\n"
-                "5. Formato: una línea por hecho iniciando con 'HECHO: '\n"
+                "4. NUNCA guardes ruido de micrófono, suposiciones, comandos técnicos, órdenes para ti ni frases sobre esta conversación. Solo afirmaciones explícitas del dueño.\n"
+                "5. Si no hay hechos personales nuevos o relevantes, responde 'NINGUNO'.\n"
+                "6. Formato: una línea por hecho iniciando con 'HECHO: '\n"
                 "Ejemplo:\n"
                 "HECHO: A Moisés le gusta la comida italiana.\n"
                 "HECHO: Su hermano Carlos vive en David."
@@ -212,7 +219,8 @@ class Memoria(MantenimientoMemoria):
                 s = linea.strip()
                 if re.match(r"^HECHO\s*:\s*", s, re.I):
                     dato = re.sub(r"^HECHO\s*:\s*", "", s, flags=re.I).strip(" *\"'")
-                    if dato and dato.lower() not in ("ninguno", "ninguna", "nada"):
+                    if (dato and dato.lower() not in ("ninguno", "ninguna", "nada")
+                            and not es_ruido_extraccion(dato)):
                         if procesar_extraccion(self, dato, historial).get("aceptado"):
                             guardados_ahora += 1
 

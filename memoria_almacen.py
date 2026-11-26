@@ -21,6 +21,24 @@ def _ahora():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _sb_guardar(fila):
+    """Notifica el alta sin bloquear: Supabase decide si hay claves."""
+    try:
+        import memoria_supabase as sb
+        sb.notificar_guardado(fila)
+    except Exception:
+        pass
+
+
+def _sb_borrar(ids, usuario_id):
+    """Notifica el borrado sin bloquear ni lanzar errores al motor local."""
+    try:
+        import memoria_supabase as sb
+        sb.notificar_eliminacion(ids, usuario_id)
+    except Exception:
+        pass
+
+
 class AlmacenMemoriaCognitiva(TransaccionesMemoria):
     def __init__(self, ruta=":memory:", usuario_id="local"):
         self.ruta = os.fspath(ruta)
@@ -75,7 +93,9 @@ class AlmacenMemoriaCognitiva(TransaccionesMemoria):
                 "SELECT * FROM recuerdos WHERE usuario_id=? AND contenido_norm=? AND estado='activo' LIMIT 1", (uid, norm)
             ).fetchone()
             if previo:
-                return self._fila(previo)
+                fila = self._fila(previo)
+                _sb_guardar(fila)
+                return fila
             if reemplaza_a_id is not None and not self.conexion.execute(
                 "SELECT 1 FROM recuerdos WHERE id=? AND usuario_id=?", (reemplaza_a_id, uid)
             ).fetchone():
@@ -88,8 +108,9 @@ class AlmacenMemoriaCognitiva(TransaccionesMemoria):
                  reemplaza_a_id, fecha_evento, ahora, ahora, meta))
             if not self._tx_depth:
                 self.conexion.commit()
-            fila = self.conexion.execute("SELECT * FROM recuerdos WHERE id=?", (cur.lastrowid,)).fetchone()
-            return self._fila(fila)
+            fila = self._fila(self.conexion.execute("SELECT * FROM recuerdos WHERE id=?", (cur.lastrowid,)).fetchone())
+            _sb_guardar(fila)
+            return fila
 
     def buscar_texto(self, consulta, limite=10, tipos=None, solo_activos=True, usuario_id=None):
         uid = self._uid(usuario_id)
@@ -169,6 +190,7 @@ class AlmacenMemoriaCognitiva(TransaccionesMemoria):
             nuevo = self.guardar_recuerdo(nuevo_contenido, tipo_memoria or anterior["tipo_memoria"],
                 anterior["categoria"], origen, confianza, reemplaza_a_id=anterior_id, usuario_id=uid)
             if nuevo["id"] != anterior_id:
+                _sb_borrar([anterior_id], uid)
                 self.conexion.execute("UPDATE recuerdos SET estado='obsoleto',actualizado_en=? WHERE id=? AND usuario_id=?",
                                       (_ahora(), anterior_id, uid))
                 self.conexion.execute("INSERT INTO recuerdos_linaje(recuerdo_id,origen_id,usuario_id,fecha,motivo) VALUES(?,?,?,?,?)",
@@ -191,10 +213,14 @@ class AlmacenMemoriaCognitiva(TransaccionesMemoria):
             cur = self.conexion.execute("UPDATE recuerdos SET estado='eliminado',actualizado_en=? WHERE id=? AND usuario_id=?",
                 (_ahora(), int(recuerdo_id), uid))
             self.conexion.commit()
+            if cur.rowcount > 0:
+                _sb_borrar([recuerdo_id], uid)
             return cur.rowcount > 0
 
     def eliminar_recuerdos_fisicos(self, ids, usuario_id=None):
-        return memoria_almacen_purga.eliminar_fisicos(self, ids, usuario_id)
+        uid = self._uid(usuario_id)
+        _sb_borrar(ids, uid)
+        return memoria_almacen_purga.eliminar_fisicos(self, ids, uid)
 
     def eliminar_todos(self, usuario_id=None):
         return memoria_almacen_purga.eliminar_todos(self, usuario_id)

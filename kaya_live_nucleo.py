@@ -61,10 +61,8 @@ def construir_instruccion_sistema():
     )
     mem = ""
     try:
-        import iniciativa_kaya
-        res = iniciativa_kaya.resumen_compacto_temas()
-        if res:
-            mem = f"\n\n[Temas abiertos en memoria]:\n{res}"
+        import memoria_contexto
+        mem = memoria_contexto.resumen_para_prompt()
     except Exception:
         pass
     return base + guia + mem

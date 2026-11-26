@@ -174,6 +174,15 @@ def resumen_compacto_temas():
     return resumen[:180]
 
 
+def resumen_memoria_con_sesion():
+    """Resumen real y anti-repetición de Memoria para los prompts de Gemini Live."""
+    try:
+        import memoria_contexto
+        return memoria_contexto.resumen_para_prompt()
+    except Exception:
+        return ""
+
+
 def usuario_ocupado(app):
     """Detecta si el usuario está en llamada, hablando, reproduciendo música o con pantalla activa en video."""
     if not app:

@@ -114,6 +114,26 @@ def es_recuerdo_valido(hecho):
     return True, ""
 
 
+# Ruido específico de la vía de extracción (no altera es_recuerdo_valido).
+RUIDO_EXTRACCION = (
+    r"^\s*(?:eh|em|mm|aj[áa]|vale|ok|de acuerdo|entiendo|gracias|hola|adios|silencio|ruido|inaudible|no se escucha|me escuchas)"
+    r"(?:[ ,.!?]+(?:eh|em|mm|aj[áa]|vale|ok|gracias|hola|de acuerdo|entiendo))*[ .!?]*$",
+    r"\b(?:parece|supongo|quiz[aá]|tal vez|creo que|podria ser|posiblemente|probablemente|seguramente|debe ser|deduzco|infiero|lo que sugiere|lo que indica)\b",
+    r"\b(?:el usuario|la asistente|kaya|silvestra|gemini|el sistema|el prompt|function calling|hud)\b",
+    r"\b(?:me pidio|le pedi|le dije|me dijo|pregunto|respondio|invoco|ejecuto)\b",
+    r"\b(?:consulta el clima|busca en internet|revisa la pantalla|pon musica|sube el volumen|baja el volumen|abre el archivo|cierra el programa|graba el diario|activa el hud)\b",
+    r"\b(?:comando|herramienta|parametro|codigo|script|terminal|consola|json)\b",
+)
+
+
+def es_ruido_extraccion(texto):
+    """True si el texto es ruido, suposición o comando técnico; nunca guardarlo."""
+    norm = normalizar_para_filtro(texto)
+    if not norm:
+        return True
+    return any(re.search(patron, norm) for patron in RUIDO_EXTRACCION)
+
+
 def es_duplicado(nuevo_hecho, hechos_existentes):
     """Detecta duplicados exactos o semánticamente casi idénticos con alta coincidencia de palabras."""
     if not nuevo_hecho or not hechos_existentes:
