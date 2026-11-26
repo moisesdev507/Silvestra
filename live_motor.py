@@ -3,6 +3,7 @@ import asyncio, queue, threading
 from typing import Callable, Optional
 from google import genai
 from google.genai import types
+import estado_emocional_kaya
 import identidad_origen
 import live_audio, live_fecha, live_herramientas, live_webrtc, puerta_audio_live
 from live_motor_audio import CapaAudioLive
@@ -137,15 +138,15 @@ class SesionKayaLive(CapaAudioLive):
 
                     tarea_audio = asyncio.create_task(self._tarea_envio_audio(session))
                     tarea_dog = asyncio.create_task(self._tarea_watchdog())
+                    turno_interrumpido = False
                     try:
                         async for resp in session.receive():
                             if not self.activo:
                                 break
                             sc = resp.server_content
                             if sc:
-                                if getattr(sc, "turn_complete", False):
-                                    self.puerta.notificar_actividad()
                                 if getattr(sc, "interrupted", False):
+                                    turno_interrumpido = True
                                     if self._puente_webrtc is not None:
                                         self._puente_webrtc.interrumpir_salida()
                                     else:
@@ -153,6 +154,12 @@ class SesionKayaLive(CapaAudioLive):
                                             self.cola_audio_salida.queue.clear()
                                         self._notificar_estado("escuchando")
                                     self.puerta.notificar_actividad()
+                                    estado_emocional_kaya.registrar_si_disponible("interrupcion_barge_in")
+                                if getattr(sc, "turn_complete", False):
+                                    self.puerta.notificar_actividad()
+                                    if not turno_interrumpido:
+                                        estado_emocional_kaya.registrar_si_disponible("charla_fluida")
+                                    turno_interrumpido = False
                                 mt = sc.model_turn
                                 if mt:
                                     for part in mt.parts:

@@ -200,6 +200,10 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         res_t = iniciativa_kaya.resumen_compacto_temas()
         if res_t:
             temas_abiertos_txt = f"{res_t}\n"
+        # Misma vida interior y bromas que Gemini Live (voz clásica).
+        res_mem = iniciativa_kaya.resumen_memoria_con_sesion()
+        if res_mem:
+            temas_abiertos_txt = res_mem.strip() + "\n" + temas_abiertos_txt
     except Exception:
         pass
 

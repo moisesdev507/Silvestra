@@ -10,6 +10,8 @@ from google.genai import types
 
 import capacidades_extra as cap
 
+ETIQUETA_BROMA = "[BROMA_INTERNA]"
+
 
 def declaraciones_extra() -> List[types.FunctionDeclaration]:
     """Declaraciones de las capacidades locales añadidas a Gemini Live."""
@@ -127,6 +129,28 @@ def declaraciones_extra() -> List[types.FunctionDeclaration]:
             ),
         ),
         types.FunctionDeclaration(
+            name="guardar_broma_interna",
+            description=(
+                "Guarda en la memoria compartida una broma recurrente, un apodo entre Kaya y "
+                "el usuario o un código propio que ya se volvió costumbre. Úsala cuando "
+                "inventen o repitan un chiste interno."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "broma": types.Schema(
+                        type="STRING",
+                        description="Broma, apodo o código propio en una frase breve.",
+                    ),
+                    "contexto": types.Schema(
+                        type="STRING",
+                        description="Situación en la que surge o se usa la broma (opcional).",
+                    ),
+                },
+                required=["broma"],
+            ),
+        ),
+        types.FunctionDeclaration(
             name="escribir_en_diario",
             description=(
                 "Escribe una entrada breve en el diario íntimo de Kaya, en primera persona y con su propia voz. "
@@ -182,6 +206,11 @@ async def despachar(nombre: str, args: Dict[str, Any]) -> Any:
         return await loop.run_in_executor(None, consultar_memoria, str(args.get("tema", "")))
     if nombre == "olvidar_dato":
         return await loop.run_in_executor(None, olvidar_dato, str(args.get("tema", "")))
+    if nombre == "guardar_broma_interna":
+        return await loop.run_in_executor(
+            None, guardar_broma_interna,
+            str(args.get("broma", "")), str(args.get("contexto", "")),
+        )
     return None
 
 
@@ -226,6 +255,23 @@ def olvidar_dato(tema):
     return mem.olvidar(dato)
 
 
+def guardar_broma_interna(broma, contexto=""):
+    """Guarda una broma recurrente en la Memoria real con etiqueta propia."""
+    mem = _memoria_principal()
+    if mem is None:
+        return "Todavía no tengo la memoria lista."
+    dato = str(broma or "").strip()[:180]
+    if not dato:
+        return "No me dijiste qué broma quieres que guarde."
+    contenido = ETIQUETA_BROMA + " " + dato
+    ctx = str(contexto or "").strip()[:80]
+    if ctx:
+        contenido += f" (contexto: {ctx})"
+    # Sin texto_usuario: 'guarda' dispararía la directiva y perdería la etiqueta.
+    ok = mem.recordar(contenido, origen="explicito", fuente="orden_explicita")
+    return f"Listo, guardé nuestra broma: {dato}" if ok else "No pude guardar esa broma de forma segura."
+
+
 def ejecutar_por_texto(texto: str) -> Any:
     """Atajo para órdenes en lenguaje natural dentro de ejecutar_accion_local."""
     try:
@@ -236,5 +282,5 @@ def ejecutar_por_texto(texto: str) -> Any:
 
 __all__ = [
     "declaraciones_extra", "despachar", "ejecutar_por_texto",
-    "recordar_dato", "consultar_memoria", "olvidar_dato",
+    "recordar_dato", "consultar_memoria", "olvidar_dato", "guardar_broma_interna",
 ]

@@ -1,8 +1,9 @@
 """Contexto dinámico y compacto de Memoria para los prompts de Kaya.
 
-Sustituye la inyección estática de temas_abiertos_kaya.json. Solo usa hechos
-verificados (SQLite) y resúmenes reales; registra lo ya inyectado en estado.json
-para no repetir datos ni saludos al despertar del reposo Azul.
+Sustituye la inyección estática de temas_abiertos_kaya.json. Usa hechos
+verificados (SQLite), el ánimo actual y hasta dos bromas internas; registra en
+estado.json los hechos ya inyectados para no repetir datos ni saludos al
+despertar. El bloque completo se mantiene por debajo de 450 caracteres.
 """
 import hashlib
 import re
@@ -14,6 +15,8 @@ import estado
 _CLAVE = "memoria_contexto_sesion"
 _MAX_CHARS = 360
 _MAX_VISTOS = 24
+_BROMA_MARCA = "[BROMA_INTERNA]"
+_MAX_BROMAS = 2
 _bloqueo = threading.RLock()
 
 
@@ -51,7 +54,10 @@ def hechos_verificados(memoria=None, limite=3):
             confianza = 0.0
         if confianza < 0.8:
             continue
-        texto = _limpio(fila.get("contenido"))
+        contenido = str(fila.get("contenido") or "")
+        if _BROMA_MARCA in contenido:
+            continue
+        texto = _limpio(contenido)
         if len(texto) < 12:
             continue
         try:
@@ -87,6 +93,42 @@ def resumen_conversaciones(memoria=None, limite=2):
     except Exception:
         pass
     return salida[:limite]
+
+
+def bromas_internas(memoria=None, limite=_MAX_BROMAS):
+    """Bromas, apodos o códigos propios vigentes, sin la etiqueta de almacenaje."""
+    mem = memoria if memoria is not None else _instancia()
+    if mem is None:
+        return []
+    try:
+        filas = mem.almacen.listar_recuerdos(300, usuario_id=mem.usuario_id)
+    except Exception:
+        return []
+    salida = []
+    for fila in filas:
+        if fila.get("estado") != "activo":
+            continue
+        contenido = str(fila.get("contenido") or "")
+        if _BROMA_MARCA not in contenido:
+            continue
+        texto = contenido.split(_BROMA_MARCA, 1)[1]
+        texto = re.sub(r"\s*\(contexto:[^)]*\)\s*$", "", texto).strip()
+        texto = _limpio(texto, 90)
+        if texto:
+            salida.append(f"Broma: {texto}")
+        if len(salida) >= limite:
+            break
+    return salida
+
+
+def _directriz_emocional(memoria=None):
+    """Ánimo real del mismo perfil; nunca inventa un tono."""
+    try:
+        import estado_emocional_kaya
+        uid = getattr(memoria, "usuario_id", "local") if memoria is not None else "local"
+        return estado_emocional_kaya.resumen_estado_emocional(uid)
+    except Exception:
+        return ""
 
 
 def _hash(texto):
@@ -136,39 +178,47 @@ def resetear_sesion():
 
 
 def resumen_para_prompt(memoria=None, incluir_conversaciones=True):
-    """Devuelve un bloque compacto solo con datos aún no inyectados."""
+    """Ánimo + bromas vigentes + solo datos aún no inyectados."""
     mem = memoria if memoria is not None else _instancia()
     hechos = hechos_verificados(mem)
     charlas = resumen_conversaciones(mem) if incluir_conversaciones else []
+    obligatorios = []
+    animo = _directriz_emocional(mem)
+    if animo:
+        obligatorios.append(animo[:160])
+    obligatorios.extend(bromas_internas(mem))
     with _bloqueo:
         datos, reg = _registro()
         _asegurar_dia(reg)
         vistos = list(reg.get("vistos") or [])
         conocidos = set(vistos)
-        elegidos = []
+        candidatos = []
         for etiqueta, textos in (("hecho", hechos), ("charla", charlas)):
             for texto in textos:
                 clave = _hash(etiqueta + ":" + texto)
                 if clave in conocidos:
                     continue
-                elegidos.append((etiqueta, texto, clave))
-        if not elegidos:
-            return ""
-        bloques = []
-        for etiqueta, texto, clave in elegidos:
+                candidatos.append((etiqueta, texto, clave))
+        bloques = list(obligatorios)
+        aceptados = []
+        for etiqueta, texto, clave in candidatos:
             prefijo = "Hecho" if etiqueta == "hecho" else "Charla"
-            bloques.append(f"{prefijo}: {texto}")
-            vistos.append(clave)
+            bloque = f"{prefijo}: {texto}"
+            if len("; ".join(bloques + [bloque])) > _MAX_CHARS:
+                break
+            bloques.append(bloque)
+            aceptados.append(clave)
+        if not bloques:
+            return ""
+        vistos.extend(aceptados)
         reg["vistos"] = vistos[-_MAX_VISTOS:]
         datos[_CLAVE] = reg
         estado.guardar(datos)
-    texto = "; ".join(bloques)
-    if len(texto) > _MAX_CHARS:
-        texto = texto[:_MAX_CHARS].rsplit("; ", 1)[0]
+    texto = "; ".join(bloques)[:_MAX_CHARS]
     return f"\n\n[Lo que ya sé de ti, sin repetirlo]: {texto}."
 
 
 __all__ = [
-    "hechos_verificados", "resumen_conversaciones", "registrar_despertar",
-    "resetear_sesion", "resumen_para_prompt",
+    "hechos_verificados", "resumen_conversaciones", "bromas_internas",
+    "registrar_despertar", "resetear_sesion", "resumen_para_prompt",
 ]

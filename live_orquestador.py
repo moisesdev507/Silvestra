@@ -13,6 +13,7 @@ import time
 from typing import Optional
 
 import despertar_local
+import estado_emocional_kaya
 import live_audio
 import live_motor
 
@@ -262,6 +263,9 @@ class CoordinadorLiveSilvestra:
                     audio_inicial = list(audio_inicial or []) + extra
 
             ok = self.sesion_live.iniciar()
+            if ok:
+                # El motor decide si hubo >2h; nunca bloquea ni toca Qt.
+                estado_emocional_kaya.registrar_si_disponible("despertar_tras_abandono")
             if not ok:
                 self.sesion_live = None
                 self._reanudar_captura_local()
