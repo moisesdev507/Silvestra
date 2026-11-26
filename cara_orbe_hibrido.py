@@ -111,6 +111,10 @@ class GestorOrbeHibrido:
 
     def deducir_estado(self, cara) -> str:
         if getattr(cara, "voz_silenciada", False): return "silenciada"
+        if getattr(cara, "micro_live_cerrado", False): return "reposo"
+        if (str(getattr(cara, "estado_live", "") or "").lower() == "reposo"
+                and not getattr(cara, "hablando", False)
+                and not getattr(cara, "escuchando", False)): return "reposo"
         ahora = time.time()
         if ahora < getattr(cara, "baile_hasta", 0.0): return "bailando"
         if getattr(cara, "hablando", False):

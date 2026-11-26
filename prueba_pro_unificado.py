@@ -232,9 +232,10 @@ class PruebaPcm(unittest.TestCase):
     def test_stream_continuo_en_amarillo(self):
         with open("live_webrtc.py", "r", encoding="utf-8") as f:
             codigo = f.read()
-        self.assertIn("Math.max(0.0025,piso*1.35)", codigo)
+        self.assertIn("Math.max(0.0065,piso*1.65)", codigo)
         self.assertIn("new Int16Array(pcm.length).buffer", codigo)
         self.assertIn("if(dormida){preroll.push(pcm.buffer)", codigo)
+        self.assertIn('sendCtrl({type:"estado",v:"reposo"})', codigo)
 
 
 if __name__ == "__main__":

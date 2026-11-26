@@ -23,6 +23,11 @@ class Cerebro:
         self.historial = []
         self.modelos = list(MODELOS)
         self.ultima_reflexion = 0.0
+        try:
+            import memoria_contexto
+            memoria_contexto.instalar_espejo(self._registrar_espejo)
+        except Exception:
+            pass
         self._seguimiento_visual_pendiente = False
         try:
             import enrutador_expertos
@@ -37,16 +42,14 @@ class Cerebro:
         if len(self.historial) > 24:
             self.historial = self.historial[-16:]
 
+    def _registrar_espejo(self, papel, contenido):
+        from cerebro_hilo import reflejar_turno
+        reflejar_turno(self.historial, papel, contenido)
+
     def _obtener_historial_podado(self):
-        """Devuelve los últimos 8 turnos recortando respuestas largas."""
-        hist_reciente = self.historial[-8:]
-        hist_podado = []
-        for h in hist_reciente:
-            c = h.get("content", "")
-            if h.get("role") == "assistant" and len(c) > 220:
-                c = c[:220].rsplit(" ", 1)[0] + "..."
-            hist_podado.append({"role": h.get("role"), "content": c})
-        return hist_podado
+        """Historial compartido Live/Celeste."""
+        from cerebro_hilo import historial_podado
+        return historial_podado(self.historial)
 
     def instrucciones(self, texto_actual=None):
         es_invitado = bool(getattr(self, "turno_invitado", False))

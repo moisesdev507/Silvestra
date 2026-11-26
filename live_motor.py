@@ -6,15 +6,12 @@ from google.genai import types
 import ciclo_sueno_kaya
 import estado_emocional_kaya
 import identidad_origen
-import live_audio, live_fecha, live_herramientas, live_webrtc, memoria_contexto, puerta_audio_live
+import live_audio, live_herramientas, live_turno, live_webrtc, memoria_contexto, puerta_audio_live
 from live_motor_audio import CapaAudioLive
 
 MODELO_DEFECTO = "gemini-2.5-flash-native-audio-latest"
 VOZ_DEFECTO = identidad_origen.VOZ_KAYA_LIVE
 from live_audio import activar_enfriamiento_cuota, es_error_cuota, esta_en_enfriamiento_cuota
-
-
-_instruccion_con_hora_local = live_fecha.instruccion_con_hora_local
 
 
 class SesionKayaLive(CapaAudioLive):
@@ -104,21 +101,13 @@ class SesionKayaLive(CapaAudioLive):
         despertar = identidad_origen.consumir_primer_despertar()
         nombre_actual = identidad_origen.nombre_usuario()
         rapido = bool(self.orden_inicial and ("enciende" in self.orden_inicial or "encendi?" in self.orden_inicial))
-        cfg = types.LiveConnectConfig(
-            response_modalities=["AUDIO"],
-            speech_config=types.SpeechConfig(
-                voice_config=types.VoiceConfig(prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=self.voz))
-            ),
-            system_instruction=types.Content(parts=[types.Part.from_text(text=_instruccion_con_hora_local(rapido, despertar, nombre_actual))]),
-            tools=live_herramientas.declarar_declaraciones_herramientas(),
-            **live_audio.configuracion_transcripcion(),
-        )
-
         self._notificar_estado("conectando")
         live_herramientas.registrar_callback_reposo(self.detener)
         primer_ciclo = True
+        acumulador = live_turno.AcumuladorTurnos()
 
         while self.activo:
+            cfg = live_turno.construir_config(self.voz, rapido, despertar, nombre_actual)
             try:
                 async with client.aio.live.connect(model=self.modelo, config=cfg) as session:
                     self._session_genai = session
@@ -157,10 +146,11 @@ class SesionKayaLive(CapaAudioLive):
                                 if it and getattr(it, "text", None):
                                     voz = live_audio.trazar_transcripcion("USUARIO", it.text)
                                     if voz:
-                                        memoria_contexto.registrar_turno("user", voz)
+                                        acumulador.agregar_usuario(voz)
                                         self._notificar_texto("usuario", voz)
                                 ot = getattr(sc, "output_audio_transcription", None)
-                                live_audio.trazar_transcripcion("KAYA", getattr(ot, "text", ""))
+                                texto_kaya = live_audio.trazar_transcripcion("KAYA", getattr(ot, "text", ""))
+                                acumulador.agregar_kaya(texto_kaya)
                                 if getattr(sc, "interrupted", False):
                                     turno_interrumpido = True
                                     if self._puente_webrtc is not None:
@@ -172,6 +162,7 @@ class SesionKayaLive(CapaAudioLive):
                                     self.puerta.notificar_actividad()
                                     estado_emocional_kaya.registrar_si_disponible("interrupcion_barge_in")
                                 if getattr(sc, "turn_complete", False):
+                                    acumulador.vaciar()
                                     self.puerta.notificar_actividad()
                                     if not turno_interrumpido:
                                         estado_emocional_kaya.registrar_si_disponible("charla_fluida")
@@ -187,6 +178,7 @@ class SesionKayaLive(CapaAudioLive):
                                                 self.compuerta.marcar_encolado_salida()
                                                 self.cola_audio_salida.put(part.inline_data.data)
                                         if getattr(part, "text", None):
+                                            acumulador.agregar_kaya(part.text)
                                             self._notificar_texto("kaya", part.text)
                             tc = resp.tool_call
                             if tc:
@@ -201,6 +193,7 @@ class SesionKayaLive(CapaAudioLive):
                                 if resps:
                                     await session.send_tool_response(function_responses=resps)
                     finally:
+                        acumulador.vaciar()
                         tarea_audio.cancel()
                         tarea_dog.cancel()
                 if not self.activo:

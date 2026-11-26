@@ -64,14 +64,14 @@ async function iniciar(){
     for(let i=0;i<d.length;i++){const v=Math.max(-1,Math.min(1,d[i]));sum+=v*v;pcm[i]=v<0?v*32768:v*32767;}
     const rms=Math.sqrt(sum/d.length),ahora=performance.now();
     if(sources.length===0&&rms<piso*1.15)piso=Math.min(0.007,piso*0.98+rms*0.02);
-    const uActivo=Math.max(0.0025,piso*1.35),uWake=Math.max(0.006,piso*1.8);
+    const uActivo=Math.max(0.0065,piso*1.65),uWake=Math.max(0.006,piso*1.8);
     if(dormida){preroll.push(pcm.buffer);if(preroll.length>8)preroll.shift();}
     const umbral=dormida?uWake:uActivo;
     if(rms>umbral){
       const estabaMudo=!dormida&&colaVoz===0;
       framesVoz++;colaVoz=22;
       if(!dormida){
-        ultimoHabla=ahora;sendCtrl({type:"nivel",v:Math.min(1,rms*6)});
+        if(framesVoz>=2)ultimoHabla=ahora;sendCtrl({type:"nivel",v:Math.min(1,rms*6)});
         if(estabaMudo){preroll.forEach(b=>ws.send(b));preroll=[];}
       }
     }else{framesVoz=0;if(colaVoz>0)colaVoz--;}

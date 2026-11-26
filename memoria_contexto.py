@@ -20,6 +20,7 @@ _BROMA_MARCA = "[BROMA_INTERNA]"
 _MAX_BROMAS = 2
 _TURNOS = deque(maxlen=16)
 _bloqueo = threading.RLock()
+_espejo = None
 
 
 def _instancia():
@@ -123,14 +124,56 @@ def bromas_internas(memoria=None, limite=_MAX_BROMAS):
     return salida
 
 
-def registrar_turno(rol, texto):
-    """Acumula turnos reales de la sesión (memoria RAM, sin I/O en audio)."""
-    limpio = _limpio(texto, 180)
+def instalar_espejo(fn=None):
+    """Enlaza cerebro.historial como reflejo de los turnos reales compartidos."""
+    global _espejo
+    with _bloqueo:
+        _espejo = fn if callable(fn) else None
+
+
+def registrar_turno(rol, texto, espejo=True):
+    """Acumula turnos reales de la sesión y los refleja en cerebro.historial."""
+    limpio = _limpio(texto, 400)
     if not limpio:
         return
     papel = "user" if str(rol or "").lower() in ("user", "usuario", "tú") else "kaya"
     with _bloqueo:
         _TURNOS.append({"role": papel, "content": limpio})
+        destino = _espejo if espejo else None
+    if destino is not None:
+        try:
+            destino(papel, limpio)
+        except Exception:
+            pass
+
+
+def registrar_par(texto_usuario, texto_kaya):
+    """Registra el par usuario/Kaya de Celeste sin duplicar el espejo."""
+    registrar_turno("user", texto_usuario, espejo=False)
+    registrar_turno("kaya", texto_kaya, espejo=False)
+
+
+def historial_conversacion_activa(max_turnos=12, max_chars=1400):
+    """Últimos turnos reales compartidos por Live y Celeste, con roles de chat."""
+    n = max(1, min(24, int(max_turnos)))
+    limite = max(1, int(max_chars))
+    with _bloqueo:
+        recientes = list(_TURNOS)[-n:]
+    salida, usados = [], 0
+    for turno in reversed(recientes):
+        contenido = str(turno.get("content") or "").strip()
+        if not contenido:
+            continue
+        restante = limite - usados
+        if restante <= 0:
+            break
+        if len(contenido) > restante:
+            contenido = contenido[:restante].rstrip()
+        papel = "user" if turno.get("role") == "user" else "assistant"
+        salida.append({"role": papel, "content": contenido})
+        usados += len(contenido)
+    salida.reverse()
+    return salida
 
 
 def turnos_recientes():

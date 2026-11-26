@@ -1,4 +1,4 @@
-"""Manejo de respuestas en streaming para Silvestra mediante la cadena de proveedores."""
+"""Respuestas en streaming por cadena de proveedores."""
 from cerebro import separar
 import cerebro_enrutador
 import proveedores
@@ -18,6 +18,11 @@ def _reg_turno(cerebro, u_txt, a_txt, al_frase=None):
             cerebro.historial.append({"role": "assistant", "content": a_txt})
         if hasattr(cerebro, "_podar_historial"):
             cerebro._podar_historial()
+    except Exception:
+        pass
+    try:
+        import memoria_contexto
+        memoria_contexto.registrar_par(u_txt, a_txt)
     except Exception:
         pass
 
@@ -141,7 +146,7 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     except Exception as e:
         print(f"[planificador] Error: {e}", flush=True)
 
-    # 2. Atajo de recordatorio simple (retorna None en accion para evitar re-ejecucion doble en eventos.py)
+    # 2. Atajo de recordatorio (evita doble ejecución).
     import recordatorios
     if recordatorios.es_recordatorio_temporal(texto):
         rec_mgr = getattr(app, "recordatorios", None)
@@ -230,13 +235,14 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
     except Exception:
         pass
     cerebro.historial.append({"role": "user", "content": texto})
-    # Ventana ampliada a 12 mensajes para razonamiento técnico multi-turno.
     mensajes = [{"role": "system", "content": cerebro.instrucciones(texto)}]
     if ctx_pp:
         mensajes.append({"role": "system", "content": ctx_pp})
-    mensajes += cerebro.historial[-12:]
+    mensajes += (cerebro._obtener_historial_podado()
+                 if hasattr(cerebro, "_obtener_historial_podado")
+                 else cerebro.historial[-12:])
 
-    # 6. Charla en vivo (Gemini Live): solo si está activo y sin enfriamiento por 429.
+    # 6. Live (sin enfriamiento de cuota).
     try:
         import gemini_live
         vivo = gemini_live.turno_live(mensajes, texto=texto_orig, al_frase=al_frase)
