@@ -81,3 +81,5 @@ dist/
 build/
 dist_exe/
 *.spec
+
+.kaya_webrtc_perfil/

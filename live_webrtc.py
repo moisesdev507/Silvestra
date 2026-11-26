@@ -18,13 +18,14 @@ HTML_PUENTE = """<!doctype html><html><head><meta charset="utf-8"><title>Kaya Au
 <div id="st">Iniciando puente WebRTC...</div>
 <script>
 const st=document.getElementById("st"),wsPort=location.hash.slice(1);
-let ws,ctx,nextT=0,sources=[],dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.012,framesVoz=0,colaWake=0;
+let ws,ctx,nextT=0,sources=[],dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.012,framesVoz=0,preroll=[];
 function sendCtrl(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));}
 function limpiarAudio(){sources.forEach(s=>{try{s.stop()}catch{}});sources=[];if(ctx)nextT=ctx.currentTime;}
 function despertar(){
   if(!dormida)return;
   dormida=false;framesVoz=0;ultimoHabla=performance.now();
   sendCtrl({type:"estado",v:"escuchando"});
+  if(ws&&ws.readyState===1){preroll.forEach(b=>ws.send(b));preroll=[];}
 }
 function playPcm24k(buf){
   if(!ctx){colaPreCtx.push(buf);return;}
@@ -63,7 +64,8 @@ async function iniciar(){
     for(let i=0;i<d.length;i++){const v=Math.max(-1,Math.min(1,d[i]));sum+=v*v;pcm[i]=v<0?v*32768:v*32767;}
     const rms=Math.sqrt(sum/d.length),ahora=performance.now();
     if(sources.length===0&&rms<piso*1.35)piso=piso*0.97+rms*0.03;
-    const uActivo=Math.max(0.022,piso*1.75),uWake=Math.max(0.034,piso*2.35);
+    const uActivo=Math.max(0.011,piso*1.6),uWake=Math.max(0.013,piso*1.8);
+    preroll.push(pcm.buffer);if(preroll.length>6)preroll.shift();
     const umbral=dormida?uWake:uActivo;
     if(rms>umbral){
       framesVoz++;
@@ -75,8 +77,7 @@ async function iniciar(){
       sendCtrl({type:"sleep"});sendCtrl({type:"estado",v:"reposo"});
       return;
     }
-    if(rms>uActivo)colaWake=12;else if(colaWake>0)colaWake--;
-    if(!dormida||colaWake>0)ws.send(pcm.buffer);
+    if(!dormida){ws.send(pcm.buffer);}else if(framesVoz>=3){despertar();}
   };
 }
 iniciar().catch(e=>{st.textContent="Error: "+e;sendCtrl({type:"error",msg:String(e)});});

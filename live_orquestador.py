@@ -135,6 +135,12 @@ class CoordinadorLiveSilvestra:
                 oid.pausar()
             except Exception:
                 pass
+        voz = getattr(self.app, "voz", None)
+        if voz and hasattr(voz, "pausar"):
+            try:
+                voz.pausar()
+            except Exception:
+                pass
 
     def _reanudar_captura_local(self):
         oid = getattr(self.app, "oido", None)
@@ -147,6 +153,12 @@ class CoordinadorLiveSilvestra:
         if inv and hasattr(inv, "reanudar"):
             try:
                 inv.reanudar()
+            except Exception:
+                pass
+        voz = getattr(self.app, "voz", None)
+        if voz and hasattr(voz, "reanudar"):
+            try:
+                voz.reanudar()
             except Exception:
                 pass
 

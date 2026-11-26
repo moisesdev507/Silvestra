@@ -1,58 +1,21 @@
 """Motor interactivo Gemini Live para Silvestra con puente WebRTC y respaldo PortAudio."""
-import asyncio, queue, threading, time
-from datetime import datetime
+import asyncio, queue, threading
 from typing import Callable, Optional
 from google import genai
 from google.genai import types
-import despertar_local, identidad_origen, json, os
-import live_audio, live_herramientas, live_webrtc, puerta_audio_live
+import identidad_origen
+import live_audio, live_fecha, live_herramientas, live_webrtc, puerta_audio_live
+from live_motor_audio import CapaAudioLive
 
 MODELO_DEFECTO = "gemini-2.5-flash-native-audio-latest"
 VOZ_DEFECTO = identidad_origen.VOZ_KAYA_LIVE
 from live_audio import activar_enfriamiento_cuota, es_error_cuota, esta_en_enfriamiento_cuota
 
 
-_DIAS_ES = ("lunes", "martes", "mi?rcoles", "jueves", "viernes", "s?bado", "domingo")
-_MESES_ES = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+_instruccion_con_hora_local = live_fecha.instruccion_con_hora_local
 
 
-def _instruccion_con_hora_local(rapido: bool, primer_despertar: bool, nombre_usuario: str) -> str:
-    base = live_audio.construir_instruccion_sistema(
-        rapido=rapido, primer_despertar=primer_despertar, nombre_usuario=nombre_usuario
-    )
-    ahora = datetime.now()
-    fecha_local = f"{_DIAS_ES[ahora.weekday()]} {ahora.day} de {_MESES_ES[ahora.month - 1]} de {ahora.year}, {ahora.strftime('%H:%M')}"
-    return f"{base}\nFecha y hora local actual del usuario: {fecha_local} (usa siempre esta fecha y hora local, nunca UTC)."
-
-
-def _crear_reconocedor_kaya():
-    ruta = despertar_local.ruta_modelo_vosk()
-    if not os.path.isdir(ruta):
-        return None
-    try:
-        import vosk
-        vosk.SetLogLevel(-1)
-        gramatica = json.dumps(["kaya", "kaia", "calla", "oye kaya", "hola kaya", "[unk]"], ensure_ascii=False)
-        return vosk.KaldiRecognizer(vosk.Model(ruta), 16000, gramatica)
-    except Exception as e:
-        print(f"[LIVE][WAKE] Aviso Vosk: {e}", flush=True)
-        return None
-
-
-def _detecto_kaya_en_chunk(rec, pcm: bytes) -> bool:
-    if rec is None or not pcm:
-        return False
-    try:
-        hecho = rec.AcceptWaveForm(pcm)
-        raw = rec.Result() if hecho else rec.PartialResult()
-        data = json.loads(raw or "{}")
-        txt = data.get("text") or data.get("partial") or ""
-        return despertar_local.contiene_kaya(txt)
-    except Exception:
-        return False
-
-
-class SesionKayaLive:
+class SesionKayaLive(CapaAudioLive):
     def __init__(
         self,
         modelo: str = MODELO_DEFECTO,
@@ -107,101 +70,6 @@ class SesionKayaLive:
                 self.on_transcripcion(rol, texto)
             except Exception:
                 pass
-
-    def _callback_audio_in(self, indata, frames, time_info, status):
-        if not self.activo:
-            return
-        pcm = bytes(indata)
-        if self._rate_entrada != live_audio.RATE_ENTRADA:
-            pcm = live_audio.remuestrear_pcm16_a_16k(pcm, self._rate_entrada)
-        chunk, silenciado = self.compuerta.filtrar_chunk_entrada(pcm)
-        if silenciado or not puerta_audio_live.encolar_autorizados(
-                self.puerta, chunk, self.cola_audio_entrada):
-            return
-        self._notificar_estado("escuchando")
-        self._notificar_nivel(live_audio.calcular_energia_pcm16(chunk))
-        ahora = time.monotonic()
-        if not self._en_rafaga_voz or ahora - self._t_ultimo_log_voz >= 1.5:
-            self._en_rafaga_voz, self._t_ultimo_log_voz = True, ahora
-            print("[LIVE][AUDIO] Gate local abierto por voz.", flush=True)
-
-    def _bucle_reproduccion_salida(self):
-        try:
-            self._stream_salida = live_audio.crear_output_stream()
-        except Exception as e:
-            print(f"[LIVE][AUDIO] Error iniciando stream salida: {e}", flush=True)
-            return
-
-        try:
-            while self.activo:
-                try:
-                    chunk = self.cola_audio_salida.get(timeout=0.1)
-                except queue.Empty:
-                    self.puerta.marcar_reproduccion(False)
-                    if self._estado_actual == "hablando" and not self.compuerta.esta_en_ventana_eco():
-                        self._notificar_estado("escuchando")
-                    continue
-                if not chunk:
-                    continue
-                self._notificar_estado("hablando")
-                self._notificar_nivel(live_audio.calcular_energia_pcm16(chunk))
-                self.puerta.marcar_reproduccion(True)
-                self.compuerta.marcar_inicio_escritura()
-                try:
-                    import numpy as np
-                    if self.activo and self._stream_salida:
-                        self._stream_salida.write(np.frombuffer(chunk, dtype=np.int16))
-                except Exception as err:
-                    print(f"[LIVE][AUDIO] Error salida: {err}", flush=True)
-                finally:
-                    self.compuerta.marcar_fin_escritura()
-                    if self.cola_audio_salida.empty():
-                        self.puerta.marcar_reproduccion(False)
-        finally:
-            self._stream_salida = live_audio.cerrar_stream(self._stream_salida)
-
-    async def _tarea_envio_audio(self, session):
-        puente = self._puente_webrtc
-        cola = puente.cola_entrada if puente is not None else self.cola_audio_entrada
-        rec_wake = await asyncio.to_thread(_crear_reconocedor_kaya) if puente is not None else None
-        while self.activo:
-            try:
-                data = await asyncio.to_thread(cola.get, timeout=0.1)
-                if not data:
-                    continue
-                if puente is not None:
-                    if data == live_webrtc.SENAL_SLEEP:
-                        if rec_wake is not None:
-                            try:
-                                rec_wake.Reset()
-                            except Exception:
-                                pass
-                        try:
-                            await session.send_realtime_input(audio_stream_end=True)
-                        except Exception:
-                            pass
-                        continue
-                    if puente.dormida:
-                        if rec_wake is None or _detecto_kaya_en_chunk(rec_wake, data):
-                            print("[LIVE][WAKE] 'Kaya' detectada -> despertando a Amarillo.", flush=True)
-                            puente.dormida = False
-                            puente.despertar()
-                            if rec_wake is not None:
-                                try:
-                                    rec_wake.Reset()
-                                except Exception:
-                                    pass
-                        continue
-                elif self.puerta.reproduciendo or self.compuerta.esta_en_ventana_eco():
-                    continue
-                await session.send_realtime_input(
-                    audio=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
-                )
-            except queue.Empty:
-                await asyncio.sleep(0.01)
-            except Exception as e:
-                print(f"[LIVE][AUDIO] Error enviando audio a Gemini: {e}", flush=True)
-                break
 
     async def _tarea_watchdog(self):
         if self._puente_webrtc is not None:

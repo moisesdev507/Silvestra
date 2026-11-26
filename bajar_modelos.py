@@ -119,9 +119,63 @@ def bajar_vosk():
         return False
 
 
+KWS_URL = (
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/"
+    "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20.tar.bz2"
+)
+KWS_CARPETA = "sherpa-onnx-kws-zh-en-3M"
+KWS_ARCHIVOS = (
+    "encoder-epoch-13-avg-2-chunk-16-left-64.int8.onnx",
+    "decoder-epoch-13-avg-2-chunk-16-left-64.onnx",
+    "joiner-epoch-13-avg-2-chunk-16-left-64.int8.onnx",
+    "tokens.txt",
+)
+
+
+def bajar_kws():
+    """Modelo ligero de Keyword Spotting para el wake-word 'Kaya'."""
+    destino = os.path.join(CARPETA, KWS_CARPETA)
+    if all(os.path.isfile(os.path.join(destino, n)) for n in KWS_ARCHIVOS):
+        print("Ya está:", KWS_CARPETA)
+        return True
+    archivo = os.path.join(CARPETA, "kws-zh-en-3m.tar.bz2")
+    prefijo = "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20/"
+    try:
+        if not os.path.exists(archivo) or os.path.getsize(archivo) < 10_000_000:
+            print("Bajando modelo KWS (sherpa-onnx)...")
+            urllib.request.urlretrieve(KWS_URL, archivo)
+        os.makedirs(destino, exist_ok=True)
+        with tarfile.open(archivo, "r:bz2") as tar:
+            for nombre in KWS_ARCHIVOS:
+                miembro = tar.getmember(prefijo + nombre)
+                objeto = tar.extractfile(miembro)
+                if objeto is None:
+                    continue
+                with open(os.path.join(destino, nombre), "wb") as salida:
+                    salida.write(objeto.read())
+        palabras = (
+            "K EY1 @kaya\nK EY1 Y AH0 @kaya\nK EY1 AH0 @kaya\n"
+            "K AA1 Y AH0 @kaya\nK AH0 Y AH0 @kaya\nK EY1 IY1 @kaia\n"
+            "K EY1 AH0 Y AH0 @kaia\nOY1 K EY1 @oyekaya\n"
+            "OY1 K EY1 Y AH0 @oyekaya\nHH AH0 L OW1 K EY1 @holakaya\n"
+        )
+        with open(os.path.join(destino, "keywords.txt"), "w", encoding="utf-8") as salida:
+            salida.write(palabras)
+        print("  listo modelo KWS")
+        if os.path.exists(archivo):
+            try:
+                os.remove(archivo)
+            except Exception:
+                pass
+        return True
+    except Exception as e:
+        print("  falló modelo KWS:", str(e)[:100])
+        return False
+
+
 if __name__ == "__main__":
     os.makedirs(CARPETA, exist_ok=True)
-    todo = all([bajar(n, u) for n, u in MODELOS.items()]) and bajar_vosk()
+    todo = all([bajar(n, u) for n, u in MODELOS.items()]) and bajar_vosk() and bajar_kws()
     if {"--piper", "--kokoro"} & set(sys.argv) or os.environ.get("LYRIS_TTS_LOCAL") == "1":
         if not bajar_piper():
             print("Piper VITS opcional no disponible: se seguirá usando edge-tts.")
