@@ -39,17 +39,16 @@ def contexto_ambiental():
 
 
 def contexto_memoria():
-    """Bloque cognitivo único y estable para Live, sin llamadas dispersas."""
+    """Bloque cognitivo íntegro de `cerebro_unico`, sin filtros propios.
+
+    `construir_config()` ya no lo usa: inyecta una sola compilación directa.
+    Este acceso queda para los flujos Live heredados que todavía lo invocan.
+    """
     try:
         import cerebro_unico
-        bloque = cerebro_unico.compilar_contexto_unico("", estable=True)
+        return cerebro_unico.compilar_contexto_unico("", estable=True)
     except Exception:
         return ""
-    partes = [p for p in bloque.split("\n\n") if p]
-    if any(p.startswith("[Ficha y recuerdos del usuario]") for p in partes):
-        permitidos = ("[Ficha y recuerdos del usuario]", "[Contexto de trabajo y ambiente]")
-        partes = [p for p in partes if p.startswith(permitidos)]
-    return "\n\n".join(partes)
 
 
 __all__ = ["guia_vocal", "contexto_memoria", "contexto_ambiental"]

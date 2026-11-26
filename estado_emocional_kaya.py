@@ -1,6 +1,6 @@
 """Motor emocional persistente de Kaya, compartido por Live y voz clásica.
 
-Guarda cuatro niveles en [0,1] en `datos/silvestra_memoria.db`, tabla
+Guarda cuatro niveles en [0,1] en la DB canónica `silvestra_memoria.db`, tabla
 `kaya_estado_emocional`, una fila por usuario. Ninguna inferencia: los valores
 cambian solo ante eventos reales del ciclo de vida de la llamada.
 """
@@ -10,10 +10,9 @@ import threading
 import time
 from contextlib import closing
 
-import rutas_app
 from memoria_modelos import validar_usuario_id
 
-RUTA_DB = os.path.join(rutas_app.dir_usuario(), "datos", "silvestra_memoria.db")
+RUTA_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "silvestra_memoria.db")
 _BLOQUEO = threading.RLock()
 UMBRAL_ABANDONO_SEG = 2 * 3600
 
@@ -26,6 +25,12 @@ DEFAULTS = {
     "interrupciones_seguidas": 0,
 }
 _COLUMNAS = tuple(DEFAULTS)
+_DDL_EMOCION = (
+    "CREATE TABLE IF NOT EXISTS kaya_estado_emocional ("
+    "usuario_id TEXT PRIMARY KEY, energia REAL NOT NULL, curiosidad REAL NOT NULL, "
+    "complicidad REAL NOT NULL, fastidio REAL NOT NULL, "
+    "ultima_interaccion_ts REAL NOT NULL, interrupciones_seguidas INTEGER NOT NULL)"
+)
 
 
 def _ahora():
@@ -42,12 +47,7 @@ def _conectar():
     if carpeta:
         os.makedirs(carpeta, exist_ok=True)
     con = sqlite3.connect(RUTA_DB, timeout=5.0)
-    con.execute(
-        "CREATE TABLE IF NOT EXISTS kaya_estado_emocional ("
-        "usuario_id TEXT PRIMARY KEY, energia REAL NOT NULL, curiosidad REAL NOT NULL, "
-        "complicidad REAL NOT NULL, fastidio REAL NOT NULL, "
-        "ultima_interaccion_ts REAL NOT NULL, interrupciones_seguidas INTEGER NOT NULL)"
-    )
+    con.execute(_DDL_EMOCION)
     return con
 
 

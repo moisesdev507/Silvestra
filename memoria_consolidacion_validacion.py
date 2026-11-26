@@ -6,6 +6,25 @@ PREDICADOS = ("tiene como objetivo", "trabaja en", "depende de", "vive en", "uti
 MARCADORES = ("proyecto", "aplicacion", "empresa", "ciudad", "persona", "producto", "herramienta", "equipo")
 PARADA = {"mi", "mis", "el", "la", "los", "las", "un", "una", "de", "del", "en", "que", "para", "con", "por", "su", "sus", "y", "es"}
 
+# Criterio único de deduplicación compartido por memoria_sueno y memoria_consolidacion.
+UMBRAL_DEDUP = 0.82
+_PARADA_DEDUP = {"para", "como", "este", "esta", "estos", "estas", "pero", "sobre",
+                 "entre", "tiene", "hace", "donde"}
+
+
+def tokens_duplicacion(texto):
+    """Tokens normalizados para comparar recuerdos (sin ruido funcional)."""
+    palabras = re.findall(r"[a-záéíóúüñ0-9]{3,}", str(texto or "").casefold())
+    return {p for p in palabras if p not in _PARADA_DEDUP}
+
+
+def es_duplicado(a, b):
+    """True si dos textos son el mismo recuerdo según el criterio compartido."""
+    x, y = tokens_duplicacion(a), tokens_duplicacion(b)
+    if not x or not y:
+        return False
+    return len(x & y) / len(x | y) >= UMBRAL_DEDUP
+
 
 def tokens(texto):
     return set(re.findall(r"\w+", str(texto or "").casefold()))

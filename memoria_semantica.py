@@ -1,15 +1,14 @@
 """Memoria semántica: Gemini con clave y NumPy 100 % offline.
 
 Mantiene la API histórica (memoria_vectores / memoria_jarvis.db) y añade
-kaya_embeddings en datos/silvestra_memoria.db con indexado en cola daemon.
+kaya_embeddings en la DB canónica `silvestra_memoria.db` con indexado en cola daemon.
 """
 import array, hashlib, math, os, queue, re, sqlite3, threading, time
 from contextlib import closing
 
 import embeddings_gemini_rest as gemini_rest
-import rutas_app
 
-RUTA_DB = os.path.join(rutas_app.dir_usuario(), "datos", "silvestra_memoria.db")
+RUTA_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "silvestra_memoria.db")
 _bloqueo = threading.RLock()
 DIM_OFFLINE = 256
 _DDL_VECTORES = """CREATE TABLE IF NOT EXISTS memoria_vectores (

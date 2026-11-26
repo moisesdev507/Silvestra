@@ -228,16 +228,8 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
         pass
     tok_perfil = max(0, int(len(perfil_texto) / 3.6))
 
-    corr_texto = ""
-    try:
-        import correcciones
-        res_co = correcciones.resumen_para_prompt(texto_actual)
-        if res_co:
-            corr_texto = res_co[:250].strip()
-    except Exception:
-        pass
-    tok_corr = max(0, int(len(corr_texto) / 3.6))
-
+    # Las correcciones activas ya llegan desde cerebro_unico.compilar_contexto_unico
+    # dentro de ctx_texto; calcularlas aquí y no insertarlas era código muerto.
     tok_contexto = max(0, int(len(ctx_texto) / 3.6))
 
     desc_acciones = describir_acciones_compactas(texto_actual)
@@ -282,11 +274,11 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
     hist_podado = historial_reciente or []
     tok_hist = max(0, int(sum(len(h.get("content", "")) for h in hist_podado) / 3.6))
 
-    tok_total = tok_alma + tok_memoria + tok_perfil + tok_corr + tok_contexto + tok_inst + tok_hist
+    tok_total = tok_alma + tok_memoria + tok_perfil + tok_contexto + tok_inst + tok_hist
     ahorro = max(0, int(100 * (1 - tok_total / max(1, tokens_base))))
     print(
         f"[tiempo] prompt_desglose alma={tok_alma} memoria={tok_memoria} perfil={tok_perfil} "
-        f"correcciones={tok_corr} contexto={tok_contexto} historial={tok_hist} instrucciones={tok_inst} total={tok_total}",
+        f"contexto={tok_contexto} historial={tok_hist} instrucciones={tok_inst} total={tok_total}",
         flush=True,
     )
     print(f"[tiempo] prompt_tokens={tok_total} anterior={tokens_base} ahorro={ahorro}%", flush=True)

@@ -13,6 +13,8 @@ import threading
 import time
 from typing import Any, Dict, List, Tuple
 
+from memoria_consolidacion_validacion import es_duplicado
+
 _bloqueo = threading.RLock()
 _PATRON_SUENO = re.compile(
     r"\b(?:consolida(?:r)?\s+(?:tu\s+)?memoria|limpieza\s+de\s+memoria|sue[ñn]o\s+cognitivo|optimiza(?:r)?\s+(?:la\s+|tu\s+)?memoria)\b",
@@ -25,20 +27,6 @@ _TEMAS_MAPA = {
     "web_desarrollo": re.compile(r"\b(?:html|css|javascript|js|tailwind|pwa|hud|tablet|web|navegador|sse|http|endpoint|api)\b", re.I),
     "preferencias_personales": re.compile(r"\b(?:dueno|moises|musica|descanso|rutina|nombre|asistente|lyris|preferencia|noche)\b", re.I),
 }
-
-
-def _normalizar_tokens(texto: str) -> set[str]:
-    palabras = re.findall(r"[a-záéíóúüñ0-9]{3,}", (texto or "").lower())
-    stopwords = {"para", "como", "este", "esta", "estos", "estas", "pero", "sobre", "entre", "tiene", "hace", "donde"}
-    return {p for p in palabras if p not in stopwords}
-
-
-def _similitud_jaccard(tok1: set[str], tok2: set[str]) -> float:
-    if not tok1 or not tok2:
-        return 0.0
-    inter = len(tok1 & tok2)
-    union = len(tok1 | tok2)
-    return float(inter) / float(union) if union > 0 else 0.0
 
 
 def inicializar_tablas_sueno(db_path: str = "silvestra_memoria.db") -> bool:
@@ -67,7 +55,7 @@ def inicializar_tablas_sueno(db_path: str = "silvestra_memoria.db") -> bool:
 
 
 def ejecutar_sueno_cognitivo(db_path: str = "silvestra_memoria.db", limite_lote: int = 40) -> Dict[str, Any]:
-    """Inspecciona recuerdos activos, deduplica con Jaccard >= 0.82 y consolida resúmenes temáticos."""
+    """Inspecciona recuerdos activos, deduplica con el criterio compartido y sintetiza temas."""
     inicializar_tablas_sueno(db_path)
     res: Dict[str, Any] = {"ok": False, "duplicados_consolidados": 0, "resumenes_generados": 0, "detalles": []}
 
@@ -105,7 +93,6 @@ def ejecutar_sueno_cognitivo(db_path: str = "silvestra_memoria.db", limite_lote:
                 items.append({
                     "id": fid,
                     "contenido": cont or "",
-                    "tokens": _normalizar_tokens(cont or ""),
                     "categoria": cat or "general",
                     "creado": creado,
                 })
@@ -121,8 +108,7 @@ def ejecutar_sueno_cognitivo(db_path: str = "silvestra_memoria.db", limite_lote:
                     id_b = items[j]["id"]
                     if id_b in ya_marcados:
                         continue
-                    sim = _similitud_jaccard(items[i]["tokens"], items[j]["tokens"])
-                    if sim >= 0.82:
+                    if es_duplicado(items[i]["contenido"], items[j]["contenido"]):
                         # id_a es más reciente (ORDER BY id DESC). Si id_a tiene igual o mayor longitud, gana a.
                         len_a, len_b = len(items[i]["contenido"]), len(items[j]["contenido"])
                         ganador, perdedor = (id_a, id_b) if len_a >= len_b else (id_b, id_a)

@@ -1,4 +1,6 @@
 """Esquema SQLite del almacenamiento cognitivo."""
+import datetime
+import json
 import os
 import memoria_esquema_relaciones
 
@@ -47,6 +49,41 @@ CREATE TABLE IF NOT EXISTS migraciones_estado (
 """
 
 
+def migrar_check_estados(conexion):
+    """Recrea `recuerdos` para aceptar 'consolidado' sin perder filas ni FTS.
+
+    Idempotente: solo actúa cuando la tabla existente conserva el CHECK antiguo.
+    Los disparadores se reconstruyen desde el propio DDL para que apunten a la
+    tabla nueva, y el índice FTS se regenera desde el contenido copiado.
+    """
+    fila = conexion.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='recuerdos'"
+    ).fetchone()
+    if not fila or "'consolidado'" in (fila[0] or ""):
+        return False
+    total = conexion.execute("SELECT COUNT(*) FROM recuerdos").fetchone()[0]
+    foreign_keys = int(conexion.execute("PRAGMA foreign_keys").fetchone()[0])
+    conexion.execute("PRAGMA foreign_keys=OFF")
+    try:
+        for disparador in ("recuerdos_ai", "recuerdos_ad", "recuerdos_au"):
+            conexion.execute("DROP TRIGGER IF EXISTS " + disparador)
+        conexion.execute("ALTER TABLE recuerdos RENAME TO recuerdos_legado")
+        conexion.executescript(DDL)
+        conexion.execute("INSERT INTO recuerdos SELECT * FROM recuerdos_legado")
+        conexion.execute("DROP TABLE recuerdos_legado")
+        conexion.execute("INSERT INTO recuerdos_fts(recuerdos_fts) VALUES('rebuild')")
+        conexion.execute(
+            "INSERT OR REPLACE INTO migraciones_estado(clave,aplicado_en,detalles) "
+            "VALUES(?,?,?)",
+            ("check_estado_v2",
+             datetime.datetime.now(datetime.timezone.utc).isoformat(),
+             json.dumps({"recuerdos": total}, ensure_ascii=False)))
+        conexion.commit()
+    finally:
+        conexion.execute("PRAGMA foreign_keys=" + str(foreign_keys))
+    return True
+
+
 def inicializar(conexion, ruta=None):
     """Aplica pragmas y DDL idempotente a una conexión SQLite."""
     if ruta and ruta != ":memory:":
@@ -63,6 +100,7 @@ def inicializar(conexion, ruta=None):
             conexion.execute("ALTER TABLE recuerdos ADD COLUMN usuario_id TEXT NOT NULL DEFAULT 'local'")
             conexion.commit()
     conexion.executescript(DDL)
+    migrar_check_estados(conexion)
     if tabla and not fts:
         conexion.execute("INSERT INTO recuerdos_fts(recuerdos_fts) VALUES('rebuild')")
     conexion.commit()

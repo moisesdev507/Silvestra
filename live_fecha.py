@@ -11,10 +11,18 @@ MESES_ES = (
 
 
 def instruccion_con_hora_local(rapido: bool, primer_despertar: bool, nombre_usuario: str) -> str:
+    """Identidad + guía sin fecha ni memoria: añade una sola fecha local.
+
+    La memoria/ficha/hilo se inyecta después desde la única compilación de
+    `cerebro_unico`, así que esta base no debe incluir `contexto_memoria()`.
+    """
     base = live_audio.construir_instruccion_sistema(
         rapido=rapido,
         primer_despertar=primer_despertar,
         nombre_usuario=nombre_usuario,
+        incluir_fecha=False,
+        incluir_memoria=False,
+        max_chars=3000,
     )
     ahora = datetime.now()
     fecha = (

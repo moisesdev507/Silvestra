@@ -1,6 +1,8 @@
 """Consolidación conservadora con historial, linaje y cancelación por grupo."""
 from memoria_almacen import _ahora
-from memoria_consolidacion_validacion import incompatibilidad as _incompatibilidad, similitud
+from memoria_consolidacion_validacion import (
+    es_duplicado, incompatibilidad as _incompatibilidad, similitud,
+)
 
 
 def analizar(almacen, usuario_id="local"):
@@ -18,7 +20,7 @@ def analizar(almacen, usuario_id="local"):
             incompatibilidad = _incompatibilidad(a["contenido"], b["contenido"])
             if incompatibilidad:
                 pares.append((a["id"], b["id"], incompatibilidad))
-            elif score >= .90:
+            elif es_duplicado(a["contenido"], b["contenido"]):
                 grupo.append(b)
             elif score >= .75:
                 revision.append((a["id"], b["id"], score))
@@ -59,8 +61,12 @@ def consolidar(almacen, usuario_id="local", token_cancelacion=None, progreso=Non
                     if origen["id"] != nuevo["id"]:
                         almacen.conexion.execute("UPDATE recuerdos SET estado='obsoleto',actualizado_en=? WHERE id=? AND usuario_id=?",
                             (_ahora(), origen["id"], uid))
-                        almacen.conexion.execute("INSERT INTO recuerdos_linaje(recuerdo_id,origen_id,usuario_id,fecha,motivo) VALUES(?,?,?,?,?)",
-                            (nuevo["id"], origen["id"], uid, _ahora(), "consolidacion"))
+                        ya_en_linaje = almacen.conexion.execute(
+                            "SELECT 1 FROM recuerdos_linaje WHERE recuerdo_id=? AND origen_id=? AND usuario_id=?",
+                            (nuevo["id"], origen["id"], uid)).fetchone()
+                        if not ya_en_linaje:
+                            almacen.conexion.execute("INSERT INTO recuerdos_linaje(recuerdo_id,origen_id,usuario_id,fecha,motivo) VALUES(?,?,?,?,?)",
+                                (nuevo["id"], origen["id"], uid, _ahora(), "consolidacion"))
                 if token_cancelacion is not None and token_cancelacion.is_set():
                     raise InterruptedError
                 hechos.append({"id": nuevo["id"], "origenes": [x["id"] for x in grupo]})

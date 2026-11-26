@@ -2,8 +2,8 @@
 
 Sustituye la inyección estática de temas_abiertos_kaya.json. Usa hechos
 verificados (SQLite), el ánimo actual, hasta dos bromas, un recuerdo semántico
-y un seguimiento vigente; registra en estado.json los hechos ya inyectados para
-no repetir datos ni saludos al despertar. Bloque total <= 480 caracteres.
+y un seguimiento vigente. El anti-repetición vive en RAM y solo se persiste en
+estado.json al registrar turnos o despertares. Bloque total <= 480 caracteres.
 """
 import hashlib
 import re
@@ -23,6 +23,10 @@ _MAX_BROMAS = 2
 _TURNOS = deque(maxlen=16)
 _bloqueo = threading.RLock()
 _espejo = None
+# Ledger de anti-repetición: se lee del disco solo en rutas de escritura.
+_LEDGER = {"vistos": [], "dia": None, "despertares": 0}
+_LEDGER_HIDRATADO = False
+_VISTOS_PENDIENTES = False
 
 
 def _instancia():
@@ -45,8 +49,24 @@ def _limpio(texto, max_len=110):
     return s[:max_len].rstrip(" ,;.")
 
 
+_PREGUNTA_KAYA = re.compile(
+    r"^(?:cómo|que|qué|cuál|cuáles|quién|quiénes|dónde|cuándo|por qué|para qué|"
+    r"hay (?:algún|alguna|algo)|puedes|podrías|te gustaría|necesitas|dime|"
+    r"cuéntame|explícame|averigua)\b",
+    re.IGNORECASE,
+)
+
+
+def es_pregunta_kaya(texto):
+    """True si el texto es una pregunta o pedido del asistente, no un hecho."""
+    limpio = _limpio(texto, 400).strip()
+    if not limpio or limpio.endswith("?") or limpio.startswith("¿"):
+        return True
+    return bool(_PREGUNTA_KAYA.match(limpio.casefold()))
+
+
 def hechos_verificados(memoria=None, limite=3):
-    """Hechos explícitos, activos y con confianza alta; jamás inferencias."""
+    """Hechos activos y verificados (explícitos o migrados), sin preguntas de Kaya."""
     mem = memoria if memoria is not None else _instancia()
     if mem is None:
         return []
@@ -56,7 +76,8 @@ def hechos_verificados(memoria=None, limite=3):
         return []
     salida = []
     for fila in filas:
-        if fila.get("estado") != "activo" or fila.get("origen") != "explicito":
+        if (fila.get("estado") != "activo"
+                or fila.get("origen") not in ("explicito", "migrado")):
             continue
         try:
             confianza = float(fila.get("confianza") or 0)
@@ -65,7 +86,7 @@ def hechos_verificados(memoria=None, limite=3):
         if confianza < 0.8:
             continue
         contenido = str(fila.get("contenido") or "")
-        if _BROMA_MARCA in contenido:
+        if _BROMA_MARCA in contenido or es_pregunta_kaya(contenido):
             continue
         texto = _limpio(contenido)
         if len(texto) < 12:
@@ -147,6 +168,8 @@ def registrar_turno(rol, texto, espejo=True):
     with _bloqueo:
         _TURNOS.append({"role": papel, "content": limpio})
         destino = _espejo if espejo else None
+    _hidratar_ledger()
+    _volcar_si_pendiente()
     if destino is not None:
         try:
             destino(papel, limpio)
@@ -253,6 +276,43 @@ def _registro():
         return {}, {"vistos": []}
 
 
+def _ledger_ram():
+    """Copia del ledger en RAM: ninguna lectura de prompt toca estado.json."""
+    with _bloqueo:
+        return dict(_LEDGER)
+
+
+def _hidratar_ledger():
+    """Carga el ledger desde estado.json solo al registrar turnos/despertares."""
+    global _LEDGER_HIDRATADO
+    with _bloqueo:
+        if _LEDGER_HIDRATADO:
+            return
+        _datos, reg = _registro()
+        _LEDGER["vistos"] = list(reg.get("vistos") or [])
+        _LEDGER["dia"] = reg.get("dia")
+        _LEDGER["despertares"] = int(reg.get("despertares") or 0)
+        _LEDGER_HIDRATADO = True
+
+
+def _persistir_ledger():
+    """Escribe el ledger ya acumulado en RAM (único punto de I/O del anti-repetición)."""
+    global _VISTOS_PENDIENTES
+    with _bloqueo:
+        datos, reg = _registro()
+        reg.update(_ledger_ram())
+        reg["vistos"] = list(_LEDGER["vistos"])
+        datos[_CLAVE] = reg
+        estado.guardar(datos)
+        _VISTOS_PENDIENTES = False
+
+
+def _volcar_si_pendiente():
+    """Difiere la escritura de los vistos hasta el siguiente turno real."""
+    if _VISTOS_PENDIENTES:
+        _persistir_ledger()
+
+
 def _asegurar_dia(reg):
     """Cuenta un despertar por día sin borrar lo ya mostrado."""
     hoy = datetime.now().strftime("%Y-%m-%d")
@@ -264,22 +324,20 @@ def _asegurar_dia(reg):
 
 def registrar_despertar():
     """Registra explícitamente un despertar (mantiene el anti-repetición)."""
+    _hidratar_ledger()
     with _bloqueo:
-        datos, reg = _registro()
-        _asegurar_dia(reg)
-        reg["despertares"] = int(reg.get("despertares") or 0) + 1
-        datos[_CLAVE] = reg
-        estado.guardar(datos)
-        return reg["despertares"]
+        _asegurar_dia(_LEDGER)
+        _LEDGER["despertares"] = int(_LEDGER["despertares"] or 0) + 1
+        _persistir_ledger()
+        return int(_LEDGER["despertares"])
 
 
 def resetear_sesion():
     """Permite volver a inyectar datos (pruebas o cambio de perfil)."""
+    _hidratar_ledger()
     with _bloqueo:
-        datos, reg = _registro()
-        reg["vistos"] = []
-        datos[_CLAVE] = reg
-        estado.guardar(datos)
+        _LEDGER["vistos"] = []
+        _persistir_ledger()
 
 
 def resumen_estable(memoria=None, max_chars=430):
@@ -293,7 +351,9 @@ def resumen_estable(memoria=None, max_chars=430):
 
 
 def resumen_para_prompt(memoria=None, incluir_conversaciones=True):
-    """Ánimo + bromas vigentes + solo datos aún no inyectados."""
+    """Ánimo + bromas vigentes + solo datos aún no inyectados (sin escrituras)."""
+    global _VISTOS_PENDIENTES
+    _hidratar_ledger()
     mem = memoria if memoria is not None else _instancia()
     uid = usuario_id_canonical()
     ficha = memoria_ficha.resumen(mem, uid)
@@ -314,9 +374,8 @@ def resumen_para_prompt(memoria=None, incluir_conversaciones=True):
         pass
     presupuesto = max(80, _MAX_CHARS - len(ficha) - 2)
     with _bloqueo:
-        datos, reg = _registro()
-        _asegurar_dia(reg)
-        vistos = list(reg.get("vistos") or [])
+        _asegurar_dia(_LEDGER)
+        vistos = list(_LEDGER["vistos"])
         conocidos = set(vistos)
         candidatos = []
         for etiqueta, textos in (("hecho", hechos), ("charla", charlas)):
@@ -337,15 +396,15 @@ def resumen_para_prompt(memoria=None, incluir_conversaciones=True):
         if not hechos and not charlas:
             bloques.append("Memoria sin hechos guardados todavía (no inventes datos del usuario)")
         vistos.extend(aceptados)
-        reg["vistos"] = vistos[-_MAX_VISTOS:]
-        datos[_CLAVE] = reg
-        estado.guardar(datos)
+        _LEDGER["vistos"] = vistos[-_MAX_VISTOS:]
+        if aceptados:
+            _VISTOS_PENDIENTES = True
     texto = f"{ficha}; " + "; ".join(bloques) if bloques else ficha
     return f"\n\n[Lo que ya sé de ti, sin repetirlo]: {texto[:_MAX_CHARS]}."
 
 
 __all__ = [
-    "hechos_verificados", "resumen_conversaciones", "bromas_internas",
+    "hechos_verificados", "es_pregunta_kaya", "resumen_conversaciones", "bromas_internas",
     "registrar_turno", "registrar_par", "turnos_recientes", "semanticos_relevantes",
     "usuario_id_canonical", "historial_conversacion_activa", "resumen_estable",
     "registrar_despertar", "resetear_sesion", "resumen_para_prompt",

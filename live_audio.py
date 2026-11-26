@@ -314,9 +314,11 @@ def registrar_tiempo_primera_voz():
         print(f"[tiempo] arranque_primera_voz={ms}ms", flush=True)
 
 
-def construir_instruccion_arranque_rapido(primer_despertar: bool = False, nombre_usuario: str = "") -> str:
-    """Prompt compacto con identidad exacta y usuario explícitamente separado."""
-    hora_str = obtener_hora_local_breve()
+def construir_instruccion_arranque_rapido(
+    primer_despertar: bool = False, nombre_usuario: str = "", incluir_fecha: bool = True
+) -> str:
+    """Prompt compacto con identidad y usuario separado."""
+    hora_str = obtener_hora_local_breve() if incluir_fecha else ""
     ctx_h = f" {hora_str}" if hora_str else ""
     quien = str(nombre_usuario or "").strip() or identidad_origen.USUARIO_SIN_NOMBRE
     if primer_despertar:
@@ -372,11 +374,13 @@ def trazar_transcripcion(rol: str, texto: str) -> str:
 
 
 def construir_instruccion_sistema(
-    rapido: bool = False, primer_despertar: bool = False, nombre_usuario: str = ""
+    rapido: bool = False, primer_despertar: bool = False, nombre_usuario: str = "",
+    incluir_fecha: bool = True, incluir_memoria: bool = True, max_chars=None
 ) -> str:
-    """Carga identidad raíz, alma.txt, contexto de tiempo y guía vocal en Panamá."""
+    """Carga identidad, guía y, si se pide, fecha y memoria; max_chars acota la base."""
     if rapido:
-        return construir_instruccion_arranque_rapido(primer_despertar, nombre_usuario)
+        return construir_instruccion_arranque_rapido(
+            primer_despertar, nombre_usuario, incluir_fecha=incluir_fecha)
     estilo = (
         "Eres Kaya, asistente personal con carácter propio. "
         "Hablas en español natural de Panamá con respuestas breves (1 a 2 frases por defecto)."
@@ -392,13 +396,14 @@ def construir_instruccion_sistema(
             pass
     base = identidad_origen.bloque_identidad(nombre_usuario) + "\n" + estilo
 
-    hora_str = obtener_hora_local_breve()
+    hora_str = obtener_hora_local_breve() if incluir_fecha else ""
     contexto_tiempo = f"\n\n[Fecha y hora actual]: {hora_str}" if hora_str else ""
 
     guia_vocal = live_prompt.guia_vocal()
-    memoria_txt = live_prompt.contexto_memoria()
+    memoria_txt = live_prompt.contexto_memoria() if incluir_memoria else ""
 
-    margen = 4200 - len(base) - len(contexto_tiempo) - len(memoria_txt) - 4
+    limite = 4200 if max_chars is None else max(600, int(max_chars))
+    margen = limite - len(base) - len(contexto_tiempo) - len(memoria_txt) - 4
     if len(guia_vocal) > margen:
         guia_vocal = guia_vocal[:max(0, margen)].rsplit("\n", 1)[0] + "\n..."
     return base + contexto_tiempo + guia_vocal + memoria_txt

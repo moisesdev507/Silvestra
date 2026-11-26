@@ -1,6 +1,7 @@
 """Ciclo de sueño de Reposo Azul y seguimientos astutos de Kaya.
 
-Todo se persiste en datos/silvestra_memoria.db. El sueño se lanza en hilo daemon:
+Todo se persiste en la DB canónica `silvestra_memoria.db` de la raíz. El sueño
+se lanza en hilo daemon:
 nunca toca Qt ni bloquea el hilo de audio. Solo produce intuiciones marcadas
 como inferidas, nunca hechos confirmados.
 """
@@ -12,10 +13,9 @@ import time
 from contextlib import closing
 
 import estado_emocional_kaya
-import rutas_app
 from memoria_modelos import validar_usuario_id
 
-RUTA_DB = os.path.join(rutas_app.dir_usuario(), "datos", "silvestra_memoria.db")
+RUTA_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "silvestra_memoria.db")
 COOLDOWN_SEG = 3 * 3600
 CONFIANZA_INTUICION = 0.65
 _bloqueo = threading.RLock()

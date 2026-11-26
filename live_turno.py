@@ -5,8 +5,6 @@ import cerebro_unico
 import live_audio
 import live_fecha
 import live_herramientas
-import memoria_contexto
-import memoria_unificada
 
 
 def bloque_memoria(max_chars=520):
@@ -18,30 +16,11 @@ def bloque_memoria(max_chars=520):
         return ""
 
 
-def bloque_conversacion(max_turnos=12, max_chars=1400):
-    """Inyecta el hilo real compartido en el system_instruction de Live."""
-    try:
-        turnos = memoria_contexto.historial_conversacion_activa(max_turnos, max_chars)
-    except Exception:
-        turnos = []
-    if not turnos:
-        return ""
-    lineas = [
-        f"{'Usuario' if t['role'] == 'user' else 'Kaya'}: {t['content']}"
-        for t in turnos
-    ]
-    return (
-        "\n[Conversación reciente en curso] Resuelve 'eso', 'a qué te refieres', "
-        "'lo anterior' y 'sígueme contando' con este hilo antes de responder.\n"
-        + "\n".join(lineas)
-    )
-
-
 def construir_config(voz, rapido=False, despertar=False, nombre=""):
-    """Config Live reconstruida en cada conexión, con el hilo más reciente."""
+    """Config Live: una sola fecha y un único bloque cognitivo (ficha, hilo, memoria)."""
     base = live_fecha.instruccion_con_hora_local(rapido, despertar, nombre)
     memoria = bloque_memoria()
-    instruccion = base + memoria
+    instruccion = base + "\n" + memoria
     return types.LiveConnectConfig(
         response_modalities=["AUDIO"],
         speech_config=types.SpeechConfig(
@@ -94,4 +73,4 @@ class AcumuladorTurnos:
         return bool(usuario or kaya)
 
 
-__all__ = ["AcumuladorTurnos", "bloque_memoria", "bloque_conversacion", "construir_config"]
+__all__ = ["AcumuladorTurnos", "bloque_memoria", "construir_config"]
