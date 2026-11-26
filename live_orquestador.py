@@ -27,6 +27,8 @@ class CoordinadorLiveSilvestra:
         self.despertar_local: Optional[despertar_local.EscuchaDespertarLocal] = None
         self._bloqueo = threading.RLock()
         self._generacion = 0
+        self._pausado_por_live = False
+        self._saludo_inicial_enviado = False
         self.modo_live_habilitado = bool(
             live_audio.obtener_api_key()
             and self.modo_voz_configurado() != "clasico"
@@ -123,7 +125,18 @@ class CoordinadorLiveSilvestra:
         if rol == "kaya" and texto:
             self.app.cola.put(("frase_burbuja_live", texto))
 
+    def aislar_motores_locales(self):
+        """Pausa invocación, Deepgram y Celeste antes de precalentar Live."""
+        self._pausar_captura_local()
+
+    def sincronizar_por_cuota(self):
+        """Reanuda los motores locales solo si Live entró en enfriamiento 429."""
+        if (self._pausado_por_live and not self.es_modo_principal()
+                and live_motor.esta_en_enfriamiento_cuota()):
+            self._reanudar_captura_local()
+
     def _pausar_captura_local(self):
+        self._pausado_por_live = True
         inv = getattr(self.app, "invocacion", None)
         if inv and hasattr(inv, "pausar"):
             try:
@@ -144,6 +157,7 @@ class CoordinadorLiveSilvestra:
                 pass
 
     def _reanudar_captura_local(self):
+        self._pausado_por_live = False
         oid = getattr(self.app, "oido", None)
         if oid and hasattr(oid, "reanudar"):
             try:
@@ -228,6 +242,8 @@ class CoordinadorLiveSilvestra:
         """Inicia la sesión Live en fondo de inmediato mientras cara_qt termina de dibujar."""
         if not self.es_modo_principal() or live_motor.esta_en_enfriamiento_cuota():
             return
+        # Un único saludo: main.saludar() no debe repetir esta instrucción.
+        self._saludo_inicial_enviado = True
         def _arranque_fondo():
             with self._bloqueo:
                 if self.sesion_live and self.sesion_live.activo:
@@ -268,6 +284,7 @@ class CoordinadorLiveSilvestra:
                 estado_emocional_kaya.registrar_si_disponible("despertar_tras_abandono")
             if not ok:
                 self.sesion_live = None
+                self._saludo_inicial_enviado = False
                 self._reanudar_captura_local()
                 return False
 

@@ -200,8 +200,9 @@ class Silvestra:
         try:
             import live_orquestador
             self.coordinador_live = live_orquestador.CoordinadorLiveSilvestra(self)
-            # Precalentamiento paralelo inmediato para saludo rápido
+            # Aísla Celeste/Deepgram antes del precalentamiento: un solo saludo.
             if self.coordinador_live.es_modo_principal():
+                self.coordinador_live.aislar_motores_locales()
                 self.cara.root.after(50, self.coordinador_live.precalentar_en_paralelo)
         except Exception as e:
             print(f"[main] Coordinador Live no disponible: {e}", flush=True)
@@ -334,10 +335,9 @@ class Silvestra:
 
     def saludar(self):
         cl = getattr(self, "coordinador_live", None)
-        if cl and hasattr(cl, "es_modo_principal") and cl.es_modo_principal():
-            creador = getattr(getattr(self, "memoria", None), "creador", "Moisés") or "Moisés"
-            if cl.intentar_activar_live(f"Hola Kaya, saluda brevemente a {creador} para comenzar el día."):
-                return
+        if cl is not None and (getattr(cl, "_saludo_inicial_enviado", False)
+                               or cl.esta_live_activo()):
+            return  # Gemini Live ya envió la única instrucción de saludo.
         nacimiento.saludar(self)
 
     def renacer(self):
@@ -345,6 +345,12 @@ class Silvestra:
 
     # ---------- Bucle de eventos ----------
     def revisar_cola(self):
+        cl = getattr(self, "coordinador_live", None)
+        if cl is not None and hasattr(cl, "sincronizar_por_cuota"):
+            try:
+                cl.sincronizar_por_cuota()
+            except Exception:
+                pass
         try:
             import qt_estabilidad_ui
             procesados, queda = qt_estabilidad_ui.drenar_cola_acotada(
