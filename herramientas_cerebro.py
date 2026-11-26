@@ -80,6 +80,30 @@ def resumir_enlace_o_video(url):
         return f"No pude generar el resumen: {type(exc).__name__}"
 
 
+def ejecutar_plan_complejo(objetivo, app=None):
+    """Dispara un plan S2 en segundo plano y confirma al instante."""
+    texto = str(objetivo or "").strip()
+    if not texto:
+        return "Dime qué plan quieres que ejecute."
+    if app is None:
+        try:
+            import pantalla_remota_accion
+            app = pantalla_remota_accion.obtener_app()
+        except Exception:
+            app = None
+    try:
+        import cerebro_sistema2
+        if app is not None:
+            cerebro_sistema2.configurar_app(app)
+        resultado = cerebro_sistema2.lanzar_tarea_sistema2(
+            texto, origen="celeste" if app is not None else "live")
+    except Exception as exc:
+        return f"No pude iniciar el plan: {type(exc).__name__}."
+    if not resultado.get("aceptado"):
+        return "Dime qué plan quieres que ejecute."
+    return "Plan iniciado en segundo plano... te digo el resultado en cuanto termine."
+
+
 def declaraciones():
     """Declaraciones Function Calling de Live (importación diferida de genai)."""
     from google.genai import types
@@ -114,17 +138,34 @@ def declaraciones():
                 required=["url"],
             ),
         ),
+        types.FunctionDeclaration(
+            name="ejecutar_plan_complejo",
+            description=(
+                "Investiga y ejecuta en segundo plano una tarea de varios pasos: cruza memoria local, "
+                "contexto y fuentes permitidas, y entrega la síntesis por voz al terminar. "
+                "Úsala cuando pidan investigar, cruzar fuentes o coordinar varias acciones."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "objetivo": types.Schema(type="STRING", description="Objetivo completo a investigar y ejecutar."),
+                },
+                required=["objetivo"],
+            ),
+        ),
     ]
 
 
 def despachar(nombre, args=None):
-    """Despacha las dos herramientas nuevas; None si el nombre no corresponde."""
+    """Despacha las herramientas cognitivas; None si el nombre no corresponde."""
     datos = args or {}
     if nombre == "consultar_conocimiento_local":
         return consultar_conocimiento_local(
             str(datos.get("consulta", "")), str(datos.get("ruta", "")))
     if nombre == "resumir_enlace_o_video":
         return resumir_enlace_o_video(str(datos.get("url", "")))
+    if nombre == "ejecutar_plan_complejo":
+        return ejecutar_plan_complejo(str(datos.get("objetivo", "")))
     return None
 
 
@@ -162,6 +203,6 @@ def accion_resumir(texto, app=None):
 
 
 __all__ = [
-    "consultar_conocimiento_local", "resumir_enlace_o_video",
+    "consultar_conocimiento_local", "resumir_enlace_o_video", "ejecutar_plan_complejo",
     "declaraciones", "despachar", "accion_consultar", "accion_resumir",
 ]

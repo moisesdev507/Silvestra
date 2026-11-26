@@ -23,6 +23,11 @@ class CoordinadorLiveSilvestra:
 
     def __init__(self, app):
         self.app = app
+        try:
+            import cerebro_sistema2
+            cerebro_sistema2.configurar_app(app)
+        except Exception:
+            pass
         self.sesion_live: Optional[live_motor.SesionKayaLive] = None
         self.despertar_local: Optional[despertar_local.EscuchaDespertarLocal] = None
         self._bloqueo = threading.RLock()

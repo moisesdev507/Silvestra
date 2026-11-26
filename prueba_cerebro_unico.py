@@ -144,7 +144,8 @@ class TestCerebroUnico(unittest.TestCase):
         procesar.assert_called_once()
 
         nombres = [d.name for d in herramientas_cerebro.declaraciones()]
-        self.assertEqual(nombres, ["consultar_conocimiento_local", "resumir_enlace_o_video"])
+        self.assertEqual(nombres, ["consultar_conocimiento_local", "resumir_enlace_o_video",
+                                   "ejecutar_plan_complejo"])
         with patch.object(herramientas_cerebro, "consultar_conocimiento_local",
                           return_value="LOCAL") as consultar:
             self.assertEqual(herramientas_cerebro.despachar(

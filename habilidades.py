@@ -195,6 +195,13 @@ def instalar(app):
             "resume una página web o un video de YouTube; escribe: resumir_enlace | https://...",
             con_texto=True,
         )
+        acciones.registrar(
+            "plan_complejo",
+            lambda texto: hc.ejecutar_plan_complejo(texto, app),
+            "investiga y ejecuta en segundo plano una tarea de varios pasos; "
+            "escribe: plan_complejo | qué quieres investigar o coordinar",
+            con_texto=True,
+        )
     except Exception:
         pass
     app.cara.root.after(500, h.revisar)

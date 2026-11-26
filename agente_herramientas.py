@@ -62,6 +62,7 @@ CATALOGO = {
     "ver_pantalla": vision.analizar_pantalla,
     "consultar_conocimiento_local": cerebro_tools.consultar_conocimiento_local,
     "resumir_enlace_o_video": cerebro_tools.resumir_enlace_o_video,
+    "ejecutar_plan_complejo": cerebro_tools.ejecutar_plan_complejo,
 }
 
 
@@ -160,6 +161,10 @@ def detectar_intencion(consulta):
     if any(x in texto for x in ("resume este enlace", "resume este video",
                                 "resumir youtube", "resume el link")):
         acciones.append(("resumir_enlace_o_video", str(consulta)))
+    if any(x in texto for x in (
+            "plan complejo", "ejecutar plan", "haz un plan", "planifica y ejecuta",
+            "investiga y cruza", "cruza fuentes", "investiga primero")):
+        acciones.append(("ejecutar_plan_complejo", str(consulta)))
     return acciones[:3]
 
 

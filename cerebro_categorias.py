@@ -87,8 +87,8 @@ CATEGORIAS_ACCIONES = {
         {"que_has_aprendido", "olvidar_aprendizaje", "reflexionar_ahora", "reflexionar_aprendizaje", "borrar_perfil", "mis_correcciones", "olvidar_correccion"}
     ),
     "resumen": (
-        {"resumir", "resumen", "articulo", "link", "enlace", "portapapeles", "video"},
-        {"resumir_pagina", "resumir_video", "resumir_portapapeles", "resumir_enlace"}
+        {"resumir", "resumen", "articulo", "link", "enlace", "portapapeles", "video", "plan", "investiga", "cruza"},
+        {"resumir_pagina", "resumir_video", "resumir_portapapeles", "resumir_enlace", "plan_complejo"}
     ),
     "tablet": (
         {"tablet", "remota", "servidor tablet", "pantalla remota", "segunda pantalla", "tabla", "notable", "pantalla tablet"},
