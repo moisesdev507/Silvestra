@@ -361,7 +361,7 @@ def configuracion_transcripcion():
             if not isinstance(campos_ric, dict) or "automatic_activity_detection" in campos_ric:
                 salida["realtime_input_config"] = ric(
                     automatic_activity_detection=types.AutomaticActivityDetection(
-                        silence_duration_ms=340, prefix_padding_ms=160))
+                        silence_duration_ms=420, prefix_padding_ms=180))
         return salida
     except Exception:
         return {}
