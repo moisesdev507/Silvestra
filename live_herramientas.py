@@ -324,17 +324,20 @@ def declarar_declaraciones_herramientas() -> List[types.Tool]:
     return [types.Tool(function_declarations=herramientas + live_herramientas_extra.declaraciones_extra())]
 
 
-async def despachar_herramienta_asincrona(nombre: str, args: Dict[str, Any]) -> str:
-    """Ejecuta una herramienta en hilo secundario para no bloquear el streaming."""
+async def _ejecutar_herramienta_live(nombre: str, args: Dict[str, Any]) -> str:
+    loop = asyncio.get_running_loop()
+    if nombre in ("consultar_conocimiento_local", "resumir_enlace_o_video", "ejecutar_plan_complejo"):
+        import herramientas_cerebro
+        res_cer = await loop.run_in_executor(None, herramientas_cerebro.despachar, nombre, args)
+        return str(res_cer or "Listo.")
     res_extra = await live_herramientas_extra.despachar(nombre, args)
     if res_extra is not None:
         return res_extra
-    loop = asyncio.get_running_loop()
     if nombre == "ejecutar_accion_pc":
         instruccion = args.get("instruccion", "")
         return await loop.run_in_executor(None, ejecutar_accion_local, instruccion)
     elif nombre == "consultar_clima":
-        ciudad = args.get("ciudad") or "Panamá"
+        ciudad = args.get("ciudad") or "Panam?"
         import consulta_web
         return await loop.run_in_executor(None, consulta_web.consultar_clima, ciudad)
     elif nombre == "buscar_en_internet":
@@ -347,3 +350,18 @@ async def despachar_herramienta_asincrona(nombre: str, args: Dict[str, Any]) -> 
         motivo = args.get("motivo", "orden_usuario")
         return await loop.run_in_executor(None, solicitar_reposo_desde_live, motivo)
     return f"Herramienta '{nombre}' no reconocida."
+
+
+async def despachar_herramienta_asincrona(nombre: str, args: Dict[str, Any]) -> str:
+    """Ejecuta herramientas en hilo secundario con timeout para nunca colgar Live."""
+    print(f"[LIVE][TOOL] -> {nombre}", flush=True)
+    try:
+        res = await asyncio.wait_for(_ejecutar_herramienta_live(nombre, args or {}), timeout=12.0)
+        print(f"[LIVE][TOOL] <- {nombre} OK", flush=True)
+        return str(res)
+    except asyncio.TimeoutError:
+        print(f"[LIVE][TOOL] <- {nombre} TIMEOUT", flush=True)
+        return "La consulta tard? demasiado; responde brevemente con lo que ya sabes."
+    except Exception as exc:
+        print(f"[LIVE][TOOL] <- {nombre} ERROR {type(exc).__name__}", flush=True)
+        return f"No pude completar {nombre}: {type(exc).__name__}."
