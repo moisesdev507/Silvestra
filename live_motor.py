@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Callable, Optional
 from google import genai
 from google.genai import types
-import identidad_origen
+import despertar_local, identidad_origen, json, os
 import live_audio, live_herramientas, live_webrtc, puerta_audio_live
 
 MODELO_DEFECTO = "gemini-2.5-flash-native-audio-latest"
@@ -23,6 +23,33 @@ def _instruccion_con_hora_local(rapido: bool, primer_despertar: bool, nombre_usu
     ahora = datetime.now()
     fecha_local = f"{_DIAS_ES[ahora.weekday()]} {ahora.day} de {_MESES_ES[ahora.month - 1]} de {ahora.year}, {ahora.strftime('%H:%M')}"
     return f"{base}\nFecha y hora local actual del usuario: {fecha_local} (usa siempre esta fecha y hora local, nunca UTC)."
+
+
+def _crear_reconocedor_kaya():
+    ruta = despertar_local.ruta_modelo_vosk()
+    if not os.path.isdir(ruta):
+        return None
+    try:
+        import vosk
+        vosk.SetLogLevel(-1)
+        gramatica = json.dumps(["kaya", "kaia", "calla", "oye kaya", "hola kaya", "[unk]"], ensure_ascii=False)
+        return vosk.KaldiRecognizer(vosk.Model(ruta), 16000, gramatica)
+    except Exception as e:
+        print(f"[LIVE][WAKE] Aviso Vosk: {e}", flush=True)
+        return None
+
+
+def _detecto_kaya_en_chunk(rec, pcm: bytes) -> bool:
+    if rec is None or not pcm:
+        return False
+    try:
+        hecho = rec.AcceptWaveForm(pcm)
+        raw = rec.Result() if hecho else rec.PartialResult()
+        data = json.loads(raw or "{}")
+        txt = data.get("text") or data.get("partial") or ""
+        return despertar_local.contiene_kaya(txt)
+    except Exception:
+        return False
 
 
 class SesionKayaLive:
@@ -136,6 +163,7 @@ class SesionKayaLive:
     async def _tarea_envio_audio(self, session):
         puente = self._puente_webrtc
         cola = puente.cola_entrada if puente is not None else self.cola_audio_entrada
+        rec_wake = await asyncio.to_thread(_crear_reconocedor_kaya) if puente is not None else None
         while self.activo:
             try:
                 data = await asyncio.to_thread(cola.get, timeout=0.1)
@@ -143,10 +171,26 @@ class SesionKayaLive:
                     continue
                 if puente is not None:
                     if data == live_webrtc.SENAL_SLEEP:
+                        if rec_wake is not None:
+                            try:
+                                rec_wake.Reset()
+                            except Exception:
+                                pass
                         try:
                             await session.send_realtime_input(audio_stream_end=True)
                         except Exception:
                             pass
+                        continue
+                    if puente.dormida:
+                        if rec_wake is None or _detecto_kaya_en_chunk(rec_wake, data):
+                            print("[LIVE][WAKE] 'Kaya' detectada -> despertando a Amarillo.", flush=True)
+                            puente.dormida = False
+                            puente.despertar()
+                            if rec_wake is not None:
+                                try:
+                                    rec_wake.Reset()
+                                except Exception:
+                                    pass
                         continue
                 elif self.puerta.reproduciendo or self.compuerta.esta_en_ventana_eco():
                     continue

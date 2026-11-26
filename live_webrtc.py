@@ -18,17 +18,16 @@ HTML_PUENTE = """<!doctype html><html><head><meta charset="utf-8"><title>Kaya Au
 <div id="st">Iniciando puente WebRTC...</div>
 <script>
 const st=document.getElementById("st"),wsPort=location.hash.slice(1);
-let ws,ctx,nextT=0,sources=[],dormida=false,ultimoHabla=performance.now(),preroll=[],piso=0.012,framesVoz=0;
+let ws,ctx,nextT=0,sources=[],dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.012,framesVoz=0;
 function sendCtrl(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));}
 function limpiarAudio(){sources.forEach(s=>{try{s.stop()}catch{}});sources=[];if(ctx)nextT=ctx.currentTime;}
-function despertar(enviarPreroll){
+function despertar(){
   if(!dormida)return;
   dormida=false;framesVoz=0;ultimoHabla=performance.now();
   sendCtrl({type:"estado",v:"escuchando"});
-  if(enviarPreroll&&ws&&ws.readyState===1){preroll.forEach(b=>ws.send(b));preroll=[];}
 }
 function playPcm24k(buf){
-  if(!ctx)return;
+  if(!ctx){colaPreCtx.push(buf);return;}
   const i16=new Int16Array(buf),f32=new Float32Array(i16.length);
   for(let i=0;i<i16.length;i++)f32[i]=i16[i]/32768;
   const ab=ctx.createBuffer(1,f32.length,24000);ab.getChannelData(0).set(f32);
@@ -44,15 +43,16 @@ function ajustar16k(f32,inRate){
   return out;
 }
 async function iniciar(){
+  const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
+  ctx=new AudioContext({sampleRate:16000});await ctx.resume();
   ws=new WebSocket("ws://127.0.0.1:"+wsPort);ws.binaryType="arraybuffer";
+  ws.onopen=()=>{colaPreCtx.forEach(b=>playPcm24k(b));colaPreCtx=[];};
   ws.onmessage=e=>{
     if(e.data instanceof ArrayBuffer){playPcm24k(e.data);return;}
     const m=JSON.parse(e.data);
     if(m.type==="interrupted")limpiarAudio();
-    if(m.type==="wake")despertar(false);
+    if(m.type==="wake")despertar();
   };
-  const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
-  ctx=new AudioContext({sampleRate:16000});await ctx.resume();
   const src=ctx.createMediaStreamSource(stream),proc=ctx.createScriptProcessor(1024,1,1);
   src.connect(proc);proc.connect(ctx.destination);
   st.textContent="WebRTC activo";
@@ -65,11 +65,9 @@ async function iniciar(){
     if(sources.length===0&&rms<piso*1.35)piso=piso*0.97+rms*0.03;
     const uActivo=Math.max(0.022,piso*1.75),uWake=Math.max(0.034,piso*2.35);
     const umbral=dormida?uWake:uActivo;
-    preroll.push(pcm.buffer);if(preroll.length>15)preroll.shift();
     if(rms>umbral){
       framesVoz++;
       if(!dormida&&framesVoz>=2){ultimoHabla=ahora;sendCtrl({type:"nivel",v:Math.min(1,rms*6)});}
-      if(dormida&&framesVoz>=3)despertar(true);
     }else{framesVoz=0;}
     if(sources.length>0)ultimoHabla=ahora;
     if(!dormida&&ahora-ultimoHabla>9000){
@@ -77,7 +75,7 @@ async function iniciar(){
       sendCtrl({type:"sleep"});sendCtrl({type:"estado",v:"reposo"});
       return;
     }
-    if(!dormida)ws.send(pcm.buffer);
+    if(!dormida||rms>uActivo)ws.send(pcm.buffer);
   };
 }
 iniciar().catch(e=>{st.textContent="Error: "+e;sendCtrl({type:"error",msg:String(e)});});
