@@ -1,6 +1,7 @@
 """Turnos parciales de Gemini Live y contexto conversacional compartido."""
 from google.genai import types
 
+import cerebro_unico
 import live_audio
 import live_fecha
 import live_herramientas
@@ -9,15 +10,12 @@ import memoria_unificada
 
 
 def bloque_memoria(max_chars=520):
-    """Ficha y recuerdos estables en cada reconexión (sin anti-repetición)."""
+    """Bloque cognitivo único y estable en cada reconexión de Live."""
     try:
-        texto = memoria_contexto.resumen_estable(max_chars=max_chars)
+        return "\n" + cerebro_unico.compilar_contexto_unico(
+            "", max_chars=max(max_chars, 4000), estable=True)
     except Exception:
         return ""
-    if not texto:
-        return ""
-    return ("\n[Ficha y recuerdos del usuario] Usa estos datos reales para resolver "
-            "referencias y no inventes nada.\n" + texto)
 
 
 def bloque_conversacion(max_turnos=12, max_chars=1400):
@@ -43,8 +41,7 @@ def construir_config(voz, rapido=False, despertar=False, nombre=""):
     """Config Live reconstruida en cada conexión, con el hilo más reciente."""
     base = live_fecha.instruccion_con_hora_local(rapido, despertar, nombre)
     memoria = bloque_memoria()
-    hilo = bloque_conversacion()
-    instruccion = base + memoria + ("\n" + hilo if hilo else "")
+    instruccion = base + memoria
     return types.LiveConnectConfig(
         response_modalities=["AUDIO"],
         speech_config=types.SpeechConfig(
@@ -91,10 +88,9 @@ class AcumuladorTurnos:
         kaya = " ".join(self.kaya).strip()
         self.usuario, self.kaya = [], []
         if usuario:
-            memoria_contexto.registrar_turno("user", usuario)
-            memoria_unificada.aprender_del_turno_async(usuario, canal="voz")
+            cerebro_unico.procesar_turno_cognitivo("usuario", usuario, origen="live")
         if kaya:
-            memoria_contexto.registrar_turno("kaya", kaya)
+            cerebro_unico.procesar_turno_cognitivo("kaya", kaya, origen="live")
         return bool(usuario or kaya)
 
 

@@ -13,6 +13,7 @@ import memoria_persistente as memoria
 import busqueda_web as web
 import vision_pantalla as vision
 import correo_unificado as correo
+import herramientas_cerebro as cerebro_tools
 
 LIMITE = 1600
 _ETIQUETA = re.compile(
@@ -59,6 +60,8 @@ CATALOGO = {
     "buscar_drive": google.buscar_drive,
     "buscar_web": web.buscar_web,
     "ver_pantalla": vision.analizar_pantalla,
+    "consultar_conocimiento_local": cerebro_tools.consultar_conocimiento_local,
+    "resumir_enlace_o_video": cerebro_tools.resumir_enlace_o_video,
 }
 
 
@@ -151,6 +154,12 @@ def detectar_intencion(consulta):
                                 "que error sale", "analiza la pantalla", "analiza mi pantalla",
                                 "que tengo en pantalla", "que hay en pantalla")):
         acciones.append(("ver_pantalla", str(consulta)))
+    if any(x in texto for x in ("conocimiento local", "busca en mis documentos",
+                                "busca en mis archivos", "consulta el grafo")):
+        acciones.append(("consultar_conocimiento_local", str(consulta)))
+    if any(x in texto for x in ("resume este enlace", "resume este video",
+                                "resumir youtube", "resume el link")):
+        acciones.append(("resumir_enlace_o_video", str(consulta)))
     return acciones[:3]
 
 

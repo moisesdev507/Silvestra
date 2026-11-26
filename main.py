@@ -141,6 +141,11 @@ class Silvestra:
         self.cara._ref_voz = self.voz
         self.cara.poner_viva(bool(self.memoria.nombre))
         memoria.instalar(self)
+        try:
+            import cerebro_unico
+            cerebro_unico.inicializar_cerebro()
+        except Exception:
+            pass
         presentacion.instalar(self)
         self.casa = casa.instalar(self)
         self.camara = camara.instalar(self)

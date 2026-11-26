@@ -1,7 +1,7 @@
 """Herramientas adicionales de Gemini Live con paridad respecto al motor clásico.
 
 Incluye visión de pantalla, portapapeles, ventanas, procesos, HUD y multimedia.
-Se importa desde live_herramientas.py para no acercar ese módulo al límite de 15 KB.
+Se importa desde live_herramientas.py.
 """
 import asyncio
 from typing import Any, Dict, List
@@ -15,6 +15,7 @@ ETIQUETA_BROMA = "[BROMA_INTERNA]"
 
 def declaraciones_extra() -> List[types.FunctionDeclaration]:
     """Declaraciones de las capacidades locales añadidas a Gemini Live."""
+    import herramientas_cerebro
     return [
         types.FunctionDeclaration(
             name="revisar_pantalla",
@@ -210,7 +211,7 @@ def declaraciones_extra() -> List[types.FunctionDeclaration]:
                 required=["tema"],
             ),
         ),
-    ]
+    ] + herramientas_cerebro.declaraciones()
 
 
 async def despachar(nombre: str, args: Dict[str, Any]) -> Any:
@@ -266,7 +267,9 @@ async def despachar(nombre: str, args: Dict[str, Any]) -> Any:
             None, agendar_seguimiento, str(args.get("tema", "")),
             str(args.get("contexto", "")), args.get("horas_espera", 24),
         )
-    return None
+    import herramientas_cerebro
+    resultado = herramientas_cerebro.despachar(nombre, args)
+    return resultado if resultado is not None else None
 
 
 def _memoria_principal():

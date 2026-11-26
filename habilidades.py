@@ -180,5 +180,22 @@ def instalar(app):
         "(tú NO sabes cuál es el error: solo di una frase corta avisando que vas a revisar el registro y no inventes errores; "
         "úsala cuando pregunten qué error tienes, qué falló, cuál es el error o por qué hubo un fallo)",
     )
+    try:
+        import herramientas_cerebro as hc
+        acciones.registrar(
+            "consultar_conocimiento",
+            hc.accion_consultar,
+            "busca en documentos locales y en el grafo de conocimiento; escribe: "
+            "consultar_conocimiento | qué buscas | ruta=opcional",
+            con_texto=True,
+        )
+        acciones.registrar(
+            "resumir_enlace",
+            lambda texto: hc.accion_resumir(texto, app),
+            "resume una página web o un video de YouTube; escribe: resumir_enlace | https://...",
+            con_texto=True,
+        )
+    except Exception:
+        pass
     app.cara.root.after(500, h.revisar)
     return h

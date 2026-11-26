@@ -21,8 +21,8 @@ def _reg_turno(cerebro, u_txt, a_txt, al_frase=None):
     except Exception:
         pass
     try:
-        import memoria_contexto
-        memoria_contexto.registrar_par(u_txt, a_txt)
+        import cerebro_unico
+        cerebro_unico.procesar_par_cognitivo(u_txt, a_txt, origen="celeste")
     except Exception:
         pass
 

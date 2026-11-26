@@ -39,17 +39,17 @@ def contexto_ambiental():
 
 
 def contexto_memoria():
-    """Memoria y contexto ambiental bajo un bloque estable para Live."""
+    """Bloque cognitivo único y estable para Live, sin llamadas dispersas."""
     try:
-        import memoria_contexto
-        base = memoria_contexto.resumen_estable()
+        import cerebro_unico
+        bloque = cerebro_unico.compilar_contexto_unico("", estable=True)
     except Exception:
-        base = ""
-    cuerpo = (base + "\n" + contexto_ambiental()).strip()
-    if not cuerpo:
         return ""
-    return ("[Ficha y recuerdos del usuario] Resuelve referencias con este bloque "
-            "y con [Conversación reciente en curso], sin inventar.\n" + cuerpo)
+    partes = [p for p in bloque.split("\n\n") if p]
+    if any(p.startswith("[Ficha y recuerdos del usuario]") for p in partes):
+        permitidos = ("[Ficha y recuerdos del usuario]", "[Contexto de trabajo y ambiente]")
+        partes = [p for p in partes if p.startswith(permitidos)]
+    return "\n\n".join(partes)
 
 
 __all__ = ["guia_vocal", "contexto_memoria", "contexto_ambiental"]

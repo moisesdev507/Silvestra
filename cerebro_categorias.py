@@ -88,7 +88,7 @@ CATEGORIAS_ACCIONES = {
     ),
     "resumen": (
         {"resumir", "resumen", "articulo", "link", "enlace", "portapapeles", "video"},
-        {"resumir_pagina", "resumir_video", "resumir_portapapeles"}
+        {"resumir_pagina", "resumir_video", "resumir_portapapeles", "resumir_enlace"}
     ),
     "tablet": (
         {"tablet", "remota", "servidor tablet", "pantalla remota", "segunda pantalla", "tabla", "notable", "pantalla tablet"},
@@ -100,7 +100,7 @@ CATEGORIAS_ACCIONES = {
     ),
     "memoria_alias": (
         {"recuerda", "recuerdo", "memoria", "sabes", "olvida"},
-        {"recuerda_esto", "que_sabes", "guardar_recuerdo", "olvidar", "consultar_memoria"}
+        {"recuerda_esto", "que_sabes", "guardar_recuerdo", "olvidar", "consultar_memoria", "consultar_conocimiento"}
     ),
     "recordatorios_alias": (
         {"recordatorio", "recordar", "acuerdate", "avisame", "aviso", "alarma"},

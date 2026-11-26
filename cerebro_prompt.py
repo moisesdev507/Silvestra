@@ -157,10 +157,10 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
     if contexto_adicional:
         ctx_texto = (ctx_texto + "\n" + str(contexto_adicional)).strip()
     try:
-        import cerebro_trabajo
-        res_t = cerebro_trabajo.resumen_contexto_trabajo()
-        if res_t:
-            ctx_texto = (ctx_texto + "\n" + res_t).strip()
+        import cerebro_unico
+        unico = cerebro_unico.compilar_contexto_unico(texto_actual)
+        if unico:
+            ctx_texto = (ctx_texto + "\n" + unico).strip()
     except Exception:
         pass
     try:
@@ -311,13 +311,6 @@ def construir_prompt(memoria, texto_actual=None, historial_reciente=None, es_inv
     bloques.append(memoria_texto)
     if ctx_texto:
         bloques.append(ctx_texto)
-    try:
-        import cerebro_rag
-        rag_ctx = cerebro_rag.consultar_rag(texto_actual, limite=2)
-        if rag_ctx: bloques.append(rag_ctx)
-    except Exception: pass
     if perfil_texto:
         bloques.append(f"Perfil del usuario:\n{perfil_texto}")
-    if corr_texto:
-        bloques.append(f"Correcciones aplicadas:\n{corr_texto}")
     return "\n\n".join(bloques)
