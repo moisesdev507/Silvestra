@@ -122,7 +122,7 @@ class CapaAudioLive:
                         try:
                             await session.send_client_content(
                                 turns=types.Content(role="user", parts=[types.Part.from_text(
-                                    text="[El usuario no respondi? enseguida y se qued? en silencio unos segundos. Reacciona como una amiga cercana en una sola frase corta, espont?nea y distinta cada vez (por ejemplo: preguntar qu? le pasa, si se qued? pensando, si todo bien o picarlo con humor suave para que siga hablando).]"
+                                    text="[El usuario lleva unos segundos en silencio tras lo ?ltimo que dijiste. Seg?n el contexto de la charla (si le hiciste una pregunta, si le diste informaci?n larga o si ven?an bromeando), suelta una sola frase corta, natural y distinta cada vez para retomar el hilo sin sonar rob?tica.]"
                                 )]),
                                 turn_complete=True,
                             )

@@ -19,7 +19,7 @@ HTML_PUENTE = """<!doctype html><html><head><meta charset="utf-8"><title>Kaya Au
 <div id="st">Iniciando puente WebRTC...</div>
 <script>
 const st=document.getElementById("st"),wsPort=location.hash.slice(1);
-let ws,ctx,nextT=0,sources=[],dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.006,framesVoz=0,pausasVoz=0,preroll=[],colaVoz=0,bargeHasta=0,finHabla=0,insistio=false,tuvoTurno=false;
+let ws,ctx,nextT=0,sources=[],dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.006,framesVoz=0,pausasVoz=0,preroll=[],colaVoz=0,bargeHasta=0,finHabla=0,inicioHabla=0,duracionHabla=0,insistio=false,tuvoTurno=false;
 function sendCtrl(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));}
 function limpiarAudio(){sources.forEach(s=>{try{s.stop()}catch{}});sources=[];if(ctx)nextT=ctx.currentTime;}
 function despertar(){
@@ -37,8 +37,8 @@ function playPcm24k(buf){
   const ab=ctx.createBuffer(1,f32.length,24000);ab.getChannelData(0).set(f32);
   const src=ctx.createBufferSource();src.buffer=ab;src.connect(ctx.destination);
   const t=Math.max(ctx.currentTime,nextT);src.start(t);nextT=t+ab.duration;
-  sources.push(src);tuvoTurno=true;insistio=false;ultimoHabla=performance.now();sendCtrl({type:"estado",v:"hablando"});
-  src.onended=()=>{sources=sources.filter(x=>x!==src);if(!sources.length){finHabla=performance.now();sendCtrl({type:"estado",v:dormida?"reposo":"escuchando"});}};
+  if(!sources.length)inicioHabla=performance.now();sources.push(src);tuvoTurno=true;insistio=false;ultimoHabla=performance.now();sendCtrl({type:"estado",v:"hablando"});
+  src.onended=()=>{sources=sources.filter(x=>x!==src);if(!sources.length){finHabla=performance.now();if(inicioHabla>0){duracionHabla=finHabla-inicioHabla;inicioHabla=0;}sendCtrl({type:"estado",v:dormida?"reposo":"escuchando"});}};
 }
 function ajustar16k(f32,inRate){
   if(inRate===16000)return f32;
@@ -47,7 +47,7 @@ function ajustar16k(f32,inRate){
   return out;
 }
 async function iniciar(){
-  const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:false,autoGainControl:false}});
+  const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
   ctx=new AudioContext({sampleRate:16000});await ctx.resume();
   ws=new WebSocket("ws://127.0.0.1:"+wsPort);ws.binaryType="arraybuffer";
   ws.onopen=()=>{ultimoHabla=performance.now();colaPreCtx.forEach(b=>playPcm24k(b));colaPreCtx=[];};
@@ -67,8 +67,8 @@ async function iniciar(){
     for(let i=0;i<d.length;i++){const v=Math.max(-1,Math.min(1,d[i]));sum+=v*v;pcm[i]=v<0?v*32768:v*32767;}
     const rms=Math.sqrt(sum/d.length),ahora=performance.now();
     if(sources.length>0&&ctx&&ctx.currentTime>nextT+0.25){sources=[];if(!dormida)sendCtrl({type:"estado",v:"escuchando"});}
-    if(!dormida&&sources.length===0&&rms<piso*1.35)piso=Math.min(0.009,Math.max(0.0035,piso*0.98+rms*0.02));
-    const uActivo=Math.max(0.0085,piso*1.75),uWake=Math.max(0.018,piso*2.5);
+    if(!dormida&&sources.length===0&&rms<piso*1.35)piso=Math.min(0.011,Math.max(0.004,piso*0.98+rms*0.02));
+    const uActivo=Math.max(0.0115,piso*1.9),uWake=Math.max(0.021,piso*2.5);
     const hablandoEco=sources.length>0||(ahora-finHabla)<400;
     if(hablandoEco)preroll=[];
     else if(dormida||colaVoz===0){preroll.push(pcm.buffer);if(preroll.length>10)preroll.shift();}
@@ -86,7 +86,7 @@ async function iniciar(){
         }else{
           const estabaMudo=colaVoz===0;
           colaVoz=18;
-          if(framesVoz>=2){ultimoHabla=ahora;insistio=false;}
+          if(framesVoz>=3){ultimoHabla=ahora;insistio=false;}
           sendCtrl({type:"nivel",v:Math.min(1,rms*6)});
           if(estabaMudo){preroll.forEach(b=>ws.send(b));preroll=[];}
         }
@@ -96,10 +96,12 @@ async function iniciar(){
       if(colaVoz>0)colaVoz--;
     }
     if(sources.length>0)ultimoHabla=ahora;
-    if(!dormida&&sources.length===0&&colaVoz===0&&tuvoTurno&&!insistio&&finHabla>0&&(ahora-finHabla)>4500&&(ahora-ultimoHabla)>4500){
+    const esperaNudge=duracionHabla>3500?18000:10000;
+    if(!dormida&&sources.length===0&&colaVoz===0&&tuvoTurno&&!insistio&&finHabla>0&&(ahora-finHabla)>esperaNudge&&(ahora-ultimoHabla)>esperaNudge){
       insistio=true;tuvoTurno=false;ultimoHabla=ahora;sendCtrl({type:"nudge"});
     }
-    if(!dormida&&ahora-ultimoHabla>10000){
+    const esperaSleep=insistio?12000:13000;
+    if(!dormida&&sources.length===0&&colaVoz===0&&(ahora-ultimoHabla)>esperaSleep){
       dormida=true;framesVoz=0;pausasVoz=0;colaVoz=0;
       sendCtrl({type:"sleep"});sendCtrl({type:"estado",v:"reposo"});
       return;
