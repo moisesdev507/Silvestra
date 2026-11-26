@@ -24,7 +24,7 @@ function sendCtrl(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));}
 function limpiarAudio(){sources.forEach(s=>{try{s.stop()}catch{}});sources=[];if(ctx)nextT=ctx.currentTime;}
 function despertar(){
   if(!dormida)return;
-  dormida=false;framesVoz=0;pausasVoz=0;colaVoz=18;insistio=false;ultimoHabla=performance.now();
+  dormida=false;framesVoz=0;pausasVoz=0;colaVoz=6;insistio=false;ultimoHabla=performance.now();
   sendCtrl({type:"wake"});sendCtrl({type:"estado",v:"escuchando"});
   if(ws&&ws.readyState===1){preroll.forEach(b=>ws.send(b));preroll=[];}
 }
@@ -79,13 +79,13 @@ async function iniciar(){
       if(!dormida){
         if(hablandoEco){
           if(framesVoz>=6){
-            colaVoz=18;ultimoHabla=ahora;insistio=false;
+            colaVoz=6;ultimoHabla=ahora;insistio=false;
             if(sources.length>0){bargeHasta=ahora+1100;limpiarAudio();sendCtrl({type:"barge_in"});sendCtrl({type:"estado",v:"escuchando"});}
             sendCtrl({type:"nivel",v:Math.min(1,rms*6)});
           }
         }else{
           const estabaMudo=colaVoz===0;
-          colaVoz=18;
+          colaVoz=6;
           if(framesVoz>=3){ultimoHabla=ahora;insistio=false;}
           sendCtrl({type:"nivel",v:Math.min(1,rms*6)});
           if(estabaMudo){preroll.forEach(b=>ws.send(b));preroll=[];}
