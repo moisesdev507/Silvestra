@@ -8,6 +8,7 @@ import hashlib
 import io
 import threading
 
+import cerebro_autonomo
 import cerebro_grafo
 import cerebro_rag
 import cerebro_trabajo
@@ -101,7 +102,12 @@ def compilar_contexto_unico(consulta="", max_chars=2200, estable=False):
 
     trabajo_ambiente = "\n".join(x for x in (trabajo, ambiente) if x)
     titulo_hilo = "Conversación reciente en curso" if estable else "Hilo reciente"
+    try:
+        tono = cerebro_autonomo.linea_estado_atencion()
+    except Exception:
+        tono = ""
     secciones = (
+        ("Estado emocional y atención", tono),
         ("Ficha y recuerdos del usuario", ficha),
         ("Grafo de relaciones", _sin_encabezado(grafo)),
         ("Correcciones activas", correcciones_txt),
@@ -182,6 +188,10 @@ def _post_usuario(texto, origen):
         hilos["embeddings"].start()
     except Exception:
         pass
+    try:
+        cerebro_autonomo.notificar_actividad(origen)
+    except Exception:
+        pass
     return {"correccion": corregida, "hilos": hilos}
 
 
@@ -207,7 +217,11 @@ def procesar_par_cognitivo(texto_usuario, texto_kaya, origen="celeste"):
     return _post_usuario(texto_usuario, origen)
 
 
+ejecutar_consolidacion_reposo = cerebro_autonomo.ejecutar_consolidacion_reposo
+evaluar_atencion_proactiva = cerebro_autonomo.evaluar_atencion_proactiva
+
 __all__ = [
     "inicializar_cerebro", "compilar_contexto_unico",
     "procesar_turno_cognitivo", "procesar_par_cognitivo",
+    "ejecutar_consolidacion_reposo", "evaluar_atencion_proactiva",
 ]

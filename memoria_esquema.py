@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS recuerdos (
  categoria TEXT DEFAULT 'general',
  origen TEXT NOT NULL CHECK(origen IN ('explicito','inferido','multimodal','migrado','sistema')),
  confianza REAL NOT NULL DEFAULT 0.8,
- estado TEXT NOT NULL DEFAULT 'activo' CHECK(estado IN ('activo','obsoleto','contradicho','eliminado')),
+ estado TEXT NOT NULL DEFAULT 'activo' CHECK(estado IN ('activo','consolidado','obsoleto','contradicho','eliminado')),
  reemplaza_a_id INTEGER NULL REFERENCES recuerdos(id), fecha_evento TEXT NULL,
  creado_en TEXT NOT NULL, actualizado_en TEXT NOT NULL,
  metadatos_json TEXT DEFAULT '{}', embedding BLOB NULL);
