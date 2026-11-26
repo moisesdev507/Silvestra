@@ -68,7 +68,7 @@ def _analizar_genai(clave: str, b64_img: str, prompt: str, modelo: str) -> str:
     from google import genai
     from google.genai import types
 
-    cliente = genai.Client(api_key=clave)
+    cliente = genai.Client(api_key=clave, http_options={"api_version": "v1beta"})
     datos = base64.b64decode(b64_img)
     respuesta = cliente.models.generate_content(
         model=modelo,
