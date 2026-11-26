@@ -12,18 +12,19 @@ from typing import Callable, Optional
 import websockets
 
 SENAL_SLEEP = b"__WEBRTC_SLEEP__"
+SENAL_NUDGE = b"__WEBRTC_NUDGE__"
 
 HTML_PUENTE = """<!doctype html><html><head><meta charset="utf-8"><title>Kaya Audio Bridge</title></head>
 <body style="background:#0b0f17;color:#94a3b8;font-family:sans-serif;font-size:12px">
 <div id="st">Iniciando puente WebRTC...</div>
 <script>
 const st=document.getElementById("st"),wsPort=location.hash.slice(1);
-let ws,ctx,nextT=0,sources=[],dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.007,framesVoz=0,pausasVoz=0,preroll=[],colaVoz=0,bargeHasta=0,finHabla=0;
+let ws,ctx,nextT=0,sources=[],dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.006,framesVoz=0,pausasVoz=0,preroll=[],colaVoz=0,bargeHasta=0,finHabla=0,insistio=false,tuvoTurno=false;
 function sendCtrl(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));}
 function limpiarAudio(){sources.forEach(s=>{try{s.stop()}catch{}});sources=[];if(ctx)nextT=ctx.currentTime;}
 function despertar(){
   if(!dormida)return;
-  dormida=false;framesVoz=0;pausasVoz=0;ultimoHabla=performance.now();
+  dormida=false;framesVoz=0;pausasVoz=0;colaVoz=18;insistio=false;ultimoHabla=performance.now();
   sendCtrl({type:"wake"});sendCtrl({type:"estado",v:"escuchando"});
   if(ws&&ws.readyState===1){preroll.forEach(b=>ws.send(b));preroll=[];}
 }
@@ -36,7 +37,7 @@ function playPcm24k(buf){
   const ab=ctx.createBuffer(1,f32.length,24000);ab.getChannelData(0).set(f32);
   const src=ctx.createBufferSource();src.buffer=ab;src.connect(ctx.destination);
   const t=Math.max(ctx.currentTime,nextT);src.start(t);nextT=t+ab.duration;
-  sources.push(src);sendCtrl({type:"estado",v:"hablando"});
+  sources.push(src);tuvoTurno=true;insistio=false;ultimoHabla=performance.now();sendCtrl({type:"estado",v:"hablando"});
   src.onended=()=>{sources=sources.filter(x=>x!==src);if(!sources.length){finHabla=performance.now();sendCtrl({type:"estado",v:dormida?"reposo":"escuchando"});}};
 }
 function ajustar16k(f32,inRate){
@@ -46,7 +47,7 @@ function ajustar16k(f32,inRate){
   return out;
 }
 async function iniciar(){
-  const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
+  const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
   ctx=new AudioContext({sampleRate:16000});await ctx.resume();
   ws=new WebSocket("ws://127.0.0.1:"+wsPort);ws.binaryType="arraybuffer";
   ws.onopen=()=>{ultimoHabla=performance.now();colaPreCtx.forEach(b=>playPcm24k(b));colaPreCtx=[];};
@@ -66,17 +67,17 @@ async function iniciar(){
     for(let i=0;i<d.length;i++){const v=Math.max(-1,Math.min(1,d[i]));sum+=v*v;pcm[i]=v<0?v*32768:v*32767;}
     const rms=Math.sqrt(sum/d.length),ahora=performance.now();
     if(sources.length>0&&ctx&&ctx.currentTime>nextT+0.25){sources=[];if(!dormida)sendCtrl({type:"estado",v:"escuchando"});}
-    if(!dormida&&sources.length===0&&rms<piso*1.35)piso=Math.min(0.012,Math.max(0.0045,piso*0.98+rms*0.02));
-    const uActivo=Math.max(0.015,piso*2.2),uWake=Math.max(0.024,piso*2.8);
+    if(!dormida&&sources.length===0&&rms<piso*1.35)piso=Math.min(0.009,Math.max(0.0035,piso*0.98+rms*0.02));
+    const uActivo=Math.max(0.0085,piso*1.75),uWake=Math.max(0.018,piso*2.5);
     if(dormida||colaVoz===0){preroll.push(pcm.buffer);if(preroll.length>10)preroll.shift();}
     const hablandoEco=sources.length>0||(ahora-finHabla)<320;
-    const uBarge=Math.max(0.044,uWake*1.65);
+    const uBarge=Math.max(0.042,uWake*1.85);
     const umbral=dormida?uWake:(hablandoEco?uBarge:uActivo);
     if(rms>umbral){
       const estabaMudo=!dormida&&colaVoz===0;
-      framesVoz++;pausasVoz=0;colaVoz=7;
+      framesVoz++;pausasVoz=0;colaVoz=16;
       if(!dormida){
-        if(framesVoz>=3)ultimoHabla=ahora;
+        if(framesVoz>=2){ultimoHabla=ahora;insistio=false;}
         if(sources.length>0&&framesVoz>=4&&rms>uBarge){
           bargeHasta=ahora+1100;limpiarAudio();
           sendCtrl({type:"barge_in"});sendCtrl({type:"estado",v:"escuchando"});
@@ -89,12 +90,15 @@ async function iniciar(){
       if(colaVoz>0)colaVoz--;
     }
     if(sources.length>0)ultimoHabla=ahora;
-    if(!dormida&&ahora-ultimoHabla>10000){
+    if(!dormida&&sources.length===0&&tuvoTurno&&!insistio&&finHabla>0&&(ahora-finHabla)>6500&&(ahora-ultimoHabla)>6500){
+      insistio=true;tuvoTurno=false;ultimoHabla=ahora;sendCtrl({type:"nudge"});
+    }
+    if(!dormida&&ahora-ultimoHabla>10500){
       dormida=true;framesVoz=0;pausasVoz=0;colaVoz=0;
       sendCtrl({type:"sleep"});sendCtrl({type:"estado",v:"reposo"});
       return;
     }
-    if(!dormida){ws.send(colaVoz>0?pcm.buffer:new Int16Array(pcm.length).buffer);}else if(framesVoz>=4&&rms>uWake){despertar();ws.send(pcm.buffer);}
+    if(!dormida){ws.send(colaVoz>0?pcm.buffer:new Int16Array(pcm.length).buffer);}else if(framesVoz>=3&&rms>uWake){despertar();ws.send(pcm.buffer);}
   };
 }
 iniciar().catch(e=>{st.textContent="Error: "+e;sendCtrl({type:"error",msg:String(e)});});
@@ -236,6 +240,8 @@ class PuenteWebRTC:
                                     self.cola_salida.queue.clear()
                             elif tipo == "wake":
                                 print("[LIVE][WEBRTC] Voz detectada -> Despertando a Amarillo.", flush=True)
+                            elif tipo == "nudge":
+                                self._encolar_entrada(SENAL_NUDGE)
                             elif tipo == "sleep":
                                 print("[LIVE][WEBRTC] 9s en silencio -> Reposo Azul (0 tokens).", flush=True)
                                 self._encolar_entrada(SENAL_SLEEP)

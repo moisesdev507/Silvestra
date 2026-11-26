@@ -118,6 +118,17 @@ class CapaAudioLive:
                         if hasattr(self, "_al_dormir"):
                             self._al_dormir()
                         continue
+                    if data == getattr(live_webrtc, "SENAL_NUDGE", b"__WEBRTC_NUDGE__"):
+                        try:
+                            await session.send_client_content(
+                                turns=types.Content(role="user", parts=[types.Part.from_text(
+                                    text="[El usuario se qued? unos segundos en silencio tras tu ?ltima respuesta. Ins?stele en una frase muy corta y natural, como una amiga, para seguir la charla o saber qu? opina, sin sonar rob?tica.]"
+                                )]),
+                                turn_complete=True,
+                            )
+                        except Exception:
+                            pass
+                        continue
                     if puente.dormida:
                         puente.dormida = False
                 elif self.puerta.reproduciendo or self.compuerta.esta_en_ventana_eco():
