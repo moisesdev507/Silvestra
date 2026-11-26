@@ -29,13 +29,14 @@ function despertar(){
 }
 function playPcm24k(buf){
   if(!ctx){colaPreCtx.push(buf);return;}
+  if(ctx.state==="suspended")ctx.resume().catch(()=>{});
   const i16=new Int16Array(buf),f32=new Float32Array(i16.length);
   for(let i=0;i<i16.length;i++)f32[i]=i16[i]/32768;
   const ab=ctx.createBuffer(1,f32.length,24000);ab.getChannelData(0).set(f32);
   const src=ctx.createBufferSource();src.buffer=ab;src.connect(ctx.destination);
   const t=Math.max(ctx.currentTime,nextT);src.start(t);nextT=t+ab.duration;
   sources.push(src);sendCtrl({type:"estado",v:"hablando"});
-  src.onended=()=>{sources=sources.filter(x=>x!==src);if(!sources.length&&!dormida)sendCtrl({type:"estado",v:"escuchando"});};
+  src.onended=()=>{sources=sources.filter(x=>x!==src);if(!sources.length)sendCtrl({type:"estado",v:dormida?"reposo":"escuchando"});};
 }
 function ajustar16k(f32,inRate){
   if(inRate===16000)return f32;
@@ -63,15 +64,17 @@ async function iniciar(){
     let sum=0;const pcm=new Int16Array(d.length);
     for(let i=0;i<d.length;i++){const v=Math.max(-1,Math.min(1,d[i]));sum+=v*v;pcm[i]=v<0?v*32768:v*32767;}
     const rms=Math.sqrt(sum/d.length),ahora=performance.now();
-    if(!dormida&&sources.length===0&&rms<piso*1.15)piso=Math.min(0.007,piso*0.98+rms*0.02);
-    const uActivo=Math.max(0.0075,piso*1.7),uWake=Math.max(0.015,piso*2.2);
+    if(sources.length>0&&ctx&&ctx.currentTime>nextT+0.25){sources=[];if(!dormida)sendCtrl({type:"estado",v:"escuchando"});}
+    if(sources.length===0&&framesVoz===0)piso=Math.min(0.025,Math.max(0.004,piso*0.96+rms*0.04));
+    const uActivo=Math.max(0.016,piso*2.2),uWake=Math.max(0.022,piso*2.6);
     if(dormida){preroll.push(pcm.buffer);if(preroll.length>8)preroll.shift();}
     const umbral=dormida?uWake:uActivo;
     if(rms>umbral){
       const estabaMudo=!dormida&&colaVoz===0;
-      framesVoz++;pausasVoz=0;colaVoz=22;
+      framesVoz++;pausasVoz=0;colaVoz=18;
       if(!dormida){
-        if(framesVoz>=2)ultimoHabla=ahora;sendCtrl({type:"nivel",v:Math.min(1,rms*6)});
+        if(framesVoz>=3)ultimoHabla=ahora;
+        sendCtrl({type:"nivel",v:Math.min(1,rms*6)});
         if(estabaMudo){preroll.forEach(b=>ws.send(b));preroll=[];}
       }
     }else{
@@ -84,7 +87,7 @@ async function iniciar(){
       sendCtrl({type:"sleep"});sendCtrl({type:"estado",v:"reposo"});
       return;
     }
-    if(!dormida){ws.send(colaVoz>0?pcm.buffer:new Int16Array(pcm.length).buffer);}else if(framesVoz>=3&&rms>uWake){despertar();ws.send(pcm.buffer);}
+    if(!dormida){ws.send(colaVoz>0?pcm.buffer:new Int16Array(pcm.length).buffer);}else if(framesVoz>=4&&rms>uWake){despertar();ws.send(pcm.buffer);}
   };
 }
 iniciar().catch(e=>{st.textContent="Error: "+e;sendCtrl({type:"error",msg:String(e)});});
