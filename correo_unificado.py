@@ -122,14 +122,18 @@ def confirmar_envio_correo(confirmacion=""):
 def gestionar(accion="", destinatario="", asunto="", cuerpo=""):
     """Único acceso del AGENTE: el envío exige una confirmación explícita."""
     accion = str(accion or "").strip().lower()
-    if accion == "preparar":
+    if accion in ("leer", "revisar", "listar"):
+        resultado = leer_correos(limite=5, solo_no_leidos=(destinatario != "todos"))
+        if resultado.get("ok") and not resultado.get("correos"):
+            resultado = leer_correos(limite=5, solo_no_leidos=False)
+    elif accion == "preparar":
         resultado = preparar_correo(destinatario, asunto, cuerpo)
     elif accion == "confirmar":
         resultado = confirmar_envio_correo("sí")
     elif accion == "cancelar":
         resultado = cancelar_correo()
     else:
-        return "Acción no válida: usa preparar, confirmar o cancelar."
+        return "Acción no válida: usa leer, preparar, confirmar o cancelar."
     return str(resultado.get("texto", ""))
 
 

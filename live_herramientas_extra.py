@@ -179,14 +179,13 @@ def declaraciones_extra() -> List[types.FunctionDeclaration]:
         types.FunctionDeclaration(
             name="gestionar_correo",
             description=(
-                "Gestiona correo en dos pasos: 'preparar' redacta y guarda un borrador SIN enviarlo; "
-                "'confirmar' envía ese borrador SOLO tras la confirmación explícita del usuario; "
-                "'cancelar' lo descarta. Nunca envíes sin confirmación."
+                "Gestiona Gmail: 'leer' revisa correos recientes; 'preparar' crea borrador SIN enviar; "
+                "'confirmar' envía tras aprobación explícita; 'cancelar' descarta."
             ),
             parameters=types.Schema(
                 type="OBJECT",
                 properties={
-                    "accion": types.Schema(type="STRING", description="preparar, confirmar o cancelar"),
+                    "accion": types.Schema(type="STRING", description="leer, preparar, confirmar o cancelar"),
                     "destinatario": types.Schema(type="STRING", description="Correo del destinatario (preparar)."),
                     "asunto": types.Schema(type="STRING", description="Asunto del correo (preparar)."),
                     "cuerpo": types.Schema(type="STRING", description="Mensaje del correo (preparar)."),
