@@ -64,8 +64,8 @@ async function iniciar(){
     for(let i=0;i<d.length;i++){const v=Math.max(-1,Math.min(1,d[i]));sum+=v*v;pcm[i]=v<0?v*32768:v*32767;}
     const rms=Math.sqrt(sum/d.length),ahora=performance.now();
     if(sources.length===0&&rms<piso*1.35)piso=piso*0.97+rms*0.03;
-    const uActivo=Math.max(0.011,piso*1.6),uWake=Math.max(0.013,piso*1.8);
-    preroll.push(pcm.buffer);if(preroll.length>6)preroll.shift();
+    const uActivo=Math.max(0.009,piso*1.5),uWake=Math.max(0.011,piso*1.7);
+    preroll.push(pcm.buffer);if(preroll.length>8)preroll.shift();
     const umbral=dormida?uWake:uActivo;
     if(rms>umbral){
       framesVoz++;
@@ -77,7 +77,7 @@ async function iniciar(){
       sendCtrl({type:"sleep"});sendCtrl({type:"estado",v:"reposo"});
       return;
     }
-    if(!dormida){ws.send(pcm.buffer);}else if(framesVoz>=3){despertar();}
+    if(!dormida){ws.send(pcm.buffer);}else if(framesVoz>=2){despertar();ws.send(pcm.buffer);}
   };
 }
 iniciar().catch(e=>{st.textContent="Error: "+e;sendCtrl({type:"error",msg:String(e)});});
