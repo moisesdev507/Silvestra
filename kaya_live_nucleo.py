@@ -61,8 +61,8 @@ def construir_instruccion_sistema():
     )
     mem = ""
     try:
-        import memoria_contexto
-        mem = memoria_contexto.resumen_para_prompt()
+        import live_prompt
+        mem = live_prompt.contexto_memoria()
     except Exception:
         pass
     return base + guia + mem
@@ -253,10 +253,16 @@ class SesionKayaLive:
             response_modalities=[types.Modality.AUDIO],
             speech_config=sp,
             tools=kaya_live_tools.obtener_herramientas_live(),
-            input_audio_transcription=types.AudioTranscriptionConfig(),
-            output_audio_transcription=types.AudioTranscriptionConfig(),
             system_instruction=sys_i,
         )
+        try:
+            import live_audio
+            cfg_k.update(live_audio.configuracion_transcripcion())
+        except Exception:
+            cfg_k.update(
+                input_audio_transcription=types.AudioTranscriptionConfig(),
+                output_audio_transcription=types.AudioTranscriptionConfig(),
+            )
         try:
             cfg = types.LiveConnectConfig(thinking_config=types.ThinkingConfig(thinking_budget=0), **cfg_k)
         except Exception:

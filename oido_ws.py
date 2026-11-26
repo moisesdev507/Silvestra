@@ -13,9 +13,9 @@ import config
 URL = "wss://api.deepgram.com/v1/listen"
 MODELO = "nova-3"
 IDIOMA = "es-419"
-ENDPOINTING_MS = 350
+ENDPOINTING_MS = 900
 TIMEOUT_APERTURA = 3.0
-TIMEOUT_CIERRE = 0.45
+TIMEOUT_CIERRE = 2.0
 MENSAJE_FINALIZE = '{"type": "Finalize"}'
 
 try:

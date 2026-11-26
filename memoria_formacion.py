@@ -52,9 +52,9 @@ def _score(texto, contexto, frecuencia, fuente, explicito):
     temporal = any(x in t for x in map(normalizar, TEMPORAL))
     estable = any(x in t for x in map(normalizar, ESTABLE))
     ambiguous = any(normalizar(x) in t for x in AMBIGUAS)
-    source = {"orden_explicita": 1.0, "conversacion": .76, "extraccion": .72,
-              "recuerdo_modelo": .62, "multimodal": .48, "contexto": .45,
-              "tarea": .68}.get(fuente, .58)
+    source = {"orden_explicita": 1.0, "auto_aprendizaje": 1.0, "conversacion": .76,
+              "extraccion": .72, "recuerdo_modelo": .62, "multimodal": .48,
+              "contexto": .45, "tarea": .68}.get(fuente, .58)
     factors = {
         "importancia": .82 if any(x in t for x in ("objetivo", "importante", "meta", "familia", "proyecto")) else .48,
         "utilidad_futura": .78 if estable or any(x in t for x in ("recordar", "necesito", "plan", "prefer")) else .42,

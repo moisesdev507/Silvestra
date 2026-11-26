@@ -12,6 +12,8 @@ from collections import deque
 from datetime import datetime
 
 import estado
+import memoria_ficha
+import memoria_unificada
 
 _CLAVE = "memoria_contexto_sesion"
 _MAX_CHARS = 430
@@ -30,6 +32,11 @@ def _instancia():
         return memoria.instancia_principal()
     except Exception:
         return None
+
+
+def usuario_id_canonical():
+    """Id único compartido por Live y Celeste."""
+    return memoria_unificada.usuario_id_canonical()
 
 
 def _limpio(texto, max_len=110):
@@ -133,7 +140,7 @@ def instalar_espejo(fn=None):
 
 def registrar_turno(rol, texto, espejo=True):
     """Acumula turnos reales de la sesión y los refleja en cerebro.historial."""
-    limpio = _limpio(texto, 400)
+    limpio = _limpio(texto, 1400)
     if not limpio:
         return
     papel = "user" if str(rol or "").lower() in ("user", "usuario", "tú") else "kaya"
@@ -148,9 +155,11 @@ def registrar_turno(rol, texto, espejo=True):
 
 
 def registrar_par(texto_usuario, texto_kaya):
-    """Registra el par usuario/Kaya de Celeste sin duplicar el espejo."""
+    """Registra el par usuario/Kaya de Celeste y aprende del turno real."""
     registrar_turno("user", texto_usuario, espejo=False)
     registrar_turno("kaya", texto_kaya, espejo=False)
+    if str(texto_usuario or "").strip():
+        memoria_unificada.aprender_del_turno_async(texto_usuario, canal="texto")
 
 
 def historial_conversacion_activa(max_turnos=12, max_chars=1400):
@@ -196,7 +205,7 @@ def semanticos_relevantes(memoria=None, consulta=None, limite=1):
     if not q:
         return []
     mem = memoria if memoria is not None else _instancia()
-    uid = getattr(mem, "usuario_id", "local") if mem is not None else "local"
+    uid = usuario_id_canonical()
     try:
         import memoria_semantica
         filas = memoria_semantica.buscar_semantico_kaya(q, usuario_id=uid, limite=limite)
@@ -221,7 +230,7 @@ def _directriz_emocional(memoria=None):
     """Ánimo real del mismo perfil; nunca inventa un tono."""
     try:
         import estado_emocional_kaya
-        uid = getattr(memoria, "usuario_id", "local") if memoria is not None else "local"
+        uid = usuario_id_canonical()
         return estado_emocional_kaya.resumen_estado_emocional(uid)
     except Exception:
         return ""
@@ -273,9 +282,21 @@ def resetear_sesion():
         estado.guardar(datos)
 
 
+def resumen_estable(memoria=None, max_chars=430):
+    """Ficha y recuerdos sin anti-repetición: iguales en cada reconexión."""
+    mem = memoria if memoria is not None else _instancia()
+    uid = usuario_id_canonical()
+    partes = [memoria_ficha.resumen(mem, uid)]
+    partes += [f"Hecho: {h}" for h in hechos_verificados(mem)[:3]]
+    partes += [f"Charla: {c}" for c in resumen_conversaciones(mem)[:2]]
+    return "; ".join(partes)[:max(1, int(max_chars))]
+
+
 def resumen_para_prompt(memoria=None, incluir_conversaciones=True):
     """Ánimo + bromas vigentes + solo datos aún no inyectados."""
     mem = memoria if memoria is not None else _instancia()
+    uid = usuario_id_canonical()
+    ficha = memoria_ficha.resumen(mem, uid)
     hechos = hechos_verificados(mem)
     charlas = resumen_conversaciones(mem) if incluir_conversaciones else []
     obligatorios = []
@@ -286,12 +307,12 @@ def resumen_para_prompt(memoria=None, incluir_conversaciones=True):
     obligatorios.extend(semanticos_relevantes(mem))
     try:
         import ciclo_sueno_kaya
-        uid = getattr(mem, "usuario_id", "local") if mem is not None else "local"
         seguimiento = ciclo_sueno_kaya.seguimiento_para_prompt(uid)
         if seguimiento:
             obligatorios.append(seguimiento)
     except Exception:
         pass
+    presupuesto = max(80, _MAX_CHARS - len(ficha) - 2)
     with _bloqueo:
         datos, reg = _registro()
         _asegurar_dia(reg)
@@ -309,24 +330,23 @@ def resumen_para_prompt(memoria=None, incluir_conversaciones=True):
         for etiqueta, texto, clave in candidatos:
             prefijo = "Hecho" if etiqueta == "hecho" else "Charla"
             bloque = f"{prefijo}: {texto}"
-            if len("; ".join(bloques + [bloque])) > _MAX_CHARS:
+            if len("; ".join(bloques + [bloque])) > presupuesto:
                 break
             bloques.append(bloque)
             aceptados.append(clave)
         if not hechos and not charlas:
             bloques.append("Memoria sin hechos guardados todavía (no inventes datos del usuario)")
-        if not bloques:
-            return ""
         vistos.extend(aceptados)
         reg["vistos"] = vistos[-_MAX_VISTOS:]
         datos[_CLAVE] = reg
         estado.guardar(datos)
-    texto = "; ".join(bloques)[:_MAX_CHARS]
-    return f"\n\n[Lo que ya sé de ti, sin repetirlo]: {texto}."
+    texto = f"{ficha}; " + "; ".join(bloques) if bloques else ficha
+    return f"\n\n[Lo que ya sé de ti, sin repetirlo]: {texto[:_MAX_CHARS]}."
 
 
 __all__ = [
     "hechos_verificados", "resumen_conversaciones", "bromas_internas",
-    "registrar_turno", "turnos_recientes", "semanticos_relevantes",
+    "registrar_turno", "registrar_par", "turnos_recientes", "semanticos_relevantes",
+    "usuario_id_canonical", "historial_conversacion_activa", "resumen_estable",
     "registrar_despertar", "resetear_sesion", "resumen_para_prompt",
 ]

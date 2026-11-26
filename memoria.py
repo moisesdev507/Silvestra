@@ -40,6 +40,11 @@ class Memoria(MantenimientoMemoria):
         self.cargar()
         if self.ruta_json:
             migrar_legado_a_sqlite(self.almacen, os.path.dirname(os.path.abspath(self.ruta_json)), self.usuario_id)
+        try:
+            import memoria_unificada as mu
+            mu.sincronizar_arranque(self.usuario_id)
+        except Exception:
+            pass
 
     @staticmethod
     def _vacia():

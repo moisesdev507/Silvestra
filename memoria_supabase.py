@@ -176,6 +176,28 @@ def sincronizar_pendientes(limite=50):
     return procesados
 
 
+def consultar(usuario_id="local", limite=50):
+    """Lee recuerdos del respaldo; sin credenciales devuelve [] sin red."""
+    if not configurar():
+        return []
+    try:
+        respuesta = httpx.request(
+            "GET", _url + "/rest/v1/" + TABLA, headers=_cabeceras(),
+            params={
+                "select": "id,contenido,categoria,actualizado_en",
+                "usuario_id": "eq." + str(usuario_id),
+                "limit": str(max(0, min(int(limite), 500))),
+            },
+            timeout=TIMEOUT_SEG,
+        )
+        if respuesta.status_code >= 400:
+            return []
+        datos = respuesta.json()
+        return datos if isinstance(datos, list) else []
+    except Exception:
+        return []
+
+
 def estado():
     """Devuelve telemetría compacta sin secretos."""
     with _lock:
@@ -205,5 +227,5 @@ def reiniciar_para_pruebas():
 
 __all__ = [
     "configurar", "esta_activo", "notificar_guardado", "notificar_eliminacion",
-    "sincronizar_pendientes", "estado", "reiniciar_para_pruebas",
+    "sincronizar_pendientes", "consultar", "estado", "reiniciar_para_pruebas",
 ]

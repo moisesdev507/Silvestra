@@ -126,7 +126,7 @@ class PuenteWebRTC:
     ):
         self.on_estado = on_estado
         self.on_nivel = on_nivel
-        self.cola_entrada: queue.Queue = queue.Queue(maxsize=240)
+        self.cola_entrada: queue.Queue = queue.Queue(maxsize=600)
         self.cola_salida: queue.Queue = queue.Queue()
         self.activo = False
         self.dormida = False

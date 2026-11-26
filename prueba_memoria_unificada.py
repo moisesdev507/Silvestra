@@ -15,6 +15,7 @@ import memoria_adaptadores as adapt
 import memoria_contexto
 import memoria_filtro
 import memoria_supabase
+import memoria_unificada
 
 
 class TestMemoriaUnificada(unittest.TestCase):
@@ -132,6 +133,21 @@ class TestMemoriaUnificada(unittest.TestCase):
             self.assertIn("1 recuerdo", self.mem.olvidar("italiana"))
             memoria_supabase.sincronizar_pendientes()
             self.assertIn("DELETE", [llamada.args[0] for llamada in req.call_args_list])
+
+    def test_consultar_incluye_respaldo_supabase(self):
+        with patch.object(memoria_supabase.httpx, "request") as req, \
+             patch.object(memoria_supabase, "_leer_env", return_value={}):
+            memoria_supabase.reiniciar_para_pruebas()
+            self.assertTrue(memoria_supabase.configurar(
+                "https://ejemplo.supabase.co", "clave-falsa", forzar=True,
+                iniciar_hilo=False))
+            req.return_value.status_code = 200
+            req.return_value.json.return_value = [{"contenido": "Dato remoto de Ana"}]
+            memoria_unificada._sincronizados.clear()
+            texto = memoria_unificada.consultar("remoto")
+            self.assertIn("Dato remoto de Ana", texto)
+            self.assertTrue(any(llamada.args[0] == "GET"
+                                for llamada in req.call_args_list))
 
     def test_prompts_live_usan_memoria_y_herramientas(self):
         self.assertTrue(self.mem.recordar(

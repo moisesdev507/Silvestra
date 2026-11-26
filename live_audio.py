@@ -335,7 +335,7 @@ def construir_instruccion_arranque_rapido(primer_despertar: bool = False, nombre
 
 
 def configuracion_transcripcion():
-    """Configuración STT/TTS de Live soportada por el SDK google-genai instalado."""
+    """STT/TTS y detección automática de actividad, con hasattr seguro."""
     try:
         from google.genai import types
         if not hasattr(types, "AudioTranscriptionConfig"):
@@ -345,9 +345,20 @@ def configuracion_transcripcion():
         campos = getattr(cfg, "model_fields", None)
         if not isinstance(campos, dict):
             campos = getattr(cfg, "__fields__", None)
-        if not isinstance(campos, dict):  # Config sustituida en pruebas.
-            return {n: types.AudioTranscriptionConfig() for n in nombres}
-        return {n: types.AudioTranscriptionConfig() for n in nombres if n in campos}
+        if isinstance(campos, dict):
+            salida = {n: types.AudioTranscriptionConfig() for n in nombres if n in campos}
+        else:  # Config sustituida en pruebas.
+            salida = {n: types.AudioTranscriptionConfig() for n in nombres}
+        if hasattr(types, "AutomaticActivityDetection") and hasattr(types, "RealtimeInputConfig"):
+            ric = types.RealtimeInputConfig
+            campos_ric = getattr(ric, "model_fields", None)
+            if not isinstance(campos_ric, dict):
+                campos_ric = getattr(ric, "__fields__", None)
+            if not isinstance(campos_ric, dict) or "automatic_activity_detection" in campos_ric:
+                salida["realtime_input_config"] = ric(
+                    automatic_activity_detection=types.AutomaticActivityDetection(
+                        silence_duration_ms=1100, prefix_padding_ms=300))
+        return salida
     except Exception:
         return {}
 

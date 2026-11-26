@@ -174,7 +174,7 @@ class Oido:
         self._sesion_ws_actual.iniciar()
 
         tiempo_espera_max = 8.0 if not corto else 4.0
-        max_habla_segundos = 15.0
+        max_habla_segundos = 45.0
 
         try:
             self._flujo.asegurar_flujo()
@@ -329,7 +329,7 @@ class Oido:
                     response_format="verbose_json",
                     temperature=0.0,
                     prompt=prompt_whisper,
-                    timeout=10.0,
+                    timeout=30.0,
                 )
                 print(f"[tiempo] whisper={time.time() - t0:.2f}s", flush=True)
             except Exception as e:

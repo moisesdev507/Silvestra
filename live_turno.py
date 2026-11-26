@@ -5,6 +5,19 @@ import live_audio
 import live_fecha
 import live_herramientas
 import memoria_contexto
+import memoria_unificada
+
+
+def bloque_memoria(max_chars=520):
+    """Ficha y recuerdos estables en cada reconexión (sin anti-repetición)."""
+    try:
+        texto = memoria_contexto.resumen_estable(max_chars=max_chars)
+    except Exception:
+        return ""
+    if not texto:
+        return ""
+    return ("\n[Ficha y recuerdos del usuario] Usa estos datos reales para resolver "
+            "referencias y no inventes nada.\n" + texto)
 
 
 def bloque_conversacion(max_turnos=12, max_chars=1400):
@@ -29,8 +42,9 @@ def bloque_conversacion(max_turnos=12, max_chars=1400):
 def construir_config(voz, rapido=False, despertar=False, nombre=""):
     """Config Live reconstruida en cada conexión, con el hilo más reciente."""
     base = live_fecha.instruccion_con_hora_local(rapido, despertar, nombre)
+    memoria = bloque_memoria()
     hilo = bloque_conversacion()
-    instruccion = base + ("\n" + hilo if hilo else "")
+    instruccion = base + memoria + ("\n" + hilo if hilo else "")
     return types.LiveConnectConfig(
         response_modalities=["AUDIO"],
         speech_config=types.SpeechConfig(
@@ -78,9 +92,10 @@ class AcumuladorTurnos:
         self.usuario, self.kaya = [], []
         if usuario:
             memoria_contexto.registrar_turno("user", usuario)
+            memoria_unificada.aprender_del_turno_async(usuario, canal="voz")
         if kaya:
             memoria_contexto.registrar_turno("kaya", kaya)
         return bool(usuario or kaya)
 
 
-__all__ = ["AcumuladorTurnos", "bloque_conversacion", "construir_config"]
+__all__ = ["AcumuladorTurnos", "bloque_memoria", "bloque_conversacion", "construir_config"]

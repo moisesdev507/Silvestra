@@ -286,17 +286,25 @@ def recordar_dato(hecho):
     dato = str(hecho or "").strip()
     if not dato:
         return "No me dijiste qué dato quieres que recuerde."
-    ok = mem.recordar(dato, origen="explicito", texto_usuario=f"Recuerda que {dato}",
-                      fuente="orden_explicita")
+    try:
+        import memoria_unificada
+        ok = memoria_unificada.recordar(
+            dato, texto_usuario=f"Recuerda que {dato}", canal="voz",
+            fuente="orden_explicita")
+    except Exception:
+        ok = False
     return f"Listo, guardé en memoria: {dato}" if ok else "No pude guardar ese dato de forma segura."
 
 
 def consultar_memoria(tema):
-    """Responde qué recuerda la instancia principal de Memoria."""
-    mem = _memoria_principal()
-    if mem is None:
+    """Busca en SQLite, JSON legado y Supabase con un solo usuario_id."""
+    if _memoria_principal() is None:
         return "Todavía no tengo la memoria lista."
-    return mem.consultar(str(tema or "").strip() or None)
+    try:
+        import memoria_unificada
+        return memoria_unificada.consultar(str(tema or "").strip() or None)
+    except Exception:
+        return "No pude consultar la memoria compartida en este momento."
 
 
 def olvidar_dato(tema):

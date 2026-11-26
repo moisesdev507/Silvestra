@@ -4,7 +4,8 @@ import memoria_contexto
 REGLA_REFERENCIAS = (
     "[Conversación reciente en curso] Resuelve siempre 'eso', 'a qué te refieres', "
     "'lo anterior' y 'sígueme contando' con los turnos reales compartidos por "
-    "Gemini Live y Celeste antes de responder. Si el hilo no basta, pregunta breve sin inventar."
+    "Gemini Live y Celeste y con [Ficha y recuerdos del usuario] antes de responder. "
+    "Si no basta, pregunta breve sin inventar."
 )
 
 
@@ -34,6 +35,13 @@ def historial_podado(historial=None, max_turnos=12, max_chars=1400):
     else:
         combinados = propio[-max_turnos:]
     salida = [{"role": "system", "content": REGLA_REFERENCIAS}] if combinados else []
+    try:
+        memoria_txt = memoria_contexto.resumen_estable().strip()
+    except Exception:
+        memoria_txt = ""
+    if memoria_txt:
+        salida.append({"role": "system", "content":
+                       "[Ficha y recuerdos del usuario] " + memoria_txt})
     usados = 0
     for h in combinados:
         c = str(h.get("content") or "")

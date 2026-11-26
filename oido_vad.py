@@ -23,8 +23,8 @@ class DetectorVozSilero:
         threshold=0.40,
         min_silence_duration=0.85,
         min_speech_duration=0.20,
-        max_speech_duration=15.0,
-        buffer_size=20.0,
+        max_speech_duration=45.0,
+        buffer_size=60.0,
     ):
         if ruta_modelo is None:
             ruta_modelo = rutas_app.ruta_recurso("modelos", "silero_vad.onnx")

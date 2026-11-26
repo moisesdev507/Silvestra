@@ -6,7 +6,7 @@ from google.genai import types
 import ciclo_sueno_kaya
 import estado_emocional_kaya
 import identidad_origen
-import live_audio, live_herramientas, live_turno, live_webrtc, memoria_contexto, puerta_audio_live
+import live_audio, live_estado, live_herramientas, live_turno, live_webrtc, memoria_contexto, puerta_audio_live
 from live_motor_audio import CapaAudioLive
 
 MODELO_DEFECTO = "gemini-2.5-flash-native-audio-latest"
@@ -158,12 +158,11 @@ class SesionKayaLive(CapaAudioLive):
                                     else:
                                         with self.cola_audio_salida.mutex:
                                             self.cola_audio_salida.queue.clear()
-                                        self._notificar_estado("escuchando")
-                                    self.puerta.notificar_actividad()
+                                    live_estado.reanudar_escucha(self)
                                     estado_emocional_kaya.registrar_si_disponible("interrupcion_barge_in")
                                 if getattr(sc, "turn_complete", False):
                                     acumulador.vaciar()
-                                    self.puerta.notificar_actividad()
+                                    live_estado.reanudar_escucha(self)
                                     if not turno_interrumpido:
                                         estado_emocional_kaya.registrar_si_disponible("charla_fluida")
                                     turno_interrumpido = False
@@ -192,6 +191,7 @@ class SesionKayaLive(CapaAudioLive):
                                         response={"result": res_call}))
                                 if resps:
                                     await session.send_tool_response(function_responses=resps)
+                                    live_estado.reanudar_escucha(self)
                     finally:
                         acumulador.vaciar()
                         tarea_audio.cancel()

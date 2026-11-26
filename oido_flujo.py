@@ -195,7 +195,7 @@ class FlujoMicrofono:
     def __init__(self, rate=16000, blocksize=800):
         self.rate = rate
         self.blocksize = blocksize
-        self._cola = queue.Queue(maxsize=120)
+        self._cola = queue.Queue(maxsize=1000)
         self._stream = None
         self._lock = threading.Lock()
         self._activo = False
