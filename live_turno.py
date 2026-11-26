@@ -30,6 +30,12 @@ def construir_config(voz, rapido=False, despertar=False, nombre=""):
         ),
         system_instruction=types.Content(parts=[types.Part.from_text(text=instruccion)]),
         tools=live_herramientas.declarar_declaraciones_herramientas(),
+        realtime_input_config=types.RealtimeInputConfig(
+            automatic_activity_detection=types.AutomaticActivityDetection(
+                silence_duration_ms=450,
+                prefix_padding_ms=120,
+            )
+        ),
         **live_audio.configuracion_transcripcion(),
     )
 
