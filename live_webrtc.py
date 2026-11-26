@@ -63,8 +63,8 @@ async function iniciar(){
     let sum=0;const pcm=new Int16Array(d.length);
     for(let i=0;i<d.length;i++){const v=Math.max(-1,Math.min(1,d[i]));sum+=v*v;pcm[i]=v<0?v*32768:v*32767;}
     const rms=Math.sqrt(sum/d.length),ahora=performance.now();
-    if(sources.length===0&&rms<piso*1.15)piso=Math.min(0.014,piso*0.98+rms*0.02);
-    const uActivo=Math.max(0.009,piso*1.5),uWake=Math.max(0.011,piso*1.7);
+    if(sources.length===0&&rms<piso*1.15)piso=Math.min(0.007,piso*0.98+rms*0.02);
+    const uActivo=Math.max(0.0045,piso*1.55),uWake=Math.max(0.006,piso*1.8);
     if(dormida||colaVoz===0){preroll.push(pcm.buffer);if(preroll.length>8)preroll.shift();}
     const umbral=dormida?uWake:uActivo;
     if(rms>umbral){
