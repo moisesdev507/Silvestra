@@ -47,6 +47,21 @@ def leer_portapapeles(max_chars: int = 1800) -> str:
     return f"El portapapeles contiene:\n{texto}"
 
 
+def leer_portapapeles_en_vivo() -> str:
+    """Lectura Win32 directa para Live; sin Qt y con aviso si está bloqueado."""
+    try:
+        import portapapeles_win
+        texto = portapapeles_win.leer_portapapeles_windows(max_chars=1800)
+    except Exception:
+        texto = None
+    if texto is None:
+        return ("No pude leer el portapapeles ahora mismo: otra aplicación lo tiene "
+                "bloqueado. Vuelve a intentarlo en un momento.")
+    if not texto:
+        return "No hay texto en el portapapeles. Copia algo con Control C y vuelve a pedírmelo."
+    return f"El portapapeles contiene:\n{texto}"
+
+
 def listar_ventanas(limite: int = 12) -> str:
     """Lista las ventanas visibles con título, marcando la que está activa."""
     try:
@@ -200,6 +215,7 @@ def detectar_y_ejecutar(texto, app=None, incluir_portapapeles: bool = True):
 __all__ = [
     "revisar_pantalla",
     "leer_portapapeles",
+    "leer_portapapeles_en_vivo",
     "listar_ventanas",
     "ventana_activa",
     "listar_procesos",

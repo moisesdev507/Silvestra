@@ -222,7 +222,7 @@ async def despachar(nombre: str, args: Dict[str, Any]) -> Any:
             None, cap.revisar_pantalla, str(args.get("pregunta", ""))
         )
     if nombre == "leer_portapapeles":
-        return await loop.run_in_executor(None, cap.leer_portapapeles)
+        return await loop.run_in_executor(None, cap.leer_portapapeles_en_vivo)
     if nombre == "listar_ventanas":
         return await loop.run_in_executor(None, cap.listar_ventanas, args.get("limite", 12))
     if nombre == "ventana_activa":

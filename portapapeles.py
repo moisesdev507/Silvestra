@@ -37,28 +37,10 @@ def pide_portapapeles(texto):
 
 
 def _leer_win32():
-    """Lee CF_UNICODETEXT con Win32 puro; devuelve '' ante imagen/archivo o error."""
+    """Lee CF_UNICODETEXT con reintentos y respaldo; '' si no hay texto."""
     try:
-        import ctypes
-        user32 = ctypes.windll.user32
-        kernel32 = ctypes.windll.kernel32
-        if not user32.OpenClipboard(0):
-            return ""
-        try:
-            if not user32.IsClipboardFormatAvailable(13):
-                return ""
-            handle = user32.GetClipboardData(13)
-            if not handle:
-                return ""
-            puntero = kernel32.GlobalLock(handle)
-            if not puntero:
-                return ""
-            try:
-                return ctypes.wstring_at(puntero)
-            finally:
-                kernel32.GlobalUnlock(handle)
-        finally:
-            user32.CloseClipboard()
+        import portapapeles_win
+        return portapapeles_win.leer_portapapeles_windows(max_chars=4000) or ""
     except Exception:
         return ""
 

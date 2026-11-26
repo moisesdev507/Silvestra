@@ -40,14 +40,15 @@ def _leer_ventana():
 
 
 def _leer_portapapeles():
+    """None = bloqueado/indisponible; '' = vacío; str = contenido."""
     try:
-        import portapapeles
-        texto = portapapeles.leer_portapapeles(max_chars=_MAX_CLIP)
-        if not texto or texto == portapapeles.SIN_TEXTO:
-            return ""
+        import portapapeles_win
+        texto = portapapeles_win.leer_portapapeles_windows(max_chars=_MAX_CLIP)
+        if texto is None:
+            return None
         return _limpiar(texto, _MAX_CLIP)
     except Exception:
-        return ""
+        return None
 
 
 def capturar(ventana=None, portapapeles=None):
@@ -55,14 +56,18 @@ def capturar(ventana=None, portapapeles=None):
     global _cache
     ahora = time.time()
     titulo = _limpiar(ventana if ventana is not None else _leer_ventana(), _MAX_VENTANA)
-    texto = _limpiar(portapapeles if portapapeles is not None else _leer_portapapeles(), _MAX_CLIP)
-    huella = hashlib.sha1(texto.encode("utf-8")).hexdigest() if texto else ""
+    lectura = portapapeles if portapapeles is not None else _leer_portapapeles()
     with _bloqueo:
         cambio = _cache["cambio"]
-        if huella and huella != _cache["hash"]:
-            cambio = ahora
-        if not huella:
-            cambio = 0.0
+        if lectura is None:  # bloqueado: conserva la última lectura válida
+            texto, huella = _cache["clipboard"], _cache["hash"]
+        else:
+            texto = _limpiar(lectura, _MAX_CLIP)
+            huella = hashlib.sha1(texto.encode("utf-8")).hexdigest() if texto else ""
+            if huella and huella != _cache["hash"]:
+                cambio = ahora
+            if not huella:
+                cambio = 0.0
         _cache = {"ventana": titulo, "clipboard": texto, "hash": huella,
                   "cambio": cambio, "ts": ahora}
         return dict(_cache)

@@ -95,27 +95,9 @@ def obtener_subtitulos_youtube(url_o_id: str) -> tuple[str | None, str | None]:
 
 
 def obtener_texto_portapapeles() -> str:
-    """Lee el texto actual del portapapeles de forma segura."""
+    """Lee el texto copiado desde cualquier hilo, sin tocar Qt ni la UI."""
     try:
-        from PySide6.QtGui import QGuiApplication
-        clip = QGuiApplication.clipboard()
-        if clip:
-            txt = clip.text()
-            if txt:
-                return txt.strip()
-    except Exception:
-        pass
-
-    try:
-        import subprocess
-        p = subprocess.Popen(
-            ["powershell", "-NoProfile", "-Command", "Get-Clipboard"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            creationflags=0x08000000,
-        )
-        out, _ = p.communicate(timeout=2)
-        return (out or "").strip()
+        import portapapeles_win
+        return portapapeles_win.leer_portapapeles_windows(max_chars=4000) or ""
     except Exception:
         return ""
