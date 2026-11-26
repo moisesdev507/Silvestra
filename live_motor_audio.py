@@ -1,6 +1,7 @@
 """Capa de audio de la sesión Live: puente WebRTC 16 kHz y respaldo PortAudio."""
 import asyncio
 import queue
+import threading
 import time
 
 from google.genai import types
@@ -12,6 +13,45 @@ import puerta_audio_live
 
 class CapaAudioLive:
     """Métodos de captura/reproducción compartidos por SesionKayaLive."""
+
+    def _paso_nivel_salida(self, energia: float) -> float:
+        """Ataque rápido y caída gradual: el orbe sigue cada sílaba de Kaya."""
+        actual = float(getattr(self, "_nivel_salida_suave", 0.0))
+        factor = 0.45 if energia > actual else 0.18
+        suave = actual + (max(0.0, min(1.0, energia)) - actual) * factor
+        self._nivel_salida_suave = suave
+        return suave
+
+    def _notificar_nivel_salida(self, pcm: bytes):
+        """Energía PCM16 de la voz de Kaya con decaimiento hasta el silencio."""
+        live_audio.registrar_tiempo_primera_voz()
+        nivel = self._paso_nivel_salida(live_audio.calcular_energia_pcm16(pcm))
+        self._nivel_salida_gen = getattr(self, "_nivel_salida_gen", 0) + 1
+        self._nivel_salida_t = time.monotonic()
+        self._notificar_nivel(nivel, True)
+        hilo = getattr(self, "_hilo_decaimiento", None)
+        if hilo is None or not hilo.is_alive():
+            self._hilo_decaimiento = threading.Thread(
+                target=self._decaer_nivel_salida, daemon=True, name="live-nivel-decay")
+            self._hilo_decaimiento.start()
+
+    def _decaer_nivel_salida(self):
+        """Un único hilo baja el nivel cuando Gemini deja de enviar PCM."""
+        while getattr(self, "activo", False):
+            time.sleep(0.05)
+            if not getattr(self, "_nivel_salida_gen", 0):
+                continue
+            if time.monotonic() - getattr(self, "_nivel_salida_t", 0.0) < 0.14:
+                continue
+            actual = float(getattr(self, "_nivel_salida_suave", 0.0))
+            if actual <= 0.004:
+                self._nivel_salida_suave = 0.0
+                self._nivel_salida_gen = 0
+                self._notificar_nivel(0.0, True)
+                continue
+            self._nivel_salida_suave = actual * 0.72
+            self._notificar_nivel(self._nivel_salida_suave, True)
+        self._hilo_decaimiento = None
 
     def _callback_audio_in(self, indata, frames, time_info, status):
         if not self.activo:

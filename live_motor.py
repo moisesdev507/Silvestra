@@ -59,7 +59,9 @@ class SesionKayaLive(CapaAudioLive):
             except Exception:
                 pass
 
-    def _notificar_nivel(self, nivel: float):
+    def _notificar_nivel(self, nivel: float, salida: bool = False):
+        if not salida and getattr(self, "_nivel_salida_gen", 0):
+            return
         if callable(self.on_nivel_voz):
             try:
                 self.on_nivel_voz(nivel)
@@ -85,7 +87,7 @@ class SesionKayaLive(CapaAudioLive):
         while self.activo:
             await asyncio.sleep(0.5)
             if self.puerta.debe_cerrar():
-                print(f"[LIVE] Inactividad {self.timeout_silencio:.1f}s: cerrando micr?fono y Live.", flush=True)
+                print(f"[LIVE] Inactividad {self.timeout_silencio:.1f}s: cierre Live.", flush=True)
                 self.detener()
                 if callable(self.on_cierre_automatico):
                     try:
@@ -178,7 +180,7 @@ class SesionKayaLive(CapaAudioLive):
                                 if mt:
                                     for part in mt.parts:
                                         if getattr(part, "inline_data", None) and part.inline_data.data:
-                                            live_audio.registrar_tiempo_primera_voz()
+                                            self._notificar_nivel_salida(part.inline_data.data)
                                             if self._puente_webrtc is not None:
                                                 self._puente_webrtc.enviar_audio_salida(part.inline_data.data)
                                             else:
@@ -209,7 +211,7 @@ class SesionKayaLive(CapaAudioLive):
             except Exception as e:
                 if not self.activo or es_error_cuota(e):
                     raise
-                print(f"[LIVE][WEBRTC] Reconectando sesi?n Live: {e}", flush=True)
+                print(f"[LIVE] Reconectando Live: {e}", flush=True)
                 await asyncio.sleep(0.8)
 
     def iniciar(self) -> bool:
@@ -231,7 +233,7 @@ class SesionKayaLive(CapaAudioLive):
             try:
                 self._stream_entrada, self._rate_entrada = live_audio.crear_input_stream(self._callback_audio_in)
             except Exception as e:
-                print(f"[LIVE][AUDIO] Error iniciando micr?fono: {e}", flush=True)
+                print(f"[LIVE] Error micr?fono: {e}", flush=True)
                 self.detener()
                 return False
             self._hilo_salida = threading.Thread(target=self._bucle_reproduccion_salida, daemon=True, name="live-audio-out")
@@ -247,7 +249,7 @@ class SesionKayaLive(CapaAudioLive):
             except Exception as e:
                 if es_error_cuota(e):
                     activar_enfriamiento_cuota(15.0)
-                print(f"[LIVE] Sesi?n finalizada o error: {e}", flush=True)
+                print(f"[LIVE] Fin sesi?n: {e}", flush=True)
             finally:
                 self.detener()
                 try:
@@ -283,7 +285,7 @@ class SesionKayaLive(CapaAudioLive):
                     )
                 )
             except Exception as err:
-                print(f"[LIVE] Error enviando texto: {err}", flush=True)
+                print(f"[LIVE] Error texto: {err}", flush=True)
         try:
             self._loop.call_soon_threadsafe(_enviar)
             return True

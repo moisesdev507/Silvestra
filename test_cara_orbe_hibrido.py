@@ -266,6 +266,57 @@ class TestCaraOrbeHibrido(unittest.TestCase):
         margen = 140.0 - orbe.radio_suave
         self.assertTrue(margen > 85.0)
 
+    def test_fase_giro_acelerada_y_ripples_por_voz(self):
+        import cara_holo_3d as h3d
+
+        def _cara(hablando):
+            return SimpleNamespace(
+                hablando=hablando, escuchando=False, pensando=False,
+                pensando_hasta=0.0, baile_hasta=0.0, nivel_volumen=0.0,
+                voz_silenciada=False,
+            )
+
+        orbe = coh.GestorOrbeHibrido()
+        cara = _cara(True)
+        orbe.actualizar(cara, t=1.0, nivel_rms=0.0)
+        inicio = orbe.fase_giro
+        orbe.actualizar(cara, t=1.05, nivel_rms=0.0)
+        giro_hablando = orbe.fase_giro - inicio
+
+        cara = _cara(False)
+        orbe.actualizar(cara, t=1.10, nivel_rms=0.0)
+        inicio = orbe.fase_giro
+        orbe.actualizar(cara, t=1.15, nivel_rms=0.0)
+        giro_reposo = orbe.fase_giro - inicio
+        self.assertGreater(giro_hablando, giro_reposo)
+
+        cara = _cara(True)
+        t = 1.20
+        for nivel in (0.8, 0.0, 0.9):
+            orbe.actualizar(cara, t=t, nivel_rms=nivel)
+            t += 0.05
+        self.assertGreaterEqual(len(orbe.ripples), 2)
+        self.assertGreater(h3d.path_organico(45.0, 1.2, 0.8, True).boundingRect().width(),
+                           h3d.path_organico(45.0, 1.2, 0.8, False).boundingRect().width())
+
+    def test_flotacion_y_nucleo_070b14(self):
+        orbe = coh.GestorOrbeHibrido()
+        cara = SimpleNamespace(
+            hablando=False, escuchando=False, pensando=False,
+            pensando_hasta=0.0, baile_hasta=0.0, nivel_volumen=0.0,
+            voz_silenciada=False,
+        )
+        img = QImage(280, 280, QImage.Format_ARGB32_Premultiplied)
+        img.fill(0)
+        p = QPainter(img)
+        try:
+            orbe.dibujar_orbe(p, cara, t=1.2, tam=280)
+        finally:
+            p.end()
+        self.assertNotAlmostEqual(orbe.flotacion_y, 0.0, places=6)
+        self.assertEqual((coh._OBSIDIANA.red(), coh._OBSIDIANA.green(), coh._OBSIDIANA.blue()),
+                         (7, 11, 20))
+
 
 if __name__ == "__main__":
     unittest.main()

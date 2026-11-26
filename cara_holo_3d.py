@@ -39,6 +39,23 @@ def _alpha(c: QColor, a: int) -> QColor:
     return cl
 
 
+def path_organico(r: float, t: float, v: float, activo: bool, puntos: int = 48) -> QPainterPath:
+    """Contorno cerrado con armónicos 3/5 modulados por la voz de Kaya."""
+    path = QPainterPath()
+    amp = (0.018 + 0.075 * v) if activo else 0.0
+    for i in range(puntos + 1):
+        ang = math.tau * (i % puntos) / puntos
+        onda = 0.62 * math.sin(3.0 * ang + t * 4.2) + 0.38 * math.cos(5.0 * ang - t * 3.1)
+        rr = r * (1.0 + amp * onda)
+        x, y = rr * math.cos(ang), rr * math.sin(ang)
+        if i == 0:
+            path.moveTo(x, y)
+        else:
+            path.lineTo(x, y)
+    path.closeSubpath()
+    return path
+
+
 def rotar_3d(x: float, y: float, z: float, pitch: float, yaw: float, roll: float = 0.0) -> tuple[float, float, float]:
     if roll:
         cr, sr = math.cos(roll), math.sin(roll)
@@ -75,7 +92,8 @@ def obtener_inclinacion_cursor(p: QPainter) -> tuple[float, float]:
 
 
 def _calcular_segmentos_anillo(r_anillo: float, pitch_anillo: float, yaw_anillo: float,
-                               vel_roll: float, t: float, pitch_cur: float, yaw_cur: float):
+                               vel_roll: float, t: float, pitch_cur: float, yaw_cur: float,
+                                fase: Optional[float] = None):
     n_pts = 32
     step = math.tau / n_pts
     pts_3d = []
@@ -84,7 +102,8 @@ def _calcular_segmentos_anillo(r_anillo: float, pitch_anillo: float, yaw_anillo:
         x = r_anillo * math.cos(ang)
         y = r_anillo * math.sin(ang)
         z = 0.0
-        x, y, z = rotar_3d(x, y, z, pitch_anillo, yaw_anillo, t * vel_roll)
+        roll = t * vel_roll if fase is None else fase * vel_roll
+        x, y, z = rotar_3d(x, y, z, pitch_anillo, yaw_anillo, roll)
         x, y, z = rotar_3d(x, y, z, pitch_cur, yaw_cur)
         px, py, k, pz = proyectar_3d(x, y, z)
         pts_3d.append((px, py, k, pz, ang))
@@ -103,7 +122,8 @@ def _calcular_segmentos_anillo(r_anillo: float, pitch_anillo: float, yaw_anillo:
 
 
 def dibujar_giroscopios_traseros(p: QPainter, col: dict, est: str, t: float, r: float,
-                                 pitch: float, yaw: float, factor_exp: float = 1.0):
+                                 pitch: float, yaw: float, factor_exp: float = 1.0,
+                                  fase_giro: Optional[float] = None):
     """Dibuja los arcos 3D que caen detrás de la esfera (z < 0)."""
     p.save()
     anillos = [
@@ -112,7 +132,7 @@ def dibujar_giroscopios_traseros(p: QPainter, col: dict, est: str, t: float, r: 
         (r * 1.38 * factor_exp, 0.30, 0.60, 0.80, col["centro"], 1.0),
     ]
     for r_a, p_a, y_a, v_r, c_pen, w_pen in anillos:
-        traseros, _ = _calcular_segmentos_anillo(r_a, p_a, y_a, v_r, t, pitch, yaw)
+        traseros, _ = _calcular_segmentos_anillo(r_a, p_a, y_a, v_r, t, pitch, yaw, fase_giro)
         for p1, p2, z_med in traseros:
             alfa = int(35 + 30 * (1.0 + z_med / (r_a * 1.5)))
             p.setPen(QPen(_alpha(c_pen, alfa), w_pen, Qt.DashLine if est in ("pensando", "experto") else Qt.SolidLine))
@@ -121,7 +141,8 @@ def dibujar_giroscopios_traseros(p: QPainter, col: dict, est: str, t: float, r: 
 
 
 def dibujar_giroscopios_delanteros(p: QPainter, col: dict, est: str, t: float, r: float,
-                                   pitch: float, yaw: float, factor_exp: float = 1.0):
+                                   pitch: float, yaw: float, factor_exp: float = 1.0,
+                                  fase_giro: Optional[float] = None):
     """Dibuja los arcos técnicos luminosos y cabezas que pasan por delante (z >= 0)."""
     p.save()
     anillos = [
@@ -130,7 +151,7 @@ def dibujar_giroscopios_delanteros(p: QPainter, col: dict, est: str, t: float, r
         (r * 1.38 * factor_exp, 0.30, 0.60, 0.80, col["centro"], 1.4),
     ]
     for r_a, p_a, y_a, v_r, c_pen, w_pen in anillos:
-        _, delanteros = _calcular_segmentos_anillo(r_a, p_a, y_a, v_r, t, pitch, yaw)
+        _, delanteros = _calcular_segmentos_anillo(r_a, p_a, y_a, v_r, t, pitch, yaw, fase_giro)
         if not delanteros:
             continue
         max_z_pt = max(delanteros, key=lambda s: s[2])
@@ -148,17 +169,23 @@ def dibujar_giroscopios_delanteros(p: QPainter, col: dict, est: str, t: float, r
 
 
 def dibujar_red_neuronal_3d(p: QPainter, col: dict, est: str, t: float, r: float,
-                            pitch: float, yaw: float, rms: float):
+                            pitch: float, yaw: float, rms: float,
+                             fase_giro: Optional[float] = None):
     """Núcleo geodésico 3D: 28 nodos de Fibonacci con impulsos sinápticos vivos."""
     r_red = r * 0.65 * (1.0 + 0.08 * rms)
     vel_red = 0.55 if est != "pensando" else 1.35
+    if "hablando" in est: vel_red = 0.85 + 2.4 * rms
     if est == "silenciada": vel_red = 0.05
+    yaw_red = t * vel_red if fase_giro is None else fase_giro * vel_red
+    activo = est != "silenciada" and ("hablando" in est or rms > 0.02)
+    deform = 0.26 * rms if activo else 0.0
 
     nodos_proj = []
     for i, (bx, by, bz) in enumerate(_NODOS_BASE):
-        radio_i = r_red * (1.0 + 0.12 * rms * math.sin(t * 8.0 + i))
+        onda = 0.55 * math.sin(t * 9.0 + i * 1.7) + 0.45 * math.cos(t * 5.0 - i * 0.9)
+        radio_i = r_red * (1.0 + deform * onda + 0.10 * rms * math.sin(t * 8.0 + i))
         x, y, z = bx * radio_i, by * radio_i, bz * radio_i
-        x, y, z = rotar_3d(x, y, z, 0.25, t * vel_red)
+        x, y, z = rotar_3d(x, y, z, 0.25, yaw_red)
         x, y, z = rotar_3d(x, y, z, pitch, yaw)
         px, py, k, pz = proyectar_3d(x, y, z)
         nodos_proj.append((px, py, k, pz, i))

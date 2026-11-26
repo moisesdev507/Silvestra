@@ -90,9 +90,6 @@ class CoordinadorLiveSilvestra:
             voz_ws.detener()
             if not habilitado:
                 self.detener_despertar_local()
-            voz = getattr(self.app, "voz", None)
-            if not habilitado and voz is not None and hasattr(voz, "reanudar"):
-                voz.reanudar()
             if habilitado:
                 self._pausar_captura_local()
             else:
@@ -117,9 +114,9 @@ class CoordinadorLiveSilvestra:
             self.app.cola.put(("micro_live_estado", True))
 
     def _al_nivel_voz(self, nivel: float):
-        cara = getattr(self.app, "cara", None)
-        if cara:
-            cara.nivel_volumen = nivel
+        cola = getattr(self.app, "cola", None)
+        if cola is not None:
+            cola.put(("nivel_voz_live", float(nivel)))
 
     def _a_transcripcion(self, rol: str, texto: str):
         if rol == "kaya" and texto:
@@ -334,6 +331,15 @@ def despachar_evento_live(app, tipo: str, texto) -> bool:
                 target=coordinator.alternar_microfono,
                 daemon=True, name="orbe-mic",
             ).start()
+        return True
+    if tipo == "nivel_voz_live":
+        cara = getattr(app, "cara", None)
+        if cara is not None:
+            nivel = float(texto)
+            cara.nivel_volumen = nivel
+            voz = getattr(cara, "_ref_voz", None) or getattr(app, "voz", None)
+            if voz is not None and hasattr(voz, "nivel_volumen"):
+                voz.nivel_volumen = nivel
         return True
     if tipo == "micro_live_estado":
         cara = getattr(app, "cara", None)
