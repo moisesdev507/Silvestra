@@ -71,13 +71,16 @@ def hechos_verificados(memoria=None, limite=3):
     if mem is None:
         return []
     try:
-        filas = mem.almacen.listar_recuerdos(300, usuario_id=mem.usuario_id)
+        filas = sorted(
+            mem.almacen.listar_recuerdos(300, usuario_id=mem.usuario_id),
+            key=lambda r: 0 if r.get("origen") in ("explicito", "explicita") else 1,
+        )
     except Exception:
         return []
     salida = []
     for fila in filas:
         if (fila.get("estado") != "activo"
-                or fila.get("origen") not in ("explicito", "migrado")):
+                or fila.get("origen") not in ("explicito", "explicita", "migrado")):
             continue
         try:
             confianza = float(fila.get("confianza") or 0)
