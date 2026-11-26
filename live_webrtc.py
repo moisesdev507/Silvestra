@@ -19,7 +19,7 @@ HTML_PUENTE = """<!doctype html><html><head><meta charset="utf-8"><title>Kaya Au
 <div id="st">Iniciando puente WebRTC...</div>
 <script>
 const st=document.getElementById("st"),wsPort=location.hash.slice(1);
-let ws,ctx,nextT=0,sources=[],dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.006,framesVoz=0,pausasVoz=0,preroll=[],colaVoz=0,bargeHasta=0,finHabla=0,inicioHabla=0,duracionHabla=0,insistio=false,tuvoTurno=false;
+let ws,ctx,nextT=0,sources=[],dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.006,framesVoz=0,pausasVoz=0,preroll=[],colaVoz=0,bargeHasta=0,finHabla=0,inicioHabla=0,duracionHabla=0,insistio=false,tuvoTurno=false,ultimoPing=0;
 function sendCtrl(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));}
 function limpiarAudio(){sources.forEach(s=>{try{s.stop()}catch{}});sources=[];if(ctx)nextT=ctx.currentTime;}
 function despertar(){
@@ -37,7 +37,7 @@ function playPcm24k(buf){
   const ab=ctx.createBuffer(1,f32.length,24000);ab.getChannelData(0).set(f32);
   const src=ctx.createBufferSource();src.buffer=ab;src.connect(ctx.destination);
   const t=Math.max(ctx.currentTime,nextT);src.start(t);nextT=t+ab.duration;
-  if(!sources.length)inicioHabla=performance.now();sources.push(src);tuvoTurno=true;insistio=false;ultimoHabla=performance.now();sendCtrl({type:"estado",v:"hablando"});
+  if(!sources.length){inicioHabla=performance.now();colaVoz=0;preroll=[];framesVoz=0;}sources.push(src);tuvoTurno=true;insistio=false;ultimoHabla=performance.now();sendCtrl({type:"estado",v:"hablando"});
   src.onended=()=>{sources=sources.filter(x=>x!==src);if(!sources.length){finHabla=performance.now();if(inicioHabla>0){duracionHabla=finHabla-inicioHabla;inicioHabla=0;}sendCtrl({type:"estado",v:dormida?"reposo":"escuchando"});}};
 }
 function ajustar16k(f32,inRate){
@@ -68,17 +68,17 @@ async function iniciar(){
     const rms=Math.sqrt(sum/d.length),ahora=performance.now();
     if(sources.length>0&&ctx&&ctx.currentTime>nextT+0.25){sources=[];if(!dormida)sendCtrl({type:"estado",v:"escuchando"});}
     if(!dormida&&sources.length===0&&rms<piso*1.35)piso=Math.min(0.011,Math.max(0.004,piso*0.98+rms*0.02));
-    const uActivo=Math.max(0.0115,piso*1.9),uWake=Math.max(0.021,piso*2.5);
-    const hablandoEco=sources.length>0||(ahora-finHabla)<400;
+    const uActivo=Math.max(0.0135,piso*2.0),uWake=Math.max(0.021,piso*2.5);
+    const hablandoEco=sources.length>0||(ahora-finHabla)<500;
     if(hablandoEco)preroll=[];
     else if(dormida||colaVoz===0){preroll.push(pcm.buffer);if(preroll.length>10)preroll.shift();}
-    const uBarge=Math.max(0.075,uWake*2.6);
+    const uBarge=Math.max(0.095,uWake*3.0);
     const umbral=dormida?uWake:(hablandoEco?uBarge:uActivo);
     if(rms>umbral){
       framesVoz++;pausasVoz=0;
       if(!dormida){
         if(hablandoEco){
-          if(framesVoz>=5){
+          if(framesVoz>=6){
             colaVoz=18;ultimoHabla=ahora;insistio=false;
             if(sources.length>0){bargeHasta=ahora+1100;limpiarAudio();sendCtrl({type:"barge_in"});sendCtrl({type:"estado",v:"escuchando"});}
             sendCtrl({type:"nivel",v:Math.min(1,rms*6)});
@@ -100,13 +100,13 @@ async function iniciar(){
     if(!dormida&&sources.length===0&&colaVoz===0&&tuvoTurno&&!insistio&&finHabla>0&&(ahora-finHabla)>esperaNudge&&(ahora-ultimoHabla)>esperaNudge){
       insistio=true;tuvoTurno=false;ultimoHabla=ahora;sendCtrl({type:"nudge"});
     }
-    const esperaSleep=insistio?12000:13000;
+    const esperaSleep=insistio?9000:12000;
     if(!dormida&&sources.length===0&&colaVoz===0&&(ahora-ultimoHabla)>esperaSleep){
       dormida=true;framesVoz=0;pausasVoz=0;colaVoz=0;
       sendCtrl({type:"sleep"});sendCtrl({type:"estado",v:"reposo"});
       return;
     }
-    if(!dormida){ws.send(colaVoz>0?pcm.buffer:new Int16Array(pcm.length).buffer);}else if(framesVoz>=3&&rms>uWake){despertar();ws.send(pcm.buffer);}
+    if(!dormida){ws.send(!hablandoEco&&colaVoz>0?pcm.buffer:new Int16Array(pcm.length).buffer);}else if(framesVoz>=3&&rms>uWake){despertar();}else if(ahora-ultimoPing>5000){ultimoPing=ahora;ws.send(new Int16Array(pcm.length).buffer);}
   };
 }
 iniciar().catch(e=>{st.textContent="Error: "+e;sendCtrl({type:"error",msg:String(e)});});
