@@ -330,6 +330,7 @@ def construir_instruccion_arranque_rapido(primer_despertar: bool = False, nombre
         + " Usa revisar_pantalla si piden ver pantalla."
         + " Audio con ruido o incompleto: pregunta '¿Qué dijiste?' o calla; nunca adivines."
         + " CERO INVENCIONES; si el usuario da datos reales, usa recordar_dato en silencio."
+        + " " + live_prompt.contexto_ambiental()
     )
 
 

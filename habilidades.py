@@ -156,6 +156,11 @@ class Habilidades:
 
 def instalar(app):
     h = Habilidades(app)
+    try:
+        import correo_unificado
+        correo_unificado.registrar_acciones()
+    except Exception:
+        pass
     acciones.registrar(
         "clima",
         h.clima,

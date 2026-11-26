@@ -38,6 +38,10 @@ CATEGORIAS_ACCIONES = {
         {"abrir", "cerrar", "programa", "app", "aplicacion", "carpeta", "sitio", "web", "navegador", "ir", "google", "gmail", "whatsapp", "calculadora", "bloc", "notas", "explorador"},
         {"abrir_app", "cerrar_app", "ir_a", "abrir_programa", "cerrar_programa", "abrir_carpeta", "abrir_sitio", "abrir_web", "abrir_navegador", "abrir_youtube", "abrir_gmail", "abrir_whatsapp", "abrir_calculadora", "abrir_bloc_de_notas", "abrir_explorador", "abrir_app_local"}
     ),
+    "correo": (
+        {"correo", "correos", "gmail", "email", "bandeja", "borrador", "destinatario", "asunto"},
+        {"preparar_correo", "confirmar_envio_correo", "cancelar_correo"}
+    ),
     "camara": (
         {"camara", "foto", "mirame", "rostro", "cara", "ojo", "gesto", "gestos", "reconocimiento"},
         {"activar_camara", "apagar_camara", "aprender_mi_cara", "enviar_foto_camara"}

@@ -45,6 +45,11 @@ class MotorEjecucionTareas(MotorEjecucionControlMixin):
         if motor_permisos is None:
             raise ValueError("PERMISOS_NO_DISPONIBLES")
         self.registro = registro or RegistroHerramientas()
+        try:
+            import correo_unificado
+            correo_unificado.registrar_en_motor(self.registro)
+        except Exception:
+            pass
         self.motor_permisos = motor_permisos
         self.app_cola = app_cola
         self.max_workers = max(1, min(4, int(max_workers)))

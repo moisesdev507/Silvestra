@@ -71,8 +71,8 @@ class CapaAudioLive:
         while self.activo:
             try:
                 data = await asyncio.to_thread(cola.get, timeout=0.1)
-                if not data:
-                    continue
+                if not isinstance(data, (bytes, bytearray)) or len(data) == 0:
+                    continue  # frames vacíos provocan cierre 1007 en Gemini
                 if puente is not None:
                     if data == live_webrtc.SENAL_SLEEP:
                         if hasattr(self, "_al_dormir"):

@@ -12,6 +12,7 @@ import google_workspace as google
 import memoria_persistente as memoria
 import busqueda_web as web
 import vision_pantalla as vision
+import correo_unificado as correo
 
 LIMITE = 1600
 _ETIQUETA = re.compile(
@@ -54,6 +55,7 @@ CATALOGO = {
     "agenda_hoy": google.agenda_hoy,
     "crear_evento": _crear_evento,
     "resumen_correos": google.resumen_correos,
+    "gestionar_correo": correo.gestionar_desde_texto,
     "buscar_drive": google.buscar_drive,
     "buscar_web": web.buscar_web,
     "ver_pantalla": vision.analizar_pantalla,
@@ -129,7 +131,12 @@ def detectar_intencion(consulta):
         acciones.append(("crear_evento", str(consulta)))
     elif any(x in texto for x in ("agenda", "calendario", "reunion", "reuniones")):
         acciones.append(("agenda_hoy", ""))
-    if any(x in texto for x in ("correo", "correos", "gmail", "bandeja")):
+    if any(x in texto for x in (
+            "preparar correo", "prepara correo", "enviar correo", "envia correo",
+            "redactar correo", "confirmar envio", "confirmar el envio",
+            "confirma el envio", "cancelar correo", "cancela el correo")):
+        acciones.append(("gestionar_correo", str(consulta)))
+    elif any(x in texto for x in ("correo", "correos", "gmail", "bandeja")):
         acciones.append(("resumen_correos", ""))
     if any(x in texto for x in ("drive", "documento", "documentos")):
         acciones.append(("buscar_drive", str(consulta)))
@@ -151,9 +158,17 @@ def contexto_para_cerebro(consulta):
     """Bloque corto de datos reales para ``contexto_adicional`` (o "")."""
     intenciones = [p for p in detectar_intencion(consulta)
                    if p[0] != "abrir_en_vscode"]
+    lineas = []
+    try:
+        import contexto_ambiental as ambiente
+        aviso = ambiente.resumen_para_prompt()
+        if aviso:
+            lineas.append(aviso)
+    except Exception:
+        pass
     if not intenciones:
-        return ""
-    lineas = ["[HERRAMIENTAS LOCALES]"]
+        return "\n".join(lineas)[:LIMITE]
+    lineas.append("[HERRAMIENTAS LOCALES]")
     for nombre, argumento in intenciones:
         lineas.append(f"{nombre}: {ejecutar(nombre, argumento)[:420]}")
     return "\n".join(lineas)[:LIMITE]

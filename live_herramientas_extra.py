@@ -176,6 +176,24 @@ def declaraciones_extra() -> List[types.FunctionDeclaration]:
             ),
         ),
         types.FunctionDeclaration(
+            name="gestionar_correo",
+            description=(
+                "Gestiona correo en dos pasos: 'preparar' redacta y guarda un borrador SIN enviarlo; "
+                "'confirmar' envía ese borrador SOLO tras la confirmación explícita del usuario; "
+                "'cancelar' lo descarta. Nunca envíes sin confirmación."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "accion": types.Schema(type="STRING", description="preparar, confirmar o cancelar"),
+                    "destinatario": types.Schema(type="STRING", description="Correo del destinatario (preparar)."),
+                    "asunto": types.Schema(type="STRING", description="Asunto del correo (preparar)."),
+                    "cuerpo": types.Schema(type="STRING", description="Mensaje del correo (preparar)."),
+                },
+                required=["accion"],
+            ),
+        ),
+        types.FunctionDeclaration(
             name="escribir_en_diario",
             description=(
                 "Escribe una entrada breve en el diario íntimo de Kaya, en primera persona y con su propia voz. "
@@ -218,6 +236,13 @@ async def despachar(nombre: str, args: Dict[str, Any]) -> Any:
     if nombre == "control_multimedia":
         return await loop.run_in_executor(
             None, cap.control_multimedia, str(args.get("orden", ""))
+        )
+    if nombre == "gestionar_correo":
+        import correo_unificado as cu
+        return await loop.run_in_executor(
+            None, cu.gestionar, str(args.get("accion", "")),
+            str(args.get("destinatario", "")), str(args.get("asunto", "")),
+            str(args.get("cuerpo", "")),
         )
     if nombre == "escribir_en_diario":
         import diario_intimo

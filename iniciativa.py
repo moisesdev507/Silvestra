@@ -57,6 +57,15 @@ class Iniciativa:
                 cerebro_proactivo.evaluar_proactividad(self.app, motivo="periodico")
             except Exception:
                 pass
+            # Misma iniciativa para Live y Celeste, sin bloquear el hilo Qt.
+            try:
+                import iniciativa_unificada
+                threading.Thread(
+                    target=iniciativa_unificada.emitir,
+                    args=(self.app,), daemon=True, name="pro-unificado",
+                ).start()
+            except Exception as e:
+                print(f"[iniciativa] Pro unificada no disponible: {e}", flush=True)
 
         if hasattr(self.app, "cara") and hasattr(self.app.cara, "root"):
             self.app.cara.root.after(30000, self.revisar)

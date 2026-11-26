@@ -30,6 +30,11 @@ def responder_flujo(cerebro, texto, al_frase, on_primer_token=None):
         texto = cerebro_trabajo.resolver_referencias(texto)
     except Exception:
         pass
+    try:
+        import contexto_ambiental
+        texto = contexto_ambiental.resolver_referencias(texto)
+    except Exception:
+        pass
 
     import acciones
     if acciones.es_minimizar(texto):

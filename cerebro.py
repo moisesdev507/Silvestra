@@ -159,6 +159,11 @@ class Cerebro:
             except Exception:
                 pass
             try:
+                import contexto_ambiental as ctx_amb
+                contexto_adicional = ctx_amb.añadir(contexto_adicional)
+            except Exception:
+                pass
+            try:
                 import memoria_cache_rapida
                 if not memoria_cache_rapida.es_seguimiento_o_frase_corta(texto_actual):
                     import vigilante_proactivo as vigilante
