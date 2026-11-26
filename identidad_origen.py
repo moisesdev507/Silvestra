@@ -15,7 +15,7 @@ FECHA_INICIO = "martes 17 de noviembre de 2026"
 FECHA_CORTA = "17 de noviembre de 2026"
 ARCHIVO_PERFIL = "perfil_usuario.json"
 CLAVE_DESPERTAR = "primer_despertar"
-VOZ_KAYA_LIVE = "Achernar"
+VOZ_KAYA_LIVE = "Aoede"
 VOZ_KAYA_CLASICA = "aura-2-gloria-es"
 USUARIO_SIN_NOMBRE = "tu usuario"
 

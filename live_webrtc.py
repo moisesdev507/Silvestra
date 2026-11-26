@@ -47,7 +47,7 @@ function ajustar16k(f32,inRate){
   return out;
 }
 async function iniciar(){
-  const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
+  const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:false,autoGainControl:false}});
   ctx=new AudioContext({sampleRate:16000});await ctx.resume();
   ws=new WebSocket("ws://127.0.0.1:"+wsPort);ws.binaryType="arraybuffer";
   ws.onopen=()=>{ultimoHabla=performance.now();colaPreCtx.forEach(b=>playPcm24k(b));colaPreCtx=[];};
@@ -96,10 +96,10 @@ async function iniciar(){
       if(colaVoz>0)colaVoz--;
     }
     if(sources.length>0)ultimoHabla=ahora;
-    if(!dormida&&sources.length===0&&tuvoTurno&&!insistio&&finHabla>0&&(ahora-finHabla)>6500&&(ahora-ultimoHabla)>6500){
+    if(!dormida&&sources.length===0&&colaVoz===0&&tuvoTurno&&!insistio&&finHabla>0&&(ahora-finHabla)>4500&&(ahora-ultimoHabla)>4500){
       insistio=true;tuvoTurno=false;ultimoHabla=ahora;sendCtrl({type:"nudge"});
     }
-    if(!dormida&&ahora-ultimoHabla>10500){
+    if(!dormida&&ahora-ultimoHabla>10000){
       dormida=true;framesVoz=0;pausasVoz=0;colaVoz=0;
       sendCtrl({type:"sleep"});sendCtrl({type:"estado",v:"reposo"});
       return;
