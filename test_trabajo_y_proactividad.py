@@ -279,13 +279,17 @@ class TestEjecucionLocalArchivos(unittest.TestCase):
 class TestNacimientoSaludo(unittest.TestCase):
     def test_saludo_nacimiento_fallback_respeta_franja_horaria(self):
         import nacimiento
+        import saludo_dinamico
         app = DummyApp()
         def fail_pedir(msgs):
             raise RuntimeError("Simulando offline")
         app.cerebro = type("DummyCerebro", (), {"_pedir": fail_pedir})()
 
-        # A las 17:30 (tarde) -> debe saludar con Buenas tardes
-        with patch("time.localtime") as mock_lt:
+        # A las 17:30 (tarde) -> debe saludar con Buenas tardes sin depender de la red.
+        saludo_esperado = saludo_dinamico.con_nota_version(
+            "Buenas tardes, Moisés. Todo listo por acá.")
+        with patch("time.localtime") as mock_lt, \
+             patch("nacimiento.generar_saludo_dinamico", return_value=saludo_esperado):
             mock_lt.return_value = time.struct_time((2026, 11, 22, 17, 30, 0, 6, 326, 0))
             nacimiento.generar_saludo(app)
 
@@ -295,6 +299,7 @@ class TestNacimientoSaludo(unittest.TestCase):
         texto_saludo, emocion = item[1]
         self.assertTrue(texto_saludo.startswith("Buenas tardes"))
         self.assertNotIn("Buenos días", texto_saludo)
+        self.assertIn("versión compartida con amigos", texto_saludo.lower())
         self.assertEqual(emocion, "calida")
 
 

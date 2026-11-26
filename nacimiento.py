@@ -10,6 +10,7 @@ from saludo_dinamico import (
     _guardar_ultimo_saludo,
     _log_saludo,
     _obtener_ultimos_saludos,
+    con_nota_version,
     fallback_natural_memoria,
     generar_saludo_dinamico,
 )
@@ -92,7 +93,7 @@ def saludar(app):
             except Exception:
                 pass
     if identidad_origen.consumir_primer_despertar():
-        saludo = identidad_origen.saludo_primer_despertar()
+        saludo = con_nota_version(identidad_origen.saludo_primer_despertar())
         _guardar_ultimo_saludo(saludo)
         if hasattr(app, "cola"):
             app.cola.put(("saludo_inicial", (saludo, "alegre")))

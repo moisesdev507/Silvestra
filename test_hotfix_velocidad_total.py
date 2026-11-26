@@ -166,7 +166,10 @@ class TestHotfixVelocidadTotal(unittest.TestCase):
         }
         with patch("httpx.post", return_value=mock_resp):
             saludo = nacimiento.generar_saludo(creador="Moisés")
-            self.assertEqual(saludo, "Moisés, retomemos lo de la latencia cuando quieras.")
+            esperado = saludo_dinamico.con_nota_version(
+                "Moisés, retomemos lo de la latencia cuando quieras.")
+            self.assertEqual(saludo, esperado)
+            self.assertIn("versión compartida con amigos", saludo.lower())
             for muletilla in saludo_dinamico.MULETILLAS_PROHIBIDAS:
                 self.assertNotIn(muletilla, saludo.lower())
 

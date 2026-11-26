@@ -33,6 +33,22 @@ MULETILLAS_PROHIBIDAS = (
     "¡hola! aquí",
 )
 
+NOTA_VERSION_COMPARTIDA = (
+    "Por cierto, soy una versión compartida con amigos para que me prueben; "
+    "si notas algún error o detallito pequeño, no te preocupes, es normal mientras seguimos mejorando."
+)
+
+
+def con_nota_version(saludo):
+    """Añade una sola vez la nota de versión compartida al saludo hablado."""
+    texto = str(saludo or "").strip()
+    if not texto:
+        return NOTA_VERSION_COMPARTIDA
+    if "versión compartida con amigos" in texto.lower():
+        return texto
+    return f"{texto} {NOTA_VERSION_COMPARTIDA}"
+
+
 FALLBACKS_FRANJAS = {
     "madrugada": (
         "Qué xopa {creador}, seguimos activos en la madrugada; dime por dónde le damos.",
@@ -233,7 +249,7 @@ def generar_saludo_dinamico(creador=identidad_origen.USUARIO_SIN_NOMBRE, timeout
                             _guardar_ultimo_saludo(texto)
                             if token_aviso:
                                 bp.registrar_alerta_avisada(token_aviso)
-                            return texto
+                            return con_nota_version(texto)
                         motivo_fallo = f"Groq ({mod}) descartado por incoherencia de franja ({franja})"
                 else:
                     motivo_fallo = f"Groq HTTP {resp.status_code} ({mod})"
@@ -268,7 +284,7 @@ def generar_saludo_dinamico(creador=identidad_origen.USUARIO_SIN_NOMBRE, timeout
                         _guardar_ultimo_saludo(texto_cf)
                         if token_aviso:
                             bp.registrar_alerta_avisada(token_aviso)
-                        return texto_cf
+                        return con_nota_version(texto_cf)
                     motivo_fallo = f"Cloudflare descartado por incoherencia de franja ({franja})"
             else:
                 motivo_fallo = f"Cloudflare HTTP {resp_cf.status_code}"
@@ -280,12 +296,14 @@ def generar_saludo_dinamico(creador=identidad_origen.USUARIO_SIN_NOMBRE, timeout
     _guardar_ultimo_saludo(saludo_fb)
     if token_aviso:
         bp.registrar_alerta_avisada(token_aviso)
-    return saludo_fb
+    return con_nota_version(saludo_fb)
 
 
 __all__ = [
     "generar_saludo_dinamico",
     "fallback_natural_memoria",
+    "con_nota_version",
+    "NOTA_VERSION_COMPARTIDA",
     "MULETILLAS_PROHIBIDAS",
     "_es_coherente_con_franja",
     "_determinar_franja",
