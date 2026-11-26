@@ -44,6 +44,15 @@ def guardar(datos):
         pass
 
 
+def voz_clasica_activa() -> bool:
+    """True solo cuando Celeste/Deepgram es el motor de voz principal."""
+    try:
+        modo = str(cargar().get("modo_voz_principal", "gemini_live")).strip().lower()
+        return modo == "clasico"
+    except Exception:
+        return False
+
+
 def tiempo_transcurrido_texto(ultima_vez):
     """Devuelve una frase natural describiendo cuánto tiempo pasó desde ultima_vez."""
     if not ultima_vez:

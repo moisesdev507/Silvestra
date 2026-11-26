@@ -53,6 +53,16 @@ def obtener_siguiente_muletilla():
         return elegido
 
 
+def precargar_si_clasico(sintetizar_fn):
+    """Precarga Deepgram solo si Celeste es el motor principal."""
+    try:
+        import estado
+        if estado.voz_clasica_activa():
+            precargar_audios_frecuentes(sintetizar_fn)
+    except Exception:
+        pass
+
+
 def precargar_audios_frecuentes(sintetizar_fn):
     """Genera en segundo plano el audio de las muletillas y frases frecuentes."""
     def _tarea():

@@ -104,10 +104,10 @@ class Voz:
             self.reproductor = ReproductorAudio(self.pg)
             import voz_cache
 
-            voz_cache.precargar_audios_frecuentes(self._audio)
+            voz_cache.precargar_si_clasico(self._audio)
             try:
                 import tts_aura_stream
-                tts_aura_stream.precalentar_conexion()
+                tts_aura_stream.precalentar_si_clasico()
             except Exception:
                 pass
         except Exception:

@@ -70,6 +70,16 @@ def aura_disponible() -> bool:
     return bool(clave)
 
 
+def precalentar_si_clasico():
+    """Precalienta Aura solo si Celeste es el motor principal."""
+    try:
+        import estado
+        if estado.voz_clasica_activa():
+            precalentar_conexion()
+    except Exception:
+        pass
+
+
 def precalentar_conexion(forzar: bool = False):
     """Precalentamiento no bloqueante de TLS en segundo plano usando el singleton (cooldown 12s)."""
     global _ULTIMO_PRECALENTADO

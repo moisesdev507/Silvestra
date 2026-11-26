@@ -328,7 +328,35 @@ def construir_instruccion_arranque_rapido(primer_despertar: bool = False, nombre
         + " Femenina, cálida, ingeniosa. Español panameño, 1 frase."
         + ctx_h + turno
         + " Usa revisar_pantalla si piden ver pantalla."
+        + " Audio con ruido o incompleto: pregunta '¿Qué dijiste?' o calla; nunca adivines."
+        + " CERO INVENCIONES; si el usuario da datos reales, usa recordar_dato en silencio."
     )
+
+
+def configuracion_transcripcion():
+    """Configuración STT/TTS de Live soportada por el SDK google-genai instalado."""
+    try:
+        from google.genai import types
+        if not hasattr(types, "AudioTranscriptionConfig"):
+            return {}
+        nombres = ("input_audio_transcription", "output_audio_transcription")
+        cfg = types.LiveConnectConfig
+        campos = getattr(cfg, "model_fields", None)
+        if not isinstance(campos, dict):
+            campos = getattr(cfg, "__fields__", None)
+        if not isinstance(campos, dict):  # Config sustituida en pruebas.
+            return {n: types.AudioTranscriptionConfig() for n in nombres}
+        return {n: types.AudioTranscriptionConfig() for n in nombres if n in campos}
+    except Exception:
+        return {}
+
+
+def trazar_transcripcion(rol: str, texto: str) -> str:
+    """Escribe en silvestra.log (stdout redirigido) lo oído y lo dicho por Live."""
+    limpio = str(texto or "").strip()
+    if limpio:
+        print(f"[LIVE][{rol}] {limpio}", flush=True)
+    return limpio
 
 
 def construir_instruccion_sistema(

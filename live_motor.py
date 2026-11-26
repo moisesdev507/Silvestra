@@ -109,7 +109,7 @@ class SesionKayaLive(CapaAudioLive):
             ),
             system_instruction=types.Content(parts=[types.Part.from_text(text=_instruccion_con_hora_local(rapido, despertar, nombre_actual))]),
             tools=live_herramientas.declarar_declaraciones_herramientas(),
-            input_audio_transcription=types.AudioTranscriptionConfig(),
+            **live_audio.configuracion_transcripcion(),
         )
 
         self._notificar_estado("conectando")
@@ -153,10 +153,12 @@ class SesionKayaLive(CapaAudioLive):
                             if sc:
                                 it = getattr(sc, "input_audio_transcription", None)
                                 if it and getattr(it, "text", None):
-                                    voz = str(it.text).strip()
+                                    voz = live_audio.trazar_transcripcion("USUARIO", it.text)
                                     if voz:
                                         memoria_contexto.registrar_turno("user", voz)
                                         self._notificar_texto("usuario", voz)
+                                ot = getattr(sc, "output_audio_transcription", None)
+                                live_audio.trazar_transcripcion("KAYA", getattr(ot, "text", ""))
                                 if getattr(sc, "interrupted", False):
                                     turno_interrumpido = True
                                     if self._puente_webrtc is not None:
