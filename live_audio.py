@@ -349,6 +349,8 @@ def configuracion_transcripcion():
             campos = getattr(cfg, "__fields__", None)
         if isinstance(campos, dict):
             salida = {n: types.AudioTranscriptionConfig() for n in nombres if n in campos}
+        if "enable_affective_dialog" in campos:
+            salida["enable_affective_dialog"] = True
         else:  # Config sustituida en pruebas.
             salida = {n: types.AudioTranscriptionConfig() for n in nombres}
         if hasattr(types, "AutomaticActivityDetection") and hasattr(types, "RealtimeInputConfig"):
