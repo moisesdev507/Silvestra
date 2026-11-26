@@ -64,6 +64,7 @@ def migrar_check_estados(conexion):
     total = conexion.execute("SELECT COUNT(*) FROM recuerdos").fetchone()[0]
     foreign_keys = int(conexion.execute("PRAGMA foreign_keys").fetchone()[0])
     conexion.execute("PRAGMA foreign_keys=OFF")
+    conexion.execute("PRAGMA legacy_alter_table=ON")
     try:
         for disparador in ("recuerdos_ai", "recuerdos_ad", "recuerdos_au"):
             conexion.execute("DROP TRIGGER IF EXISTS " + disparador)
@@ -80,7 +81,40 @@ def migrar_check_estados(conexion):
              json.dumps({"recuerdos": total}, ensure_ascii=False)))
         conexion.commit()
     finally:
+        conexion.execute("PRAGMA legacy_alter_table=OFF")
         conexion.execute("PRAGMA foreign_keys=" + str(foreign_keys))
+    return True
+
+
+def reparar_fk_legado(conexion):
+    """Restaura FKs que SQLite haya reescrito hacia recuerdos_legado."""
+    filas = conexion.execute(
+        "SELECT name, sql FROM sqlite_master WHERE type='table' AND sql LIKE '%recuerdos_legado%'"
+    ).fetchall()
+    if not filas:
+        return False
+    fk_prev = int(conexion.execute("PRAGMA foreign_keys").fetchone()[0])
+    conexion.execute("PRAGMA foreign_keys=OFF")
+    conexion.execute("PRAGMA legacy_alter_table=ON")
+    try:
+        for nombre, sql in filas:
+            idxs = [r[0] for r in conexion.execute(
+                "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name=? AND sql IS NOT NULL",
+                (nombre,),
+            ).fetchall()]
+            nuevo_sql = sql.replace('"recuerdos_legado"', "recuerdos").replace("recuerdos_legado", "recuerdos")
+            tmp = f"_tmp_{nombre}_fk"
+            conexion.execute(f"DROP TABLE IF EXISTS {tmp}")
+            conexion.execute(f"ALTER TABLE {nombre} RENAME TO {tmp}")
+            conexion.execute(nuevo_sql)
+            conexion.execute(f"INSERT INTO {nombre} SELECT * FROM {tmp}")
+            conexion.execute(f"DROP TABLE {tmp}")
+            for idx_sql in idxs:
+                conexion.execute(idx_sql)
+        conexion.commit()
+    finally:
+        conexion.execute("PRAGMA legacy_alter_table=OFF")
+        conexion.execute("PRAGMA foreign_keys=" + str(fk_prev))
     return True
 
 
@@ -101,6 +135,7 @@ def inicializar(conexion, ruta=None):
             conexion.commit()
     conexion.executescript(DDL)
     migrar_check_estados(conexion)
+    reparar_fk_legado(conexion)
     if tabla and not fts:
         conexion.execute("INSERT INTO recuerdos_fts(recuerdos_fts) VALUES('rebuild')")
     conexion.commit()
