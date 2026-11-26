@@ -24,7 +24,7 @@ function limpiarAudio(){sources.forEach(s=>{try{s.stop()}catch{}});sources=[];if
 function despertar(){
   if(!dormida)return;
   dormida=false;framesVoz=0;ultimoHabla=performance.now();
-  sendCtrl({type:"estado",v:"escuchando"});
+  sendCtrl({type:"wake"});sendCtrl({type:"estado",v:"escuchando"});
   if(ws&&ws.readyState===1){preroll.forEach(b=>ws.send(b));preroll=[];}
 }
 function playPcm24k(buf){
@@ -44,7 +44,7 @@ function ajustar16k(f32,inRate){
   return out;
 }
 async function iniciar(){
-  const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
+  const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
   ctx=new AudioContext({sampleRate:16000});await ctx.resume();
   ws=new WebSocket("ws://127.0.0.1:"+wsPort);ws.binaryType="arraybuffer";
   ws.onopen=()=>{colaPreCtx.forEach(b=>playPcm24k(b));colaPreCtx=[];};
@@ -63,13 +63,13 @@ async function iniciar(){
     let sum=0;const pcm=new Int16Array(d.length);
     for(let i=0;i<d.length;i++){const v=Math.max(-1,Math.min(1,d[i]));sum+=v*v;pcm[i]=v<0?v*32768:v*32767;}
     const rms=Math.sqrt(sum/d.length),ahora=performance.now();
-    if(sources.length===0&&rms<piso*1.35)piso=piso*0.97+rms*0.03;
-    const uActivo=Math.max(0.009,piso*1.5),uWake=Math.max(0.011,piso*1.7);
+    if(sources.length===0&&rms<piso*1.15)piso=Math.min(0.014,piso*0.98+rms*0.02);
+    const uActivo=Math.max(0.008,piso*1.45),uWake=Math.max(0.010,piso*1.65);
     preroll.push(pcm.buffer);if(preroll.length>8)preroll.shift();
     const umbral=dormida?uWake:uActivo;
     if(rms>umbral){
       framesVoz++;
-      if(!dormida&&framesVoz>=2){ultimoHabla=ahora;sendCtrl({type:"nivel",v:Math.min(1,rms*6)});}
+      if(!dormida){ultimoHabla=ahora;sendCtrl({type:"nivel",v:Math.min(1,rms*6)});}
     }else{framesVoz=0;}
     if(sources.length>0)ultimoHabla=ahora;
     if(!dormida&&ahora-ultimoHabla>9000){
@@ -77,7 +77,7 @@ async function iniciar(){
       sendCtrl({type:"sleep"});sendCtrl({type:"estado",v:"reposo"});
       return;
     }
-    if(!dormida){ws.send(pcm.buffer);}else if(framesVoz>=2){despertar();ws.send(pcm.buffer);}
+    if(!dormida){ws.send(pcm.buffer);}else if(framesVoz>=1){despertar();ws.send(pcm.buffer);}
   };
 }
 iniciar().catch(e=>{st.textContent="Error: "+e;sendCtrl({type:"error",msg:String(e)});});
@@ -214,6 +214,8 @@ class PuenteWebRTC:
                                 self._emitir_estado(str(data.get("v", "escuchando")))
                             elif tipo == "nivel":
                                 self._emitir_nivel(float(data.get("v", 0.0)))
+                            elif tipo == "wake":
+                                print("[LIVE][WEBRTC] Voz detectada -> Despertando a Amarillo.", flush=True)
                             elif tipo == "sleep":
                                 print("[LIVE][WEBRTC] 9s en silencio -> Reposo Azul (0 tokens).", flush=True)
                                 self._encolar_entrada(SENAL_SLEEP)
