@@ -18,7 +18,7 @@ HTML_PUENTE = """<!doctype html><html><head><meta charset="utf-8"><title>Kaya Au
 <div id="st">Iniciando puente WebRTC...</div>
 <script>
 const st=document.getElementById("st"),wsPort=location.hash.slice(1);
-let ws,ctx,nextT=0,sources=[],dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.012,framesVoz=0,pausasVoz=0,preroll=[],colaVoz=0;
+let ws,ctx,nextT=0,sources=[],dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.007,framesVoz=0,pausasVoz=0,preroll=[],colaVoz=0,bargeHasta=0;
 function sendCtrl(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));}
 function limpiarAudio(){sources.forEach(s=>{try{s.stop()}catch{}});sources=[];if(ctx)nextT=ctx.currentTime;}
 function despertar(){
@@ -28,6 +28,7 @@ function despertar(){
   if(ws&&ws.readyState===1){preroll.forEach(b=>ws.send(b));preroll=[];}
 }
 function playPcm24k(buf){
+  if(performance.now()<bargeHasta)return;
   if(!ctx){colaPreCtx.push(buf);return;}
   if(ctx.state==="suspended")ctx.resume().catch(()=>{});
   const i16=new Int16Array(buf),f32=new Float32Array(i16.length);
@@ -52,7 +53,7 @@ async function iniciar(){
   ws.onmessage=e=>{
     if(e.data instanceof ArrayBuffer){playPcm24k(e.data);return;}
     const m=JSON.parse(e.data);
-    if(m.type==="interrupted")limpiarAudio();
+    if(m.type==="interrupted"){bargeHasta=0;limpiarAudio();}
     if(m.type==="wake")despertar();
   };
   const src=ctx.createMediaStreamSource(stream),proc=ctx.createScriptProcessor(1024,1,1);
@@ -65,15 +66,19 @@ async function iniciar(){
     for(let i=0;i<d.length;i++){const v=Math.max(-1,Math.min(1,d[i]));sum+=v*v;pcm[i]=v<0?v*32768:v*32767;}
     const rms=Math.sqrt(sum/d.length),ahora=performance.now();
     if(sources.length>0&&ctx&&ctx.currentTime>nextT+0.25){sources=[];if(!dormida)sendCtrl({type:"estado",v:"escuchando"});}
-    if(!dormida&&sources.length===0&&rms<piso*1.25)piso=Math.min(0.007,Math.max(0.0028,piso*0.98+rms*0.02));
-    const uActivo=Math.max(0.007,piso*1.65),uWake=Math.max(0.011,piso*2.1);
+    if(!dormida&&sources.length===0&&rms<piso*1.35)piso=Math.min(0.012,Math.max(0.0045,piso*0.98+rms*0.02));
+    const uActivo=Math.max(0.015,piso*2.2),uWake=Math.max(0.024,piso*2.8);
     if(dormida||colaVoz===0){preroll.push(pcm.buffer);if(preroll.length>10)preroll.shift();}
     const umbral=dormida?uWake:uActivo;
     if(rms>umbral){
       const estabaMudo=!dormida&&colaVoz===0;
-      framesVoz++;pausasVoz=0;colaVoz=24;
+      framesVoz++;pausasVoz=0;colaVoz=22;
       if(!dormida){
-        if(framesVoz>=2)ultimoHabla=ahora;
+        if(framesVoz>=3)ultimoHabla=ahora;
+        if(sources.length>0&&framesVoz>=4&&rms>Math.max(0.026,uWake*1.15)){
+          bargeHasta=ahora+1100;limpiarAudio();
+          sendCtrl({type:"barge_in"});sendCtrl({type:"estado",v:"escuchando"});
+        }
         sendCtrl({type:"nivel",v:Math.min(1,rms*6)});
         if(estabaMudo){preroll.forEach(b=>ws.send(b));preroll=[];}
       }
@@ -87,7 +92,7 @@ async function iniciar(){
       sendCtrl({type:"sleep"});sendCtrl({type:"estado",v:"reposo"});
       return;
     }
-    if(!dormida){ws.send(colaVoz>0?pcm.buffer:new Int16Array(pcm.length).buffer);}else if(framesVoz>=2&&rms>uWake){despertar();ws.send(pcm.buffer);}
+    if(!dormida){ws.send(colaVoz>0?pcm.buffer:new Int16Array(pcm.length).buffer);}else if(framesVoz>=4&&rms>uWake){despertar();ws.send(pcm.buffer);}
   };
 }
 iniciar().catch(e=>{st.textContent="Error: "+e;sendCtrl({type:"error",msg:String(e)});});
@@ -224,6 +229,9 @@ class PuenteWebRTC:
                                 self._emitir_estado(str(data.get("v", "escuchando")))
                             elif tipo == "nivel":
                                 self._emitir_nivel(float(data.get("v", 0.0)))
+                            elif tipo == "barge_in":
+                                with self.cola_salida.mutex:
+                                    self.cola_salida.queue.clear()
                             elif tipo == "wake":
                                 print("[LIVE][WEBRTC] Voz detectada -> Despertando a Amarillo.", flush=True)
                             elif tipo == "sleep":
