@@ -1,5 +1,6 @@
 """Motor interactivo Gemini Live para Silvestra con puente WebRTC y respaldo PortAudio."""
 import asyncio, queue, threading, time
+from datetime import datetime
 from typing import Callable, Optional
 from google import genai
 from google.genai import types
@@ -9,6 +10,19 @@ import live_audio, live_herramientas, live_webrtc, puerta_audio_live
 MODELO_DEFECTO = "gemini-2.5-flash-native-audio-latest"
 VOZ_DEFECTO = identidad_origen.VOZ_KAYA_LIVE
 from live_audio import activar_enfriamiento_cuota, es_error_cuota, esta_en_enfriamiento_cuota
+
+
+_DIAS_ES = ("lunes", "martes", "mi?rcoles", "jueves", "viernes", "s?bado", "domingo")
+_MESES_ES = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre")
+
+
+def _instruccion_con_hora_local(rapido: bool, primer_despertar: bool, nombre_usuario: str) -> str:
+    base = live_audio.construir_instruccion_sistema(
+        rapido=rapido, primer_despertar=primer_despertar, nombre_usuario=nombre_usuario
+    )
+    ahora = datetime.now()
+    fecha_local = f"{_DIAS_ES[ahora.weekday()]} {ahora.day} de {_MESES_ES[ahora.month - 1]} de {ahora.year}, {ahora.strftime('%H:%M')}"
+    return f"{base}\nFecha y hora local actual del usuario: {fecha_local} (usa siempre esta fecha y hora local, nunca UTC)."
 
 
 class SesionKayaLive:
@@ -175,8 +189,7 @@ class SesionKayaLive:
             speech_config=types.SpeechConfig(
                 voice_config=types.VoiceConfig(prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=self.voz))
             ),
-            system_instruction=types.Content(parts=[types.Part.from_text(text=live_audio.construir_instruccion_sistema(
-                rapido=rapido, primer_despertar=despertar, nombre_usuario=nombre_actual))]),
+            system_instruction=types.Content(parts=[types.Part.from_text(text=_instruccion_con_hora_local(rapido, despertar, nombre_actual))]),
             tools=live_herramientas.declarar_declaraciones_herramientas(),
         )
 

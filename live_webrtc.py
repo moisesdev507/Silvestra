@@ -219,6 +219,8 @@ class PuenteWebRTC:
                                 self._encolar_entrada(SENAL_SLEEP)
                             elif tipo == "error":
                                 print(f"[LIVE][WEBRTC] Aviso navegador: {data.get('msg')}", flush=True)
+                except websockets.ConnectionClosed:
+                    pass
                 finally:
                     t_out.cancel()
                     if self._ws_cliente is ws:
@@ -255,16 +257,36 @@ class PuenteWebRTC:
                     "--no-first-run",
                     "--no-default-browser-check",
                     f"--app={url}",
-                    "--window-size=260,120",
-                    "--window-position=-32000,-32000",
+                    "--window-size=1,1",
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding",
+                    "--disable-features=CalculateNativeWinOcclusion",
+                    "--window-position=-2400,-2400",
                 ],
                 creationflags=flags,
             )
+            threading.Thread(target=self._ocultar_ventana_win32, daemon=True).start()
             return True
         except Exception as e:
             print(f"[LIVE][WEBRTC] No se pudo iniciar navegador oculto: {e}", flush=True)
             self.detener()
             return False
+
+
+    @staticmethod
+    def _ocultar_ventana_win32():
+        if os.name != "nt":
+            return
+        import ctypes, time
+        u32 = ctypes.windll.user32
+        for _ in range(40):
+            hwnd = u32.FindWindowW(None, "Kaya Audio Bridge")
+            if hwnd:
+                ex = u32.GetWindowLongW(hwnd, -20)
+                u32.SetWindowLongW(hwnd, -20, (ex | 0x00000080) & ~0x00040000)
+                u32.ShowWindow(hwnd, 0)
+                break
+            time.sleep(0.05)
 
     def enviar_audio_salida(self, pcm24k: bytes):
         if self.activo and pcm24k:
