@@ -1,14 +1,15 @@
-"""Motor interactivo Gemini Live para Silvestra."""
+"""Motor interactivo Gemini Live para Silvestra con puente WebRTC y respaldo PortAudio."""
 import asyncio, queue, threading, time
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 from google import genai
 from google.genai import types
 import identidad_origen
-import live_audio, live_herramientas, puerta_audio_live
+import live_audio, live_herramientas, live_webrtc, puerta_audio_live
 
 MODELO_DEFECTO = "gemini-2.5-flash-native-audio-latest"
 VOZ_DEFECTO = identidad_origen.VOZ_KAYA_LIVE
 from live_audio import activar_enfriamiento_cuota, es_error_cuota, esta_en_enfriamiento_cuota
+
 
 class SesionKayaLive:
     def __init__(
@@ -35,6 +36,7 @@ class SesionKayaLive:
         self.puerta = puerta_audio_live.PuertaAudioLive(timeout_silencio=self.timeout_silencio)
 
         self.activo = False
+        self._puente_webrtc: Optional[live_webrtc.PuenteWebRTC] = None
         self._loop, self._session_genai = None, None
         self._hilo_loop, self._hilo_salida = None, None
         self._stream_entrada, self._stream_salida = None, None
@@ -98,10 +100,8 @@ class SesionKayaLive:
                     if self._estado_actual == "hablando" and not self.compuerta.esta_en_ventana_eco():
                         self._notificar_estado("escuchando")
                     continue
-
                 if not chunk:
                     continue
-
                 self._notificar_estado("hablando")
                 self._notificar_nivel(live_audio.calcular_energia_pcm16(chunk))
                 self.puerta.marcar_reproduccion(True)
@@ -120,13 +120,22 @@ class SesionKayaLive:
             self._stream_salida = live_audio.cerrar_stream(self._stream_salida)
 
     async def _tarea_envio_audio(self, session):
+        puente = self._puente_webrtc
+        cola = puente.cola_entrada if puente is not None else self.cola_audio_entrada
         while self.activo:
             try:
-                data = await asyncio.to_thread(self.cola_audio_entrada.get, timeout=0.1)
+                data = await asyncio.to_thread(cola.get, timeout=0.1)
                 if not data:
                     continue
-                if self.puerta.reproduciendo or self.compuerta.esta_en_ventana_eco():
-                    continue  # anti-self-barge-in: nunca enviar eco de Kaya
+                if puente is not None:
+                    if data == live_webrtc.SENAL_SLEEP:
+                        try:
+                            await session.send_realtime_input(audio_stream_end=True)
+                        except Exception:
+                            pass
+                        continue
+                elif self.puerta.reproduciendo or self.compuerta.esta_en_ventana_eco():
+                    continue
                 await session.send_realtime_input(
                     audio=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
                 )
@@ -137,10 +146,14 @@ class SesionKayaLive:
                 break
 
     async def _tarea_watchdog(self):
+        if self._puente_webrtc is not None:
+            while self.activo:
+                await asyncio.sleep(1.0)
+            return
         while self.activo:
             await asyncio.sleep(0.5)
             if self.puerta.debe_cerrar():
-                print(f"[LIVE] Inactividad {self.timeout_silencio:.1f}s: cerrando micrófono y Live.", flush=True)
+                print(f"[LIVE] Inactividad {self.timeout_silencio:.1f}s: cerrando micr?fono y Live.", flush=True)
                 self.detener()
                 if callable(self.on_cierre_automatico):
                     try:
@@ -156,7 +169,7 @@ class SesionKayaLive:
         client = genai.Client(api_key=api_key, http_options={"api_version": "v1alpha"})
         despertar = identidad_origen.consumir_primer_despertar()
         nombre_actual = identidad_origen.nombre_usuario()
-        rapido = bool(self.orden_inicial and ("enciende" in self.orden_inicial or "encendió" in self.orden_inicial))
+        rapido = bool(self.orden_inicial and ("enciende" in self.orden_inicial or "encendi?" in self.orden_inicial))
         cfg = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
             speech_config=types.SpeechConfig(
@@ -165,67 +178,91 @@ class SesionKayaLive:
             system_instruction=types.Content(parts=[types.Part.from_text(text=live_audio.construir_instruccion_sistema(
                 rapido=rapido, primer_despertar=despertar, nombre_usuario=nombre_actual))]),
             tools=live_herramientas.declarar_declaraciones_herramientas(),
-            realtime_input_config=types.RealtimeInputConfig(
-                automatic_activity_detection=types.AutomaticActivityDetection(silence_duration_ms=420)
-            ),
         )
 
         self._notificar_estado("conectando")
         live_herramientas.registrar_callback_reposo(self.detener)
+        primer_ciclo = True
 
-        async with client.aio.live.connect(model=self.modelo, config=cfg) as session:
-            self._session_genai = session
-            self._notificar_estado("escuchando")
-            self.puerta.notificar_actividad()
-
-            orden = (self.orden_inicial or "").strip()
-            if despertar:
-                texto_inicio = identidad_origen.instruccion_primer_despertar(nombre_actual)
-            elif orden:
-                texto_inicio = orden if orden.lower() not in ("kaya", "kaia", "silvestra", "oye kaya") else ""
-            else:
-                texto_inicio = ""
-            if texto_inicio:
-                try:
-                    await session.send_client_content(turns=types.Content(role="user", parts=[types.Part.from_text(text=texto_inicio)]), turn_complete=True)
-                except Exception as e:
-                    print(f"[LIVE] Error enviando orden inicial: {e}", flush=True)
-
-            tarea_audio = asyncio.create_task(self._tarea_envio_audio(session))
-            tarea_dog = asyncio.create_task(self._tarea_watchdog())
-
+        while self.activo:
             try:
-                while self.activo:
-                    async for resp in session.receive():
-                        if not self.activo: break
-                        sc = resp.server_content
-                        if sc:
-                            if getattr(sc, "turn_complete", False): self.puerta.notificar_actividad()
-                            if getattr(sc, "interrupted", False):
-                                with self.cola_audio_salida.mutex: self.cola_audio_salida.queue.clear()
-                                self._notificar_estado("escuchando")
+                async with client.aio.live.connect(model=self.modelo, config=cfg) as session:
+                    self._session_genai = session
+                    if not (self._puente_webrtc and self._puente_webrtc.dormida):
+                        self._notificar_estado("escuchando")
+                    self.puerta.notificar_actividad()
+
+                    if primer_ciclo:
+                        primer_ciclo = False
+                        orden = (self.orden_inicial or "").strip()
+                        if despertar:
+                            texto_inicio = identidad_origen.instruccion_primer_despertar(nombre_actual)
+                        elif orden:
+                            texto_inicio = orden if orden.lower() not in ("kaya", "kaia", "silvestra", "oye kaya") else ""
+                        else:
+                            texto_inicio = ""
+                        if texto_inicio:
+                            try:
+                                await session.send_client_content(
+                                    turns=types.Content(role="user", parts=[types.Part.from_text(text=texto_inicio)]),
+                                    turn_complete=True,
+                                )
+                            except Exception as e:
+                                print(f"[LIVE] Error enviando orden inicial: {e}", flush=True)
+
+                    tarea_audio = asyncio.create_task(self._tarea_envio_audio(session))
+                    tarea_dog = asyncio.create_task(self._tarea_watchdog())
+                    try:
+                        async for resp in session.receive():
+                            if not self.activo:
+                                break
+                            sc = resp.server_content
+                            if sc:
+                                if getattr(sc, "turn_complete", False):
+                                    self.puerta.notificar_actividad()
+                                if getattr(sc, "interrupted", False):
+                                    if self._puente_webrtc is not None:
+                                        self._puente_webrtc.interrumpir_salida()
+                                    else:
+                                        with self.cola_audio_salida.mutex:
+                                            self.cola_audio_salida.queue.clear()
+                                        self._notificar_estado("escuchando")
+                                    self.puerta.notificar_actividad()
+                                mt = sc.model_turn
+                                if mt:
+                                    for part in mt.parts:
+                                        if getattr(part, "inline_data", None) and part.inline_data.data:
+                                            live_audio.registrar_tiempo_primera_voz()
+                                            if self._puente_webrtc is not None:
+                                                self._puente_webrtc.enviar_audio_salida(part.inline_data.data)
+                                            else:
+                                                self.compuerta.marcar_encolado_salida()
+                                                self.cola_audio_salida.put(part.inline_data.data)
+                                        if getattr(part, "text", None):
+                                            self._notificar_texto("kaya", part.text)
+                            tc = resp.tool_call
+                            if tc:
+                                self._notificar_estado("pensando")
                                 self.puerta.notificar_actividad()
-                            mt = sc.model_turn
-                            if mt:
-                                for part in mt.parts:
-                                    if getattr(part, "inline_data", None) and part.inline_data.data:
-                                        live_audio.registrar_tiempo_primera_voz()
-                                        self.compuerta.marcar_encolado_salida()
-                                        self.cola_audio_salida.put(part.inline_data.data)
-                                    if getattr(part, "text", None): self._notificar_texto("kaya", part.text)
-                        tc = resp.tool_call
-                        if tc:
-                            self._notificar_estado("pensando")
-                            self.puerta.notificar_actividad()
-                            for call in tc.function_calls:
-                                res_call = await live_herramientas.despachar_herramienta_asincrona(call.name, call.args)
-                                resp_tool = types.LiveClientToolResponse(function_responses=[types.FunctionResponse(name=call.name, id=call.id, response={"result": res_call})])
-                                await session.send(input=resp_tool)
-                    if not self.activo: break
-                    await asyncio.sleep(0.02)
-            finally:
-                tarea_audio.cancel()
-                tarea_dog.cancel()
+                                for call in tc.function_calls:
+                                    res_call = await live_herramientas.despachar_herramienta_asincrona(call.name, call.args)
+                                    resp_tool = types.LiveClientToolResponse(
+                                        function_responses=[types.FunctionResponse(name=call.name, id=call.id, response={"result": res_call})]
+                                    )
+                                    await session.send(input=resp_tool)
+                    finally:
+                        tarea_audio.cancel()
+                        tarea_dog.cancel()
+                if not self.activo:
+                    break
+                await asyncio.sleep(0.25)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                if not self.activo or es_error_cuota(e):
+                    raise
+                print(f"[LIVE][WEBRTC] Reconectando sesi?n Live: {e}", flush=True)
+                await asyncio.sleep(0.8)
 
     def iniciar(self) -> bool:
         if esta_en_enfriamiento_cuota():
@@ -239,15 +276,18 @@ class SesionKayaLive:
         with self.cola_audio_entrada.mutex:
             self.cola_audio_entrada.queue.clear()
 
-        try:
-            self._stream_entrada, self._rate_entrada = live_audio.crear_input_stream(self._callback_audio_in)
-        except Exception as e:
-            print(f"[LIVE][AUDIO] Error iniciando micrófono: {e}", flush=True)
-            self.detener()
-            return False
-
-        self._hilo_salida = threading.Thread(target=self._bucle_reproduccion_salida, daemon=True, name="live-audio-out")
-        self._hilo_salida.start()
+        puente = live_webrtc.PuenteWebRTC(on_estado=self._notificar_estado, on_nivel=self._notificar_nivel)
+        if puente.iniciar():
+            self._puente_webrtc = puente
+        else:
+            try:
+                self._stream_entrada, self._rate_entrada = live_audio.crear_input_stream(self._callback_audio_in)
+            except Exception as e:
+                print(f"[LIVE][AUDIO] Error iniciando micr?fono: {e}", flush=True)
+                self.detener()
+                return False
+            self._hilo_salida = threading.Thread(target=self._bucle_reproduccion_salida, daemon=True, name="live-audio-out")
+            self._hilo_salida.start()
 
         def _correr_loop():
             self._loop = asyncio.new_event_loop()
@@ -259,7 +299,7 @@ class SesionKayaLive:
             except Exception as e:
                 if es_error_cuota(e):
                     activar_enfriamiento_cuota(15.0)
-                print(f"[LIVE] Sesión finalizada o error: {e}", flush=True)
+                print(f"[LIVE] Sesi?n finalizada o error: {e}", flush=True)
             finally:
                 self.detener()
                 try:
@@ -308,6 +348,12 @@ class SesionKayaLive:
         self.activo = False
         self.puerta.desactivar()
         self._notificar_estado("reposo")
+        if self._puente_webrtc is not None:
+            try:
+                self._puente_webrtc.detener()
+            except Exception:
+                pass
+            self._puente_webrtc = None
         self._stream_entrada = live_audio.cerrar_stream(self._stream_entrada)
         self._stream_salida = live_audio.cerrar_stream(self._stream_salida)
         if self._loop and self._loop.is_running():
