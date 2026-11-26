@@ -18,7 +18,7 @@ HTML_PUENTE = """<!doctype html><html><head><meta charset="utf-8"><title>Kaya Au
 <div id="st">Iniciando puente WebRTC...</div>
 <script>
 const st=document.getElementById("st"),wsPort=location.hash.slice(1);
-let ws,ctx,nextT=0,sources=[],dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.012,framesVoz=0;
+let ws,ctx,nextT=0,sources=[],dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.012,framesVoz=0,colaWake=0;
 function sendCtrl(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));}
 function limpiarAudio(){sources.forEach(s=>{try{s.stop()}catch{}});sources=[];if(ctx)nextT=ctx.currentTime;}
 function despertar(){
@@ -75,7 +75,8 @@ async function iniciar(){
       sendCtrl({type:"sleep"});sendCtrl({type:"estado",v:"reposo"});
       return;
     }
-    if(!dormida||rms>uActivo)ws.send(pcm.buffer);
+    if(rms>uActivo)colaWake=12;else if(colaWake>0)colaWake--;
+    if(!dormida||colaWake>0)ws.send(pcm.buffer);
   };
 }
 iniciar().catch(e=>{st.textContent="Error: "+e;sendCtrl({type:"error",msg:String(e)});});
