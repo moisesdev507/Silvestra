@@ -3,9 +3,10 @@ import asyncio, queue, threading
 from typing import Callable, Optional
 from google import genai
 from google.genai import types
+import ciclo_sueno_kaya
 import estado_emocional_kaya
 import identidad_origen
-import live_audio, live_fecha, live_herramientas, live_webrtc, puerta_audio_live
+import live_audio, live_fecha, live_herramientas, live_webrtc, memoria_contexto, puerta_audio_live
 from live_motor_audio import CapaAudioLive
 
 MODELO_DEFECTO = "gemini-2.5-flash-native-audio-latest"
@@ -72,6 +73,10 @@ class SesionKayaLive(CapaAudioLive):
             except Exception:
                 pass
 
+    def _al_dormir(self):
+        """Reposo Azul sin tocar Qt ni bloquear el hilo de audio."""
+        ciclo_sueno_kaya.al_dormir(memoria_contexto.turnos_recientes())
+
     async def _tarea_watchdog(self):
         if self._puente_webrtc is not None:
             while self.activo:
@@ -104,6 +109,7 @@ class SesionKayaLive(CapaAudioLive):
             ),
             system_instruction=types.Content(parts=[types.Part.from_text(text=_instruccion_con_hora_local(rapido, despertar, nombre_actual))]),
             tools=live_herramientas.declarar_declaraciones_herramientas(),
+            input_audio_transcription=types.AudioTranscriptionConfig(),
         )
 
         self._notificar_estado("conectando")
@@ -145,6 +151,12 @@ class SesionKayaLive(CapaAudioLive):
                                 break
                             sc = resp.server_content
                             if sc:
+                                it = getattr(sc, "input_audio_transcription", None)
+                                if it and getattr(it, "text", None):
+                                    voz = str(it.text).strip()
+                                    if voz:
+                                        memoria_contexto.registrar_turno("user", voz)
+                                        self._notificar_texto("usuario", voz)
                                 if getattr(sc, "interrupted", False):
                                     turno_interrumpido = True
                                     if self._puente_webrtc is not None:
@@ -176,12 +188,14 @@ class SesionKayaLive(CapaAudioLive):
                             if tc:
                                 self._notificar_estado("pensando")
                                 self.puerta.notificar_actividad()
+                                resps = []
                                 for call in tc.function_calls:
                                     res_call = await live_herramientas.despachar_herramienta_asincrona(call.name, call.args)
-                                    resp_tool = types.LiveClientToolResponse(
-                                        function_responses=[types.FunctionResponse(name=call.name, id=call.id, response={"result": res_call})]
-                                    )
-                                    await session.send(input=resp_tool)
+                                    resps.append(types.FunctionResponse(
+                                        name=call.name, id=call.id,
+                                        response={"result": res_call}))
+                                if resps:
+                                    await session.send_tool_response(function_responses=resps)
                     finally:
                         tarea_audio.cancel()
                         tarea_dog.cancel()

@@ -30,6 +30,18 @@ def _sb_guardar(fila):
         pass
 
 
+def _indexar_semantico(fila, usuario_id, ruta):
+    """Encola el embedding del recuerdo nuevo: 0 ms en audio/UI."""
+    if ruta == ":memory:":
+        return
+    try:
+        import memoria_semantica
+        memoria_semantica.encolar_indexado(
+            str(fila.get("id")), fila.get("contenido"), usuario_id, ruta)
+    except Exception:
+        pass
+
+
 def _sb_borrar(ids, usuario_id):
     """Notifica el borrado sin bloquear ni lanzar errores al motor local."""
     try:
@@ -95,6 +107,7 @@ class AlmacenMemoriaCognitiva(TransaccionesMemoria):
             if previo:
                 fila = self._fila(previo)
                 _sb_guardar(fila)
+                _indexar_semantico(fila, uid, self.ruta)
                 return fila
             if reemplaza_a_id is not None and not self.conexion.execute(
                 "SELECT 1 FROM recuerdos WHERE id=? AND usuario_id=?", (reemplaza_a_id, uid)
@@ -110,6 +123,7 @@ class AlmacenMemoriaCognitiva(TransaccionesMemoria):
                 self.conexion.commit()
             fila = self._fila(self.conexion.execute("SELECT * FROM recuerdos WHERE id=?", (cur.lastrowid,)).fetchone())
             _sb_guardar(fila)
+            _indexar_semantico(fila, uid, self.ruta)
             return fila
 
     def buscar_texto(self, consulta, limite=10, tipos=None, solo_activos=True, usuario_id=None):

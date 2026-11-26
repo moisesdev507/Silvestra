@@ -75,6 +75,8 @@ class CapaAudioLive:
                     continue
                 if puente is not None:
                     if data == live_webrtc.SENAL_SLEEP:
+                        if hasattr(self, "_al_dormir"):
+                            self._al_dormir()
                         try:
                             await session.send_realtime_input(audio_stream_end=True)
                         except Exception:

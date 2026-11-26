@@ -151,6 +151,31 @@ def declaraciones_extra() -> List[types.FunctionDeclaration]:
             ),
         ),
         types.FunctionDeclaration(
+            name="agendar_seguimiento",
+            description=(
+                "Agenda un seguimiento amable sobre un tema real que el usuario mencionó, "
+                "para retomarlo más adelante con naturalidad (no para recordar datos inventados)."
+            ),
+            parameters=types.Schema(
+                type="OBJECT",
+                properties={
+                    "tema": types.Schema(
+                        type="STRING",
+                        description="Tema concreto y real que conviene retomar después.",
+                    ),
+                    "contexto": types.Schema(
+                        type="STRING",
+                        description="Contexto breve en que surgió el tema (opcional).",
+                    ),
+                    "horas_espera": types.Schema(
+                        type="NUMBER",
+                        description="Horas a esperar antes de retomarlo (por defecto 24).",
+                    ),
+                },
+                required=["tema"],
+            ),
+        ),
+        types.FunctionDeclaration(
             name="escribir_en_diario",
             description=(
                 "Escribe una entrada breve en el diario íntimo de Kaya, en primera persona y con su propia voz. "
@@ -210,6 +235,11 @@ async def despachar(nombre: str, args: Dict[str, Any]) -> Any:
         return await loop.run_in_executor(
             None, guardar_broma_interna,
             str(args.get("broma", "")), str(args.get("contexto", "")),
+        )
+    if nombre == "agendar_seguimiento":
+        return await loop.run_in_executor(
+            None, agendar_seguimiento, str(args.get("tema", "")),
+            str(args.get("contexto", "")), args.get("horas_espera", 24),
         )
     return None
 
@@ -272,6 +302,18 @@ def guardar_broma_interna(broma, contexto=""):
     return f"Listo, guardé nuestra broma: {dato}" if ok else "No pude guardar esa broma de forma segura."
 
 
+def agendar_seguimiento(tema, contexto="", horas_espera=24):
+    """Programa un seguimiento real en la tabla kaya_seguimientos."""
+    try:
+        import ciclo_sueno_kaya
+        uid = getattr(_memoria_principal(), "usuario_id", "local")
+        ok = ciclo_sueno_kaya.agendar(tema, contexto, horas_espera, uid)
+    except Exception:
+        ok = False
+    return (f"Listo, te lo retomo en {horas_espera} horas." if ok
+            else "No pude agendar ese seguimiento de forma segura.")
+
+
 def ejecutar_por_texto(texto: str) -> Any:
     """Atajo para órdenes en lenguaje natural dentro de ejecutar_accion_local."""
     try:
@@ -283,4 +325,5 @@ def ejecutar_por_texto(texto: str) -> Any:
 __all__ = [
     "declaraciones_extra", "despachar", "ejecutar_por_texto",
     "recordar_dato", "consultar_memoria", "olvidar_dato", "guardar_broma_interna",
+    "agendar_seguimiento",
 ]

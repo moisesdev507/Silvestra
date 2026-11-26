@@ -1,22 +1,24 @@
 """Contexto dinámico y compacto de Memoria para los prompts de Kaya.
 
 Sustituye la inyección estática de temas_abiertos_kaya.json. Usa hechos
-verificados (SQLite), el ánimo actual y hasta dos bromas internas; registra en
-estado.json los hechos ya inyectados para no repetir datos ni saludos al
-despertar. El bloque completo se mantiene por debajo de 450 caracteres.
+verificados (SQLite), el ánimo actual, hasta dos bromas, un recuerdo semántico
+y un seguimiento vigente; registra en estado.json los hechos ya inyectados para
+no repetir datos ni saludos al despertar. Bloque total <= 480 caracteres.
 """
 import hashlib
 import re
 import threading
+from collections import deque
 from datetime import datetime
 
 import estado
 
 _CLAVE = "memoria_contexto_sesion"
-_MAX_CHARS = 360
+_MAX_CHARS = 430
 _MAX_VISTOS = 24
 _BROMA_MARCA = "[BROMA_INTERNA]"
 _MAX_BROMAS = 2
+_TURNOS = deque(maxlen=16)
 _bloqueo = threading.RLock()
 
 
@@ -121,6 +123,57 @@ def bromas_internas(memoria=None, limite=_MAX_BROMAS):
     return salida
 
 
+def registrar_turno(rol, texto):
+    """Acumula turnos reales de la sesión (memoria RAM, sin I/O en audio)."""
+    limpio = _limpio(texto, 180)
+    if not limpio:
+        return
+    papel = "user" if str(rol or "").lower() in ("user", "usuario", "tú") else "kaya"
+    with _bloqueo:
+        _TURNOS.append({"role": papel, "content": limpio})
+
+
+def turnos_recientes():
+    """Copia de los turnos recientes para el extractor y el ciclo de sueño."""
+    with _bloqueo:
+        return list(_TURNOS)
+
+
+def _consulta_actual():
+    with _bloqueo:
+        for turno in reversed(_TURNOS):
+            if turno["role"] == "user":
+                return turno["content"]
+    return ""
+
+
+def semanticos_relevantes(memoria=None, consulta=None, limite=1):
+    """Recuerdos por significado del último tema real, sin repetir hechos."""
+    q = _limpio(consulta if consulta is not None else _consulta_actual(), 120)
+    if not q:
+        return []
+    mem = memoria if memoria is not None else _instancia()
+    uid = getattr(mem, "usuario_id", "local") if mem is not None else "local"
+    try:
+        import memoria_semantica
+        filas = memoria_semantica.buscar_semantico_kaya(q, usuario_id=uid, limite=limite)
+    except Exception:
+        return []
+    conocidos = {_limpio(x).casefold()[:40]
+                 for x in (hechos_verificados(mem) + resumen_conversaciones(mem))}
+    salida = []
+    for _id, texto, _score in filas:
+        limpio = _limpio(texto, 80)
+        clave = limpio.casefold()[:40]
+        if len(limpio) < 8 or clave in conocidos:
+            continue
+        conocidos.add(clave)
+        salida.append(f"Recuerdo: {limpio}")
+        if len(salida) >= limite:
+            break
+    return salida
+
+
 def _directriz_emocional(memoria=None):
     """Ánimo real del mismo perfil; nunca inventa un tono."""
     try:
@@ -187,6 +240,15 @@ def resumen_para_prompt(memoria=None, incluir_conversaciones=True):
     if animo:
         obligatorios.append(animo[:160])
     obligatorios.extend(bromas_internas(mem))
+    obligatorios.extend(semanticos_relevantes(mem))
+    try:
+        import ciclo_sueno_kaya
+        uid = getattr(mem, "usuario_id", "local") if mem is not None else "local"
+        seguimiento = ciclo_sueno_kaya.seguimiento_para_prompt(uid)
+        if seguimiento:
+            obligatorios.append(seguimiento)
+    except Exception:
+        pass
     with _bloqueo:
         datos, reg = _registro()
         _asegurar_dia(reg)
@@ -208,6 +270,8 @@ def resumen_para_prompt(memoria=None, incluir_conversaciones=True):
                 break
             bloques.append(bloque)
             aceptados.append(clave)
+        if not hechos and not charlas:
+            bloques.append("Memoria sin hechos guardados todavía (no inventes datos del usuario)")
         if not bloques:
             return ""
         vistos.extend(aceptados)
@@ -220,5 +284,6 @@ def resumen_para_prompt(memoria=None, incluir_conversaciones=True):
 
 __all__ = [
     "hechos_verificados", "resumen_conversaciones", "bromas_internas",
+    "registrar_turno", "turnos_recientes", "semanticos_relevantes",
     "registrar_despertar", "resetear_sesion", "resumen_para_prompt",
 ]
