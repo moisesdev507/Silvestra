@@ -50,7 +50,9 @@ def proteger_evento(fn):
 def crear_menu(cara, al_escribir, al_conversar, al_renacer, al_descansar):
     """Construye el menú contextual fuera de cara_qt para ahorrar bytes."""
     menu = QMenu()
-    menu.addAction("Opciones HUD...").triggered.connect(lambda *_: __import__("menu_hud").abrir(cara))
+    menu.addAction("Configuración de Kaya...").triggered.connect(
+        lambda *_: __import__("kaya_config_ui").abrir_configuracion(
+            getattr(cara, "silvestra_app", None)))
     menu.addAction("Escribirle").triggered.connect(lambda *_: al_escribir())
     menu.addAction("Silenciar / reanudar voz").triggered.connect(lambda *_: al_conversar())
     accion_paseo = QAction("Pasearse por la pantalla", menu)

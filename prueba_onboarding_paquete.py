@@ -56,6 +56,8 @@ class OnboardingTests(unittest.TestCase):
 
     def test_guardado_limpio_offscreen(self):
         dialogo = onboarding.OnboardingDialog(base=self.base)
+        self.assertEqual(dialogo.combo_tecla.count(), 4)
+        self.assertEqual(dialogo.combo_audio.count(), 2)
         dialogo.campo_nombre.setText("Alex")
         for clave, valor in CLAVES_PRUEBA.items():
             dialogo.campos[clave].setText(valor)
@@ -68,6 +70,8 @@ class OnboardingTests(unittest.TestCase):
         contenido = texto_de(self.ruta_env)
         for clave, valor in CLAVES_PRUEBA.items():
             self.assertIn(f"{clave}={valor}", contenido)
+        self.assertIn("KAYA_TECLA=Ctrl + Alt + K", contenido)
+        self.assertIn("KAYA_MODO_AUDIFONOS=0", contenido)
         perfil = os.path.join(self.base, "datos", "perfil_usuario.json")
         self.assertTrue(os.path.exists(perfil))
         self.assertIn("Alex", texto_de(perfil))

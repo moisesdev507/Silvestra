@@ -92,6 +92,7 @@ class TestMenuHudYVoz(unittest.TestCase):
              patch.object(voz_cache, "obtener_audio_cache", lambda *_a: None), \
              patch.object(voz_cache, "guardar_audio_cache", lambda *_a: None), \
              patch("voz_local.debe_ir_local_primero", lambda: False), \
+             patch("voz_rapida.sintetizar_deepgram", lambda *_a: None), \
              patch("voz_local.generar_edge",
                    lambda crear, frase, emo: asyncio.run(crear())), \
              patch("voz_local.fallback_local", lambda *_a: None):
@@ -183,11 +184,11 @@ class TestMenuHudYVoz(unittest.TestCase):
         finally:
             menu.close()
 
-    def test_cara_qt_tiene_enganche_del_hud(self):
+    def test_cara_qt_tiene_enganche_de_configuracion_kaya(self):
         with open("cara_qt.py", encoding="utf-8") as archivo:
             fuente = archivo.read()
-        self.assertIn('"Opciones HUD..."', fuente)
-        self.assertIn("menu_hud.abrir(self)", fuente)
+        self.assertIn("kaya_config_ui.abrir_configuracion", fuente)
+        self.assertIn("tecla_kaya.pulsacion_local", fuente)
 
 
 if __name__ == "__main__":

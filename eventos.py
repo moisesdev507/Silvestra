@@ -41,6 +41,13 @@ def es_confirmacion_rutinaria(texto):
 
 
 def atender_evento(app, tipo, texto):
+    if tipo == "kaya_tecla":
+        try:
+            import tecla_kaya
+            tecla_kaya.atender(app)
+        except Exception:
+            pass
+        return
     if invocacion_lyris.interceptar(app, tipo, texto):
         return
     try:

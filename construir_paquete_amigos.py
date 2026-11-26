@@ -78,6 +78,8 @@ ENV_EJEMPLO = """# Copia este archivo como .env y pega tus propias claves.
 GEMINI_API_KEY=
 GROQ_API_KEY=
 DEEPGRAM_API_KEY=
+KAYA_TECLA=Ctrl + Alt + K
+KAYA_MODO_AUDIFONOS=0
 """
 
 LANZADOR = """@echo off
@@ -97,11 +99,12 @@ LEEME = """KAYA PORTABLE - INSTALACION EN TU LAPTOP
 
 1. Descomprime 'Kaya_Portable.zip' en una carpeta de tu computadora (por ejemplo Documentos\\Kaya).
 2. Ejecuta 'Iniciar_Kaya.bat' con doble clic: creara .venv e instalara las dependencias.
-3. Al abrir Kaya veras la pantalla de bienvenida: escribe tu nombre y pega tus claves.
+3. Al abrir Kaya veras la bienvenida: nombre, claves, tecla de encendido y audio.
    - Gemini:  https://aistudio.google.com/app/apikey
    - Groq:    https://console.groq.com/keys
    - Deepgram:https://console.deepgram.com/
-4. Opcional: graba 3 frases para calibrar tu voz, o pulsa 'Omitir por ahora'.
+4. Doble clic en el orbe abre 'Configuracion de Kaya': cambia tecla/audio o graba
+   3 frases para calibrar tu voz cuando quieras.
 5. Listo: pulsa 'Probar y Guardar'. Kaya guardara tu configuracion solo en esta laptop.
 
 NOTA: este paquete NO incluye tus claves, memorias, diario ni huella de voz.

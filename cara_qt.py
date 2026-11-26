@@ -9,7 +9,6 @@ from PySide6.QtWidgets import QApplication, QInputDialog, QMessageBox, QWidget
 import acciones
 import cara_nucleo
 import cara_presentacion
-import menu_hud
 import micro_orbe
 from burbuja import Burbuja, Entrada
 from cara_dibujo import TAM, pintar
@@ -36,6 +35,7 @@ class Cara(CaraMovimientoMixin, QWidget):
         app = QApplication.instance() or QApplication([])
         app.setQuitOnLastWindowClosed(False)
         super().__init__()
+        self.setFocusPolicy(Qt.StrongFocus)
         self.app = app
         self.silvestra_app = None
         self._ref_app = None
@@ -263,17 +263,12 @@ class Cara(CaraMovimientoMixin, QWidget):
 
     @cara_presentacion.proteger_evento
     def mouseDoubleClickEvent(self, e):
-        # Doble clic: menú HUD (guarda anti-redespacho).
         if e.button() != Qt.LeftButton:
             return
         e.accept()
-        if getattr(self, "_abriendo_menu_hud", False):
-            return
-        self._abriendo_menu_hud = True
-        try:
-            menu_hud.abrir(self)
-        finally:
-            self._abriendo_menu_hud = False
+        import kaya_config_ui
+        kaya_config_ui.abrir_configuracion(
+            getattr(self, "silvestra_app", None) or getattr(self, "_ref_app", None))
 
     @cara_presentacion.proteger_evento
     def contextMenuEvent(self, e):
@@ -411,6 +406,9 @@ class Cara(CaraMovimientoMixin, QWidget):
         v.campo.setFocus()
 
     def keyPressEvent(self, e):
+        import tecla_kaya
+        if tecla_kaya.pulsacion_local(self, e):
+            return
         if e.key() == Qt.Key_Escape:
             try:
                 import voz_dueno_registro

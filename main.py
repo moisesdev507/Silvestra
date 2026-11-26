@@ -133,6 +133,11 @@ class Silvestra:
         self.cara.silvestra_app = self
         self.cara._ref_app = self
         try:
+            import tecla_kaya
+            tecla_kaya.instalar(self)
+        except Exception:
+            pass
+        try:
             import modos_sistema
             self.modo_activo = modos_sistema.obtener_modo_activo(self)
         except Exception:

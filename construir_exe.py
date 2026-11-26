@@ -44,6 +44,8 @@ ENV_EJEMPLO = """# Copia el contenido de tu .env privado aquí si quieres precar
 GEMINI_API_KEY=
 GROQ_API_KEY=
 DEEPGRAM_API_KEY=
+KAYA_TECLA=Ctrl + Alt + K
+KAYA_MODO_AUDIFONOS=0
 """
 
 LEEME = """KAYA PARA WINDOWS - EJECUTABLE STANDALONE
@@ -51,11 +53,13 @@ LEEME = """KAYA PARA WINDOWS - EJECUTABLE STANDALONE
 
 1. Descomprime 'Kaya_Windows.zip' en una carpeta (por ejemplo Documentos\\Kaya).
 2. Haz doble clic en 'Kaya.exe'. No necesitas instalar Python.
-3. La primera vez aparecerá la bienvenida: escribe tu nombre y pega tus claves.
+3. La primera vez aparecerá la bienvenida: escribe tu nombre, pega tus claves,
+   elige la tecla de encendido y si usas audífonos o parlantes.
    - Gemini:   https://aistudio.google.com/app/apikey
    - Groq:     https://console.groq.com/keys
    - Deepgram: https://console.deepgram.com/
-4. Opcional: graba 3 frases para que reconozca tu voz, o pulsa 'Omitir'.
+4. Doble clic en el orbe abre 'Configuración de Kaya': cambia tecla/audio o graba
+   3 frases para reconocer tu voz cuando quieras.
 
 Tu configuración, memoria y grabaciones quedan en la carpeta de Kaya.exe.
 El código fuente NO se distribuye: solo el ejecutable y sus recursos.
