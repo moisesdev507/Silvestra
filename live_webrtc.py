@@ -45,7 +45,7 @@ function ajustar16k(f32,inRate){
   return out;
 }
 async function iniciar(){
-  const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
+  const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
   ctx=new AudioContext({sampleRate:16000});await ctx.resume();
   ws=new WebSocket("ws://127.0.0.1:"+wsPort);ws.binaryType="arraybuffer";
   ws.onopen=()=>{colaPreCtx.forEach(b=>playPcm24k(b));colaPreCtx=[];};
@@ -65,29 +65,29 @@ async function iniciar(){
     for(let i=0;i<d.length;i++){const v=Math.max(-1,Math.min(1,d[i]));sum+=v*v;pcm[i]=v<0?v*32768:v*32767;}
     const rms=Math.sqrt(sum/d.length),ahora=performance.now();
     if(sources.length>0&&ctx&&ctx.currentTime>nextT+0.25){sources=[];if(!dormida)sendCtrl({type:"estado",v:"escuchando"});}
-    if(!dormida&&sources.length===0&&rms<piso*1.25)piso=Math.min(0.0075,Math.max(0.003,piso*0.98+rms*0.02));
-    const uActivo=Math.max(0.0065,piso*1.65),uWake=Math.max(0.018,piso*2.6);
-    if(dormida){preroll.push(pcm.buffer);if(preroll.length>8)preroll.shift();}
+    if(!dormida&&sources.length===0&&rms<piso*1.25)piso=Math.min(0.0065,Math.max(0.0025,piso*0.98+rms*0.02));
+    const uActivo=Math.max(0.0045,piso*1.45),uWake=Math.max(0.0095,piso*1.95);
+    if(dormida||colaVoz===0){preroll.push(pcm.buffer);if(preroll.length>10)preroll.shift();}
     const umbral=dormida?uWake:uActivo;
     if(rms>umbral){
       const estabaMudo=!dormida&&colaVoz===0;
-      framesVoz++;pausasVoz=0;colaVoz=22;
+      framesVoz++;pausasVoz=0;colaVoz=26;
       if(!dormida){
-        if(framesVoz>=2)ultimoHabla=ahora;
+        ultimoHabla=ahora;
         sendCtrl({type:"nivel",v:Math.min(1,rms*6)});
         if(estabaMudo){preroll.forEach(b=>ws.send(b));preroll=[];}
       }
     }else{
-      framesVoz=0;pausasVoz=0;
+      if(++pausasVoz>1)framesVoz=0;
       if(colaVoz>0)colaVoz--;
     }
     if(sources.length>0)ultimoHabla=ahora;
-    if(!dormida&&ahora-ultimoHabla>9000){
+    if(!dormida&&ahora-ultimoHabla>25000){
       dormida=true;framesVoz=0;pausasVoz=0;colaVoz=0;
       sendCtrl({type:"sleep"});sendCtrl({type:"estado",v:"reposo"});
       return;
     }
-    if(!dormida){ws.send(colaVoz>0?pcm.buffer:new Int16Array(pcm.length).buffer);}else if(framesVoz>=4&&rms>uWake){despertar();ws.send(pcm.buffer);}
+    if(!dormida){ws.send(colaVoz>0?pcm.buffer:new Int16Array(pcm.length).buffer);}else if(framesVoz>=2&&rms>uWake){despertar();ws.send(pcm.buffer);}
   };
 }
 iniciar().catch(e=>{st.textContent="Error: "+e;sendCtrl({type:"error",msg:String(e)});});
