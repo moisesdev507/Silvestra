@@ -6,6 +6,8 @@ def reanudar_escucha(sesion):
     puente = getattr(sesion, "_puente_webrtc", None)
     if puente is not None and getattr(puente, "dormida", False):
         return False
+    if puente is not None and callable(getattr(puente, "activar_escucha", None)):
+        puente.activar_escucha()
     notificar = getattr(sesion, "_notificar_estado", None)
     if callable(notificar):
         try:

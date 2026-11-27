@@ -109,9 +109,7 @@ class SesionKayaLive(CapaAudioLive):
             try:
                 async with client.aio.live.connect(model=self.modelo, config=cfg) as session:
                     self._session_genai = session
-                    if not (self._puente_webrtc and self._puente_webrtc.dormida):
-                        self._notificar_estado("escuchando")
-                    self.puerta.notificar_actividad()
+                    live_estado.reanudar_escucha(self)
 
                     if primer_ciclo:
                         primer_ciclo = False

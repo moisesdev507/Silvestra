@@ -8,6 +8,7 @@ import socket
 import socketserver
 import subprocess
 import threading
+import time
 from typing import Callable, Optional
 import websockets
 
@@ -20,12 +21,17 @@ HTML_PUENTE = """<!doctype html><html><head><meta charset="utf-8"><title>Kaya Au
 <div id="st">Iniciando puente WebRTC...</div>
 <script>
 const st=document.getElementById("st"),wsPort=location.hash.slice(1);
-let ws,ctx,nextT=0,sources=[],dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.012,framesVoz=0,pausasVoz=0,preroll=[],colaVoz=0;
+let ws,ctx,nextT=0,sources=[],despierto=true,dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.012,framesWake=0,framesVoz=0,pausasVoz=0,preroll=[],colaVoz=0;
 function sendCtrl(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));}
 function limpiarAudio(){sources.forEach(s=>{try{s.stop()}catch{}});sources=[];if(ctx)nextT=ctx.currentTime;}
+function activarEscucha(){
+  dormida=false;despierto=true;framesWake=0;framesVoz=0;pausasVoz=0;ultimoHabla=performance.now();
+  sendCtrl({type:"estado",v:"escuchando"});
+  if(ws&&ws.readyState===1){preroll.forEach(b=>ws.send(b));preroll=[];}
+}
 function despertar(){
-  if(!dormida)return;
-  dormida=false;framesVoz=0;pausasVoz=0;ultimoHabla=performance.now();
+  if(!dormida){ultimoHabla=performance.now();return;}
+  dormida=false;despierto=true;framesWake=0;framesVoz=3;pausasVoz=0;colaVoz=22;ultimoHabla=performance.now();
   sendCtrl({type:"wake"});sendCtrl({type:"estado",v:"escuchando"});
   if(ws&&ws.readyState===1){preroll.forEach(b=>ws.send(b));preroll=[];}
 }
@@ -37,7 +43,7 @@ function playPcm24k(buf){
   const src=ctx.createBufferSource();src.buffer=ab;src.connect(ctx.destination);
   const t=Math.max(ctx.currentTime,nextT);src.start(t);nextT=t+ab.duration;
   sources.push(src);sendCtrl({type:"estado",v:"hablando"});
-  src.onended=()=>{sources=sources.filter(x=>x!==src);if(!sources.length&&!dormida)sendCtrl({type:"estado",v:"escuchando"});};
+  src.onended=()=>{sources=sources.filter(x=>x!==src);if(!sources.length){activarEscucha();}};
 }
 function ajustar16k(f32,inRate){
   if(inRate===16000)return f32;
@@ -49,12 +55,14 @@ async function iniciar(){
   const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
   ctx=new AudioContext({sampleRate:16000});await ctx.resume();
   ws=new WebSocket("ws://127.0.0.1:"+wsPort);ws.binaryType="arraybuffer";
-  ws.onopen=()=>{colaPreCtx.forEach(b=>playPcm24k(b));colaPreCtx=[];};
+  ws.onopen=()=>{activarEscucha();colaPreCtx.forEach(b=>playPcm24k(b));colaPreCtx=[];};
   ws.onmessage=e=>{
     if(e.data instanceof ArrayBuffer){playPcm24k(e.data);return;}
     const m=JSON.parse(e.data);
     if(m.type==="interrupted")limpiarAudio();
     if(m.type==="wake")despertar();
+    if(m.type==="escuchando")activarEscucha();
+    if(m.type==="reposo"){despierto=false;dormida=true;framesWake=0;framesVoz=0;pausasVoz=0;colaVoz=0;}
   };
   const src=ctx.createMediaStreamSource(stream),proc=ctx.createScriptProcessor(1024,1,1);
   src.connect(proc);proc.connect(ctx.destination);
@@ -67,7 +75,10 @@ async function iniciar(){
     const rms=Math.sqrt(sum/d.length),ahora=performance.now();
     if(!dormida&&sources.length===0&&rms<piso*1.15)piso=Math.min(0.007,piso*0.98+rms*0.02);
     const uActivo=Math.max(0.0065,piso*1.65),uWake=Math.max(0.0135,piso*2.1);
-    if(dormida){preroll.push(pcm.buffer);if(preroll.length>8)preroll.shift();}
+    if(dormida){
+      preroll.push(pcm.buffer);if(preroll.length>8)preroll.shift();
+      if(rms>uWake){framesWake++;}else{framesWake=0;}
+    }
     const umbral=dormida?uWake:uActivo;
     if(rms>umbral){
       const estabaMudo=!dormida&&colaVoz===0;
@@ -82,11 +93,11 @@ async function iniciar(){
     }
     if(sources.length>0)ultimoHabla=ahora;
     if(!dormida&&ahora-ultimoHabla>9000){
-      dormida=true;framesVoz=0;pausasVoz=0;colaVoz=0;
+      despierto=false;dormida=true;framesWake=0;framesVoz=0;pausasVoz=0;colaVoz=0;
       sendCtrl({type:"sleep"});sendCtrl({type:"estado",v:"reposo"});
       return;
     }
-    if(!dormida){ws.send(colaVoz>0?pcm.buffer:new Int16Array(pcm.length).buffer);}else if(framesVoz>=3&&rms>uWake){despertar();ws.send(pcm.buffer);}
+    if(!dormida){ws.send(colaVoz>0?pcm.buffer:new Int16Array(pcm.length).buffer);}else if(framesWake>=3&&rms>uWake){despertar();ws.send(pcm.buffer);}
   };
 }
 iniciar().catch(e=>{st.textContent="Error: "+e;sendCtrl({type:"error",msg:String(e)});});
@@ -135,6 +146,7 @@ class PuenteWebRTC:
         self.cola_salida: queue.Queue = queue.Queue()
         self.activo = False
         self.dormida = False
+        self._ultimo_habla = time.time()
         self._httpd = None
         self._proc = None
         self._loop = None
@@ -143,6 +155,8 @@ class PuenteWebRTC:
 
     def _emitir_estado(self, est: str):
         self.dormida = est == "reposo"
+        if est == "escuchando":
+            self._ultimo_habla = time.time()
         if callable(self.on_estado):
             try:
                 self.on_estado(est)
@@ -150,6 +164,8 @@ class PuenteWebRTC:
                 pass
 
     def _emitir_nivel(self, niv: float):
+        if niv > 0.05:
+            self._ultimo_habla = time.time()
         if callable(self.on_nivel):
             try:
                 self.on_nivel(niv)
@@ -195,7 +211,23 @@ class PuenteWebRTC:
             async def _handler_ws(ws):
                 self._ws_cliente = ws
                 print("[LIVE][WEBRTC] Puente de audio limpio conectado (16kHz).", flush=True)
+                self.activar_escucha()
 
+                async def _vigilante_inactividad():
+                    while self.activo:
+                        await asyncio.sleep(0.5)
+                        if not self.dormida and (time.time() - self._ultimo_habla > 9.8):
+                            self.dormida = True
+                            print("[LIVE][WEBRTC] 9s en silencio -> Reposo Azul (0 tokens).", flush=True)
+                            self._encolar_entrada(SENAL_SLEEP)
+                            self._emitir_estado("reposo")
+                            try:
+                                if self._ws_cliente is not None:
+                                    await self._ws_cliente.send(json.dumps({"type": "reposo"}))
+                            except Exception:
+                                pass
+
+                t_vigilante = asyncio.create_task(_vigilante_inactividad())
                 async def _enviar_salida():
                     while self.activo:
                         try:
@@ -224,15 +256,23 @@ class PuenteWebRTC:
                             elif tipo == "nivel":
                                 self._emitir_nivel(float(data.get("v", 0.0)))
                             elif tipo == "wake":
-                                print("[LIVE][WEBRTC] Voz detectada -> Despertando a Amarillo.", flush=True)
+                                if self.dormida:
+                                    self.dormida = False
+                                    print("[LIVE][WEBRTC] Voz detectada -> Despertando a Amarillo.", flush=True)
+                                self._ultimo_habla = time.time()
+                                self._emitir_estado("escuchando")
                             elif tipo == "sleep":
-                                print("[LIVE][WEBRTC] 9s en silencio -> Reposo Azul (0 tokens).", flush=True)
-                                self._encolar_entrada(SENAL_SLEEP)
+                                if not self.dormida:
+                                    self.dormida = True
+                                    print("[LIVE][WEBRTC] 9s en silencio -> Reposo Azul (0 tokens).", flush=True)
+                                    self._encolar_entrada(SENAL_SLEEP)
+                                    self._emitir_estado("reposo")
                             elif tipo == "error":
                                 print(f"[LIVE][WEBRTC] Aviso navegador: {data.get('msg')}", flush=True)
                 except websockets.ConnectionClosed:
                     pass
                 finally:
+                    t_vigilante.cancel()
                     t_out.cancel()
                     if self._ws_cliente is ws:
                         self._ws_cliente = None
@@ -276,6 +316,7 @@ class PuenteWebRTC:
 
     def enviar_audio_salida(self, pcm24k: bytes):
         if self.activo and pcm24k:
+            self._ultimo_habla = time.time()
             self.cola_salida.put(pcm24k)
 
     def interrumpir_salida(self):
@@ -285,9 +326,16 @@ class PuenteWebRTC:
             self.cola_salida.queue.clear()
         self.cola_salida.put(json.dumps({"type": "interrupted"}))
 
-    def despertar(self):
+    def activar_escucha(self):
+        """Reinicia el temporizador de 9s y pone el puente en 'escuchando'."""
+        self.dormida = False
+        self._ultimo_habla = time.time()
+        self._emitir_estado("escuchando")
         if self.activo:
-            self.cola_salida.put(json.dumps({"type": "wake"}))
+            self.cola_salida.put(json.dumps({"type": "escuchando"}))
+
+    def despertar(self):
+        self.activar_escucha()
 
     def detener(self):
         self.activo = False

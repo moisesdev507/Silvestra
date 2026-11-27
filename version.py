@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 
 
 def _detectar_repo_github() -> str:
