@@ -237,15 +237,18 @@ def construir_instruccion_arranque_rapido(
     hora_str = obtener_hora_local_breve() if incluir_fecha else ""
     ctx_h = f" {hora_str}" if hora_str else ""
     quien = str(nombre_usuario or "").strip() or identidad_origen.USUARIO_SIN_NOMBRE
-    if primer_despertar:
+    if primer_saludo is None:
+        primer_saludo = live_prompt.debe_dar_primer_saludo()
+    if primer_saludo and primer_despertar:
         turno = f" Primer turno: saluda a {quien} presentándote como Kaya y dale la bienvenida."
+    elif primer_saludo:
+        turno = f" Primer turno: saluda brevemente a {quien} y dale la bienvenida."
     else:
-        turno = f" Primer turno: saluda alegremente a {quien} y confirma que estás lista."
-    bloque_version = live_prompt._bloque_version_compartida(
-        bool(primer_saludo) if primer_saludo is not None else bool(primer_despertar))
+        turno = f" Primer turno: saluda de forma breve y natural a {quien} como alguien que ya te conoce, o confirma que estás lista."
+    bloque_version = live_prompt._bloque_version_compartida(bool(primer_saludo))
     return (
         identidad_origen.prompt_identidad(quien)
-        + " Femenina, cálida, ingeniosa. Español panameño, 1 frase."
+        + " Femenina, cálida, ingeniosa. Español panameño con ritmo natural."
         + ctx_h + turno
         + " Usa revisar_pantalla si piden ver pantalla."
         + " Audio con ruido o incompleto: pregunta '¿Qué dijiste?' o calla; nunca adivines."
@@ -297,15 +300,17 @@ def trazar_transcripcion(rol: str, texto: str) -> str:
 def construir_instruccion_sistema(
     rapido: bool = False, primer_despertar: bool = False, nombre_usuario: str = "",
     incluir_fecha: bool = True, incluir_memoria: bool = True, max_chars=None,
-    primer_saludo: bool = True,
+    primer_saludo: bool = None,
 ) -> str:
     """Carga identidad, guía y, si se pide, fecha y memoria; max_chars acota la base."""
+    if primer_saludo is None:
+        primer_saludo = live_prompt.debe_dar_primer_saludo()
     if rapido:
         return construir_instruccion_arranque_rapido(
             primer_despertar, nombre_usuario, incluir_fecha=incluir_fecha, primer_saludo=primer_saludo)
     estilo = (
         "Eres Kaya, asistente personal con carácter propio. "
-        "Hablas en español natural de Panamá con respuestas breves (1 a 2 frases por defecto)."
+        "Hablas en español natural de Panamá adaptando el ritmo y la extensión al contexto."
     )
     ruta_alma = os.path.join(os.path.dirname(os.path.abspath(__file__)), "alma.txt")
     if os.path.exists(ruta_alma):

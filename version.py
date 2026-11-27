@@ -1,11 +1,11 @@
-"""version.py - Control de version y repositorio de Silvestra / Kaya."""
+﻿"""version.py - Control de version y repositorio de Silvestra / Kaya."""
 
 from __future__ import annotations
 
 import subprocess
 from pathlib import Path
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 
 def _detectar_repo_github() -> str:

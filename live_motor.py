@@ -6,7 +6,7 @@ from google.genai import types
 import ciclo_sueno_kaya
 import estado_emocional_kaya
 import identidad_origen
-import live_audio, live_estado, live_entrega, live_herramientas, live_turno, live_webrtc, memoria_contexto, puerta_audio_live
+import live_audio, live_estado, live_entrega, live_herramientas, live_prompt, live_turno, live_webrtc, memoria_contexto, puerta_audio_live
 from live_entrega import registrar_sesion_activa, sesion_activa
 from live_motor_audio import CapaAudioLive
 
@@ -17,9 +17,7 @@ from live_audio import activar_enfriamiento_cuota, es_error_cuota, esta_en_enfri
 
 class SesionKayaLive(CapaAudioLive):
     def __init__(
-        self,
-        modelo: str = MODELO_DEFECTO,
-        voz: str = VOZ_DEFECTO,
+        self, modelo: str = MODELO_DEFECTO, voz: str = VOZ_DEFECTO,
         timeout_silencio: float = live_audio.TIMEOUT_SILENCIO_DEFECTO,
         on_estado: Optional[Callable[[str], None]] = None,
         on_nivel_voz: Optional[Callable[[float], None]] = None,
@@ -48,32 +46,27 @@ class SesionKayaLive(CapaAudioLive):
         self._t_ultimo_log_voz, self._en_rafaga_voz = 0.0, False
         self._estado_actual, self._candado = "reposo", threading.RLock()
         self._tareas_envio, self._bloqueo_envio = set(), threading.RLock()
-        self._primer_saludo_live = True
+        self._primer_saludo_live = live_prompt.debe_dar_primer_saludo()
+
+    @staticmethod
+    def _llamar_cb(cb, *args):
+        if callable(cb):
+            try:
+                cb(*args)
+            except Exception:
+                pass
 
     def _notificar_estado(self, estado: str):
         with self._candado:
             self._estado_actual = estado
-        if callable(self.on_estado):
-            try:
-                self.on_estado(estado)
-            except Exception:
-                pass
+        self._llamar_cb(self.on_estado, estado)
 
     def _notificar_nivel(self, nivel: float, salida: bool = False):
-        if not salida and getattr(self, "_nivel_salida_gen", 0):
-            return
-        if callable(self.on_nivel_voz):
-            try:
-                self.on_nivel_voz(nivel)
-            except Exception:
-                pass
+        if salida or not getattr(self, "_nivel_salida_gen", 0):
+            self._llamar_cb(self.on_nivel_voz, nivel)
 
     def _notificar_texto(self, rol: str, texto: str):
-        if callable(self.on_transcripcion):
-            try:
-                self.on_transcripcion(rol, texto)
-            except Exception:
-                pass
+        self._llamar_cb(self.on_transcripcion, rol, texto)
 
     def _al_dormir(self):
         """Reposo Azul sin tocar Qt ni bloquear el hilo de audio."""
@@ -137,7 +130,9 @@ class SesionKayaLive(CapaAudioLive):
                                 )
                             except Exception as e:
                                 print(f"[LIVE] Error enviando orden inicial: {e}", flush=True)
-                    self._primer_saludo_live = False
+                    if self._primer_saludo_live:
+                        self._primer_saludo_live = False
+                        live_prompt.registrar_bienvenida_completada()
 
                     tarea_audio = asyncio.create_task(self._tarea_envio_audio(session))
                     tarea_dog = asyncio.create_task(self._tarea_watchdog())
