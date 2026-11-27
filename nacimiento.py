@@ -6,6 +6,7 @@ import time
 
 import estado
 import identidad_origen
+import modo_compartido
 from saludo_dinamico import (
     _guardar_ultimo_saludo,
     _log_saludo,
@@ -93,7 +94,9 @@ def saludar(app):
             except Exception:
                 pass
     if identidad_origen.consumir_primer_despertar():
-        saludo = con_nota_version(identidad_origen.saludo_primer_despertar())
+        saludo = identidad_origen.saludo_primer_despertar()
+        if modo_compartido.es_version_compartida():
+            saludo = con_nota_version(saludo)
         _guardar_ultimo_saludo(saludo)
         if hasattr(app, "cola"):
             app.cola.put(("saludo_inicial", (saludo, "alegre")))

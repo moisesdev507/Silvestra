@@ -299,7 +299,7 @@ class TestNacimientoSaludo(unittest.TestCase):
         texto_saludo, emocion = item[1]
         self.assertTrue(texto_saludo.startswith("Buenas tardes"))
         self.assertNotIn("Buenos días", texto_saludo)
-        self.assertIn("versión compartida con amigos", texto_saludo.lower())
+        self.assertNotIn("versión compartida con amigos", texto_saludo.lower())
         self.assertEqual(emocion, "calida")
 
 

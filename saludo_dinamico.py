@@ -12,6 +12,7 @@ import config
 import estado
 import httpx
 import identidad_origen
+import modo_compartido
 import briefing_proactivo as bp
 
 DIAS_SEMANA = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
@@ -40,7 +41,9 @@ NOTA_VERSION_COMPARTIDA = (
 
 
 def con_nota_version(saludo):
-    """Añade una sola vez la nota de versión compartida al saludo hablado."""
+    """Añade la nota de versión compartida SOLO en el ejecutable compartido."""
+    if not modo_compartido.es_version_compartida():
+        return str(saludo or "").strip()
     texto = str(saludo or "").strip()
     if not texto:
         return NOTA_VERSION_COMPARTIDA

@@ -10,6 +10,7 @@ import subprocess
 import threading
 from typing import Callable, Optional
 import websockets
+import webrtc_ventana as wv
 
 SENAL_SLEEP = b"__WEBRTC_SLEEP__"
 SENAL_NUDGE = b"__WEBRTC_NUDGE__"
@@ -281,48 +282,23 @@ class PuenteWebRTC:
         self._hilo_ws.start()
 
         perfil = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".kaya_webrtc_perfil")
+        wv.preparar_perfil(perfil)
         url = f"http://127.0.0.1:{puerto_http}/#{puerto_ws}"
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         try:
             self._proc = subprocess.Popen(
-                [
-                    navegador,
-                    f"--user-data-dir={perfil}",
-                    "--use-fake-ui-for-media-stream",
-                    "--autoplay-policy=no-user-gesture-required",
-                    "--no-first-run",
-                    "--no-default-browser-check",
-                    f"--app={url}",
-                    "--window-size=1,1",
-                    "--disable-backgrounding-occluded-windows",
-                    "--disable-renderer-backgrounding",
-                    "--disable-features=CalculateNativeWinOcclusion",
-                    "--window-position=-2400,-2400",
-                ],
+                wv.comando_edge(navegador, perfil, url),
                 creationflags=flags,
+                startupinfo=wv.startupinfo_oculto(),
             )
-            threading.Thread(target=self._ocultar_ventana_win32, daemon=True).start()
+            threading.Thread(
+                target=wv.ocultar_ventana_pid, args=(self._proc.pid,), daemon=True
+            ).start()
             return True
         except Exception as e:
             print(f"[LIVE][WEBRTC] No se pudo iniciar navegador oculto: {e}", flush=True)
             self.detener()
             return False
-
-
-    @staticmethod
-    def _ocultar_ventana_win32():
-        if os.name != "nt":
-            return
-        import ctypes, time
-        u32 = ctypes.windll.user32
-        for _ in range(40):
-            hwnd = u32.FindWindowW(None, "Kaya Audio Bridge")
-            if hwnd:
-                ex = u32.GetWindowLongW(hwnd, -20)
-                u32.SetWindowLongW(hwnd, -20, (ex | 0x00000080) & ~0x00040000)
-                u32.ShowWindow(hwnd, 0)
-                break
-            time.sleep(0.05)
 
     def enviar_audio_salida(self, pcm24k: bytes):
         if self.activo and pcm24k:

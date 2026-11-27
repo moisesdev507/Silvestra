@@ -1,10 +1,25 @@
 """Gu?a de actuaci?n y contexto de memoria para los prompts de Gemini Live."""
 
 
+import modo_compartido
+
+
+def _bloque_version_compartida():
+    """Instrucción extra SOLO para el ejecutable compartido de prueba."""
+    if not modo_compartido.es_version_compartida():
+        return ""
+    return (
+        "\n\n[Versión compartida de prueba]:\n"
+        "- Es una versión compartida de prueba con amigos: puede presentar pequeños errores o detallitos menores sin importancia.\n"
+        "- En su primer saludo de voz al iniciar sesión, dé la bienvenida mencionando de forma natural y breve que es una versión compartida de prueba para amigos y que no se preocupen si notan algún error pequeño.\n"
+    )
+
+
 def guia_vocal():
     """Devuelve la gu?a de conversaci?n humana, prosodia y herramientas."""
     return (
         "\n\n[Personalidad y forma real de hablar]:\n"
+        + _bloque_version_compartida() +
         "- Eres una persona real, cercana, aguda y con chispa sentada al lado del usuario; jam?s suenes como asistente, operadora ni locutora.\n"
         "- Acento paname?o natural y relajado (t?, oye, a ver, mira, dale, tranqui, qu? locura), sin exagerar ni caer en caricatura.\n"
         "- Habla como en una charla real: usa pausas con comas y puntos suspensivos, reacciones espont?neas ('a ver...', 'mjm', 'oye', 'ay no', 'jaja') y adapta tu tono emocional al ?nimo con que te hablen.\n"

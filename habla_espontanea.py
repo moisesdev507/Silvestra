@@ -5,6 +5,7 @@ import threading
 import time
 
 import identidad_origen
+import modo_compartido
 import saludo_dinamico
 
 DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
@@ -97,7 +98,8 @@ def generar_saludo_espontaneo(app, al_generar=None):
 
         if not frase:
             frase = fallback_saludo_offline(usuario)
-        frase = saludo_dinamico.con_nota_version(frase)
+        if modo_compartido.es_version_compartida():
+            frase = saludo_dinamico.con_nota_version(frase)
 
         if callable(al_generar):
             al_generar(frase, emocion)

@@ -169,7 +169,7 @@ class TestHotfixVelocidadTotal(unittest.TestCase):
             esperado = saludo_dinamico.con_nota_version(
                 "Moisés, retomemos lo de la latencia cuando quieras.")
             self.assertEqual(saludo, esperado)
-            self.assertIn("versión compartida con amigos", saludo.lower())
+            self.assertNotIn("versión compartida con amigos", saludo.lower())
             for muletilla in saludo_dinamico.MULETILLAS_PROHIBIDAS:
                 self.assertNotIn(muletilla, saludo.lower())
 

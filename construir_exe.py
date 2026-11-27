@@ -28,6 +28,7 @@ BIBLIOTECAS_RUNTIME = ("cv2", "google", "sherpa_onnx", "vosk", "websockets")
 MODELO_VOSK = "modelos/vosk-model-small-es-0.42"
 # Esquemas públicos de Google API: contienen hashes de 40 hex, no claves privadas.
 DATOS_PUBLICOS = ("_internal/googleapiclient/discovery_cache/",)
+ARCHIVO_FLAG_COMPARTIDA = "beta_compartida.flag"
 
 
 def _es_codigo_kaya(rel):
@@ -168,6 +169,8 @@ def auditar(carpeta):
         for nombre in archivos:
             ruta = os.path.join(raiz, nombre)
             rel = os.path.relpath(ruta, carpeta).replace("\\", "/")
+            if nombre == ARCHIVO_FLAG_COMPARTIDA:
+                continue
             if nombre == ".env" or nombre == "silvestra.log" or _es_codigo_kaya(rel):
                 problemas.append(f"Archivo prohibido: {rel}")
                 continue
@@ -215,6 +218,8 @@ def construir():
     if problemas:
         raise RuntimeError("Auditoría del ejecutable fallida:\n  - "
                            + "\n  - ".join(problemas[:20]))
+    with open(os.path.join(paquete, ARCHIVO_FLAG_COMPARTIDA), "wb"):
+        pass
     ruta_zip = os.path.join(DESTINO, "Kaya_Windows.zip")
     comprimir(paquete, ruta_zip)
     print(f"OK: auditoría limpia. Ejecutable: {os.path.join(paquete, NOMBRE + '.exe')}",
