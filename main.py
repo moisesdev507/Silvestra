@@ -24,32 +24,21 @@ except Exception:
     _diario = sys.stderr
 
 
-def _excepthook_sys(exc_type, exc_value, exc_traceback):
+def _log_fatal(hilo, exc_type, val, tb):
     if issubclass(exc_type, KeyboardInterrupt):
         return
     try:
-        hilo_nombre = threading.current_thread().name
-        print(f"\n[FATAL_CAPTURADO] Excepción no capturada en hilo '{hilo_nombre}':", file=_diario, flush=True)
-        traceback.print_exception(exc_type, exc_value, exc_traceback, file=_diario)
+        print(f"\n[FATAL_CAPTURADO] Excepción en '{hilo}':", file=_diario, flush=True)
+        traceback.print_exception(exc_type, val, tb, file=_diario)
         _diario.flush()
     except Exception:
         pass
 
 
-def _excepthook_thread(args):
-    if issubclass(args.exc_type, KeyboardInterrupt):
-        return
-    try:
-        hilo_nombre = getattr(args.thread, "name", "Desconocido") if args.thread else "Desconocido"
-        print(f"\n[FATAL_CAPTURADO] Excepción no capturada en hilo '{hilo_nombre}':", file=_diario, flush=True)
-        traceback.print_exception(args.exc_type, args.exc_value, args.exc_traceback, file=_diario)
-        _diario.flush()
-    except Exception:
-        pass
-
-
-sys.excepthook = _excepthook_sys
-threading.excepthook = _excepthook_thread
+sys.excepthook = lambda t, v, b: _log_fatal(threading.current_thread().name, t, v, b)
+threading.excepthook = lambda a: _log_fatal(
+    getattr(a.thread, "name", "?") if a.thread else "?", a.exc_type, a.exc_value, a.exc_traceback
+)
 
 from groq import Groq
 import httpx
@@ -221,6 +210,11 @@ class Silvestra:
             self.cara.root.after(500, self.saludar)
         else:
             self.cara.root.after(800, self.nacer)
+        try:
+            import actualizador
+            actualizador.instalar(self)
+        except Exception:
+            pass
 
     # ---------- Hablar y acciones ----------
     def puede_hablar_sola(self):

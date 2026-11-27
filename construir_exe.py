@@ -191,6 +191,22 @@ def auditar(carpeta):
     return problemas
 
 
+def buscar_iscc():
+    """Busca el compilador de Inno Setup (ISCC.exe) en rutas estándar o PATH."""
+    rutas_candidatas = [
+        os.path.join(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"), "Inno Setup 6", "ISCC.exe"),
+        os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Inno Setup 6", "ISCC.exe"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Inno Setup 6", "ISCC.exe"),
+    ]
+    for ruta in rutas_candidatas:
+        if os.path.isfile(ruta):
+            return ruta
+    which = shutil.which("ISCC.exe") or shutil.which("iscc")
+    if which:
+        return which
+    return None
+
+
 def comprimir(carpeta, ruta_zip):
     """Comprime toda la carpeta del ejecutable conservando 'Kaya/' como raíz."""
     with zipfile.ZipFile(ruta_zip, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as zf:
@@ -225,6 +241,22 @@ def construir():
     print(f"OK: auditoría limpia. Ejecutable: {os.path.join(paquete, NOMBRE + '.exe')}",
           flush=True)
     print(f"OK: ZIP listo para compartir: {ruta_zip}", flush=True)
+
+    ruta_iss = os.path.join(BASE, "instalador_kaya.iss")
+    iscc = buscar_iscc()
+    if iscc and os.path.isfile(ruta_iss):
+        print(f"[installer] Compilando instalador con Inno Setup ({iscc})...", flush=True)
+        try:
+            subprocess.check_call([iscc, ruta_iss], cwd=BASE)
+            ruta_setup = os.path.join(DESTINO, "Kaya_Setup.exe")
+            if os.path.isfile(ruta_setup):
+                print(f"OK: Instalador Windows listo: {ruta_setup}", flush=True)
+        except Exception as e:
+            print(f"[installer] Aviso: Error al compilar instalador: {e}", flush=True)
+    else:
+        print(f"[installer] ISCC.exe no encontrado. Para generar Kaya_Setup.exe, "
+              f"instala Inno Setup 6 y compila: {ruta_iss}", flush=True)
+
     return {"carpeta": paquete, "zip": ruta_zip, "problemas": []}
 
 
