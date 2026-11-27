@@ -14,6 +14,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from PySide6.QtCore import QObject, Signal, Qt
+
 from version import REPO_GITHUB, VERSION
 
 logger = logging.getLogger("silvestra.actualizador")
@@ -180,7 +182,7 @@ class DialogoActualizacion:
         dlg = QDialog(padre)
         dlg.setWindowTitle("Actualización Disponible - Kaya")
         dlg.setFixedSize(460, 320)
-        dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowStaysOnTopHint)
+        dlg.setWindowFlags(dlg.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
         dlg.setStyleSheet(
             """
             QDialog {
@@ -251,10 +253,55 @@ class DialogoActualizacion:
         hbox.addWidget(btn_actualizar)
         vbox.addLayout(hbox)
 
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+
         return dlg.exec() == QDialog.Accepted
 
 
-def _verificar_y_notificar(app_qt: Any) -> None:
+class PuenteActualizacion(QObject):
+    """Puente basado en Signal de Qt creado en el hilo de QApplication."""
+
+    actualizacion_disponible = Signal(dict)
+
+    def __init__(self, app_qt: Any = None, parent: Any = None) -> None:
+        super().__init__(parent)
+        self.app_qt = app_qt
+        self.actualizacion_disponible.connect(self._al_recibir_actualizacion)
+
+    def _al_recibir_actualizacion(self, info: dict[str, Any]) -> None:
+        padre = getattr(self.app_qt, "ventana", None)
+        if not DialogoActualizacion.mostrar(info, padre=padre):
+            return
+        if not getattr(sys, "frozen", False):
+            logger.info("Entorno de desarrollo: no se reemplazan archivos locales.")
+            return
+        exito, msg = lanzar_actualizacion_binaria(info)
+        if exito:
+            if hasattr(self.app_qt, "cerrar_sistema"):
+                self.app_qt.cerrar_sistema()
+            else:
+                sys.exit(0)
+        else:
+            logger.error("No se pudo iniciar la actualizacion: %s", msg)
+
+
+_puente_global: PuenteActualizacion | None = None
+
+
+def obtener_puente(app_qt: Any = None) -> PuenteActualizacion | None:
+    """Obtiene o inicializa el puente en el hilo principal de Qt."""
+    global _puente_global
+    if _puente_global is None:
+        try:
+            _puente_global = PuenteActualizacion(app_qt)
+        except Exception as e:
+            logger.warning("No se pudo crear PuenteActualizacion: %s", e)
+    return _puente_global
+
+
+def _verificar_y_notificar(app_qt: Any, puente: PuenteActualizacion | None = None) -> None:
     """Hilo secundario que consulta releases y emite senal a la UI si hay update."""
     time.sleep(3.0)  # Breve pausa para dejar que Kaya arranque completamente
     info = consultar_release_remoto()
@@ -263,39 +310,23 @@ def _verificar_y_notificar(app_qt: Any) -> None:
 
     if es_version_mayor(info["tag"], VERSION):
         logger.info("Nueva version detectada: %s (actual: %s)", info["tag"], VERSION)
-
-        def _mostrar_y_proceder() -> None:
-            if not DialogoActualizacion.mostrar(info):
-                return
-            if not getattr(sys, "frozen", False):
-                logger.info("Entorno de desarrollo: no se reemplazan archivos locales.")
-                return
-            exito, msg = lanzar_actualizacion_binaria(info)
-            if exito:
-                # Cerrar aplicacion suavemente
-                if hasattr(app_qt, "cerrar_sistema"):
-                    app_qt.cerrar_sistema()
-                else:
-                    sys.exit(0)
-            else:
-                logger.error("No se pudo iniciar la actualizacion: %s", msg)
-
-        # Enviar a la UI en el hilo principal de Qt
-        if hasattr(app_qt, "cara") and hasattr(app_qt.cara, "root") and hasattr(app_qt.cara.root, "after"):
-            app_qt.cara.root.after(0, _mostrar_y_proceder)
-        elif hasattr(app_qt, "cola"):
-            app_qt.cola.put(("actualizacion_disponible", _mostrar_y_proceder))
-        elif hasattr(app_qt, "ventana"):
-            from PySide6.QtCore import QTimer
-
-            QTimer.singleShot(0, _mostrar_y_proceder)
+        p = puente or _puente_global
+        if p is not None:
+            p.actualizacion_disponible.emit(info)
+        else:
+            logger.warning("No hay puente Qt disponible para mostrar el dialogo.")
 
 
 def instalar(app_qt: Any) -> None:
-    """Inicia el verificador de actualizaciones en un hilo daemon."""
+    """Inicia el verificador de actualizaciones en un hilo daemon.
+
+    Crea el PuenteActualizacion en el hilo de QApplication para despachar
+    la senal de actualizacion al hilo principal.
+    """
+    puente = obtener_puente(app_qt)
     hilo = threading.Thread(
         target=_verificar_y_notificar,
-        args=(app_qt,),
+        args=(app_qt, puente),
         name="ActualizadorKaya",
         daemon=True,
     )

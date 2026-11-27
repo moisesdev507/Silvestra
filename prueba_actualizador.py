@@ -62,11 +62,62 @@ class TestVersionYActualizador(unittest.TestCase):
         self.assertIn("PrivilegesRequired=lowest", contenido)
         self.assertIn("{localappdata}", contenido)
         self.assertIn("Kaya_Setup", contenido)
+        self.assertIn("MyAppVersion", contenido)
+        self.assertIn("AppVerName", contenido)
 
     def test_buscar_iscc(self):
         # Debe retornar str o None sin lanzar excepciones
         resultado = construir_exe.buscar_iscc()
         self.assertTrue(resultado is None or isinstance(resultado, str))
+
+    def test_puente_actualizacion_emite_y_despacha(self):
+        from unittest.mock import MagicMock, patch
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance() or QApplication([])
+        puente = actualizador.PuenteActualizacion()
+
+        with patch.object(actualizador.DialogoActualizacion, "mostrar", return_value=False) as mock_mostrar:
+            info = {"tag": "v1.0.1", "notas": "Notas"}
+            puente.actualizacion_disponible.emit(info)
+            app.processEvents()
+            mock_mostrar.assert_called_once_with(info, padre=None)
+
+    def test_verificar_y_notificar_emite_a_puente(self):
+        from unittest.mock import MagicMock, patch
+
+        puente_mock = MagicMock()
+        with patch("actualizador.consultar_release_remoto", return_value={"tag": "v9.9.9", "url_zip": "http://zip"}), \
+             patch("actualizador.time.sleep"):
+            actualizador._verificar_y_notificar(None, puente=puente_mock)
+            puente_mock.actualizacion_disponible.emit.assert_called_once()
+
+    def test_dialogo_actualizacion_stays_on_top_y_activate(self):
+        from unittest.mock import patch
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication, QDialog
+
+        _ = QApplication.instance() or QApplication([])
+        llamadas = []
+
+        with patch.object(QDialog, "exec", return_value=QDialog.Accepted) as mock_exec, \
+             patch.object(QDialog, "show", side_effect=lambda *args: llamadas.append("show")), \
+             patch.object(QDialog, "raise_", side_effect=lambda *args: llamadas.append("raise_")), \
+             patch.object(QDialog, "activateWindow", side_effect=lambda *args: llamadas.append("activateWindow")), \
+             patch.object(QDialog, "setWindowFlags") as mock_flags:
+
+            info = {"tag": "v1.0.1", "notas": "Notas de prueba"}
+            resultado = actualizador.DialogoActualizacion.mostrar(info)
+            self.assertTrue(resultado)
+
+            # Verificar flags de ventana
+            mock_flags.assert_called()
+            flags_arg = mock_flags.call_args[0][0]
+            self.assertTrue(bool(flags_arg & Qt.WindowType.WindowStaysOnTopHint))
+
+            # Verificar show, raise_ y activateWindow
+            self.assertEqual(llamadas, ["show", "raise_", "activateWindow"])
+            mock_exec.assert_called_once()
 
 
 if __name__ == "__main__":

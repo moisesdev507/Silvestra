@@ -1,6 +1,8 @@
 ; Script de Inno Setup 6 para Kaya
 #define MyAppName "Kaya"
-#define MyAppVersion "1.0.0"
+#ifndef MyAppVersion
+  #define MyAppVersion "1.0.1"
+#endif
 #define MyAppPublisher "Silvestra"
 #define MyAppURL "https://github.com/moisesdev507/Silvestra"
 #define MyAppExeName "Kaya.exe"
@@ -10,6 +12,7 @@
 AppId={{D37F67E8-542B-4A8E-980B-4813FE4E0DA2}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}

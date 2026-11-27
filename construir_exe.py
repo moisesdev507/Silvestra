@@ -10,6 +10,7 @@ import tempfile
 import zipfile
 
 import construir_paquete_amigos as empaquetador
+import version
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DESTINO = os.path.join(BASE, "dist_exe")
@@ -247,7 +248,8 @@ def construir():
     if iscc and os.path.isfile(ruta_iss):
         print(f"[installer] Compilando instalador con Inno Setup ({iscc})...", flush=True)
         try:
-            subprocess.check_call([iscc, ruta_iss], cwd=BASE)
+            cmd_iscc = [iscc, f"/DMyAppVersion={version.VERSION}", ruta_iss]
+            subprocess.check_call(cmd_iscc, cwd=BASE)
             ruta_setup = os.path.join(DESTINO, "Kaya_Setup.exe")
             if os.path.isfile(ruta_setup):
                 print(f"OK: Instalador Windows listo: {ruta_setup}", flush=True)
