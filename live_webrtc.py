@@ -1,4 +1,4 @@
-﻿"""Puente de audio WebRTC (Edge/Chromium) para Gemini Live sin ruido ni bloqueos PortAudio."""
+"""Puente de audio WebRTC (Edge/Chromium) para Gemini Live sin ruido ni bloqueos PortAudio."""
 import asyncio
 import http.server
 import json
@@ -10,36 +10,34 @@ import subprocess
 import threading
 from typing import Callable, Optional
 import websockets
+
 import webrtc_ventana as wv
 
 SENAL_SLEEP = b"__WEBRTC_SLEEP__"
-SENAL_NUDGE = b"__WEBRTC_NUDGE__"
 
 HTML_PUENTE = """<!doctype html><html><head><meta charset="utf-8"><title>Kaya Audio Bridge</title></head>
 <body style="background:#0b0f17;color:#94a3b8;font-family:sans-serif;font-size:12px">
 <div id="st">Iniciando puente WebRTC...</div>
 <script>
 const st=document.getElementById("st"),wsPort=location.hash.slice(1);
-let ws,ctx,nextT=0,sources=[],dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.006,framesVoz=0,pausasVoz=0,preroll=[],colaVoz=0,bargeHasta=0,finHabla=0,inicioHabla=0,duracionHabla=0,insistio=false,tuvoTurno=false,ultimoPing=0;
+let ws,ctx,nextT=0,sources=[],dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.012,framesVoz=0,pausasVoz=0,preroll=[],colaVoz=0;
 function sendCtrl(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));}
 function limpiarAudio(){sources.forEach(s=>{try{s.stop()}catch{}});sources=[];if(ctx)nextT=ctx.currentTime;}
 function despertar(){
   if(!dormida)return;
-  dormida=false;framesVoz=0;pausasVoz=0;colaVoz=10;insistio=false;ultimoHabla=performance.now();
+  dormida=false;framesVoz=0;pausasVoz=0;ultimoHabla=performance.now();
   sendCtrl({type:"wake"});sendCtrl({type:"estado",v:"escuchando"});
   if(ws&&ws.readyState===1){preroll.forEach(b=>ws.send(b));preroll=[];}
 }
 function playPcm24k(buf){
-  if(performance.now()<bargeHasta)return;
   if(!ctx){colaPreCtx.push(buf);return;}
-  if(ctx.state==="suspended")ctx.resume().catch(()=>{});
   const i16=new Int16Array(buf),f32=new Float32Array(i16.length);
   for(let i=0;i<i16.length;i++)f32[i]=i16[i]/32768;
   const ab=ctx.createBuffer(1,f32.length,24000);ab.getChannelData(0).set(f32);
   const src=ctx.createBufferSource();src.buffer=ab;src.connect(ctx.destination);
   const t=Math.max(ctx.currentTime,nextT);src.start(t);nextT=t+ab.duration;
-  if(!sources.length){inicioHabla=performance.now();colaVoz=0;preroll=[];framesVoz=0;}sources.push(src);tuvoTurno=true;insistio=false;ultimoHabla=performance.now();sendCtrl({type:"estado",v:"hablando"});
-  src.onended=()=>{sources=sources.filter(x=>x!==src);if(!sources.length){finHabla=performance.now();if(inicioHabla>0){duracionHabla=finHabla-inicioHabla;inicioHabla=0;}sendCtrl({type:"estado",v:dormida?"reposo":"escuchando"});}};
+  sources.push(src);sendCtrl({type:"estado",v:"hablando"});
+  src.onended=()=>{sources=sources.filter(x=>x!==src);if(!sources.length&&!dormida)sendCtrl({type:"estado",v:"escuchando"});};
 }
 function ajustar16k(f32,inRate){
   if(inRate===16000)return f32;
@@ -51,11 +49,11 @@ async function iniciar(){
   const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
   ctx=new AudioContext({sampleRate:16000});await ctx.resume();
   ws=new WebSocket("ws://127.0.0.1:"+wsPort);ws.binaryType="arraybuffer";
-  ws.onopen=()=>{ultimoHabla=performance.now();colaPreCtx.forEach(b=>playPcm24k(b));colaPreCtx=[];};
+  ws.onopen=()=>{colaPreCtx.forEach(b=>playPcm24k(b));colaPreCtx=[];};
   ws.onmessage=e=>{
     if(e.data instanceof ArrayBuffer){playPcm24k(e.data);return;}
     const m=JSON.parse(e.data);
-    if(m.type==="interrupted"){bargeHasta=0;limpiarAudio();}
+    if(m.type==="interrupted")limpiarAudio();
     if(m.type==="wake")despertar();
   };
   const src=ctx.createMediaStreamSource(stream),proc=ctx.createScriptProcessor(1024,1,1);
@@ -67,47 +65,28 @@ async function iniciar(){
     let sum=0;const pcm=new Int16Array(d.length);
     for(let i=0;i<d.length;i++){const v=Math.max(-1,Math.min(1,d[i]));sum+=v*v;pcm[i]=v<0?v*32768:v*32767;}
     const rms=Math.sqrt(sum/d.length),ahora=performance.now();
-    if(sources.length>0&&ctx&&ctx.currentTime>nextT+0.25){sources=[];if(!dormida)sendCtrl({type:"estado",v:"escuchando"});}
-    if(!dormida&&sources.length===0&&rms<piso*1.35)piso=Math.min(0.011,Math.max(0.004,piso*0.98+rms*0.02));
-    const uActivo=Math.max(0.0135,piso*2.0),uWake=Math.max(0.021,piso*2.5);
-    const hablandoEco=sources.length>0||(ahora-finHabla)<500;
-    if(hablandoEco)preroll=[];
-    else if(dormida||colaVoz===0){preroll.push(pcm.buffer);if(preroll.length>10)preroll.shift();}
-    const uBarge=Math.max(0.095,uWake*3.0);
-    const umbral=dormida?uWake:(hablandoEco?uBarge:uActivo);
+    if(!dormida&&sources.length===0&&rms<piso*1.15)piso=Math.min(0.007,piso*0.98+rms*0.02);
+    const uActivo=Math.max(0.0065,piso*1.65),uWake=Math.max(0.0135,piso*2.1);
+    if(dormida){preroll.push(pcm.buffer);if(preroll.length>8)preroll.shift();}
+    const umbral=dormida?uWake:uActivo;
     if(rms>umbral){
-      framesVoz++;pausasVoz=0;
+      const estabaMudo=!dormida&&colaVoz===0;
+      framesVoz++;pausasVoz=0;colaVoz=22;
       if(!dormida){
-        if(hablandoEco){
-          if(framesVoz>=6){
-            colaVoz=10;ultimoHabla=ahora;insistio=false;
-            if(sources.length>0){bargeHasta=ahora+1100;limpiarAudio();sendCtrl({type:"barge_in"});sendCtrl({type:"estado",v:"escuchando"});}
-            sendCtrl({type:"nivel",v:Math.min(1,rms*6)});
-          }
-        }else{
-          const estabaMudo=colaVoz===0;
-          colaVoz=10;
-          if(framesVoz>=3){ultimoHabla=ahora;insistio=false;}
-          sendCtrl({type:"nivel",v:Math.min(1,rms*6)});
-          if(estabaMudo){preroll.forEach(b=>ws.send(b));preroll=[];}
-        }
+        if(framesVoz>=2)ultimoHabla=ahora;sendCtrl({type:"nivel",v:Math.min(1,rms*6)});
+        if(estabaMudo){preroll.forEach(b=>ws.send(b));preroll=[];}
       }
     }else{
-      framesVoz=0;pausasVoz=0;
+      if(framesVoz>0&&pausasVoz<1)pausasVoz++;else{framesVoz=0;pausasVoz=0;}
       if(colaVoz>0)colaVoz--;
     }
     if(sources.length>0)ultimoHabla=ahora;
-    const esperaNudge=duracionHabla>3500?18000:10000;
-    if(!dormida&&sources.length===0&&colaVoz===0&&tuvoTurno&&!insistio&&finHabla>0&&(ahora-finHabla)>esperaNudge&&(ahora-ultimoHabla)>esperaNudge){
-      insistio=true;tuvoTurno=false;ultimoHabla=ahora;sendCtrl({type:"nudge"});
-    }
-    const esperaSleep=insistio?9000:12000;
-    if(!dormida&&sources.length===0&&colaVoz===0&&(ahora-ultimoHabla)>esperaSleep){
+    if(!dormida&&ahora-ultimoHabla>9000){
       dormida=true;framesVoz=0;pausasVoz=0;colaVoz=0;
       sendCtrl({type:"sleep"});sendCtrl({type:"estado",v:"reposo"});
       return;
     }
-    if(!dormida){ws.send(!hablandoEco&&colaVoz>0?pcm.buffer:new Int16Array(pcm.length).buffer);}else if(framesVoz>=3&&rms>uWake){despertar();}else if(ahora-ultimoPing>5000){ultimoPing=ahora;ws.send(new Int16Array(pcm.length).buffer);}
+    if(!dormida){ws.send(colaVoz>0?pcm.buffer:new Int16Array(pcm.length).buffer);}else if(framesVoz>=3&&rms>uWake){despertar();ws.send(pcm.buffer);}
   };
 }
 iniciar().catch(e=>{st.textContent="Error: "+e;sendCtrl({type:"error",msg:String(e)});});
@@ -244,13 +223,8 @@ class PuenteWebRTC:
                                 self._emitir_estado(str(data.get("v", "escuchando")))
                             elif tipo == "nivel":
                                 self._emitir_nivel(float(data.get("v", 0.0)))
-                            elif tipo == "barge_in":
-                                with self.cola_salida.mutex:
-                                    self.cola_salida.queue.clear()
                             elif tipo == "wake":
                                 print("[LIVE][WEBRTC] Voz detectada -> Despertando a Amarillo.", flush=True)
-                            elif tipo == "nudge":
-                                self._encolar_entrada(SENAL_NUDGE)
                             elif tipo == "sleep":
                                 print("[LIVE][WEBRTC] 9s en silencio -> Reposo Azul (0 tokens).", flush=True)
                                 self._encolar_entrada(SENAL_SLEEP)

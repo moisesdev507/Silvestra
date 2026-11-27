@@ -192,24 +192,12 @@ def calcular_energia_pcm16(pcm_bytes: bytes) -> float:
 
 def obtener_api_key() -> str:
     """Obtiene la clave de Gemini desde el entorno o config.py."""
-    key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-    if not key:
-        try:
-            import config
-            key = getattr(config, "GEMINI_API_KEY", "") or getattr(config, "GOOGLE_API_KEY", "")
-        except Exception:
-            pass
-    if not key and os.path.exists(".env"):
-        try:
-            with open(".env", "r", encoding="utf-8") as f:
-                for linea in f:
-                    linea = linea.strip()
-                    if linea.startswith("GEMINI_API_KEY="):
-                        key = linea.split("=", 1)[1].strip("'\" ")
-                        break
-        except Exception:
-            pass
-    return str(key or "").strip()
+    try:
+        import claves_dinamicas
+        return claves_dinamicas.valor("GEMINI_API_KEY", "GOOGLE_API_KEY")
+    except Exception:
+        return str(os.environ.get("GEMINI_API_KEY")
+                   or os.environ.get("GOOGLE_API_KEY") or "").strip()
 
 
 def obtener_hora_local_breve() -> str:
@@ -242,7 +230,8 @@ def registrar_tiempo_primera_voz():
 
 
 def construir_instruccion_arranque_rapido(
-    primer_despertar: bool = False, nombre_usuario: str = "", incluir_fecha: bool = True
+    primer_despertar: bool = False, nombre_usuario: str = "", incluir_fecha: bool = True,
+    primer_saludo: bool = None,
 ) -> str:
     """Prompt compacto con identidad y usuario separado."""
     hora_str = obtener_hora_local_breve() if incluir_fecha else ""
@@ -252,6 +241,8 @@ def construir_instruccion_arranque_rapido(
         turno = f" Primer turno: saluda a {quien} presentándote como Kaya y dale la bienvenida."
     else:
         turno = f" Primer turno: saluda alegremente a {quien} y confirma que estás lista."
+    bloque_version = live_prompt._bloque_version_compartida(
+        bool(primer_saludo) if primer_saludo is not None else bool(primer_despertar))
     return (
         identidad_origen.prompt_identidad(quien)
         + " Femenina, cálida, ingeniosa. Español panameño, 1 frase."
@@ -260,6 +251,7 @@ def construir_instruccion_arranque_rapido(
         + " Audio con ruido o incompleto: pregunta '¿Qué dijiste?' o calla; nunca adivines."
         + " CERO INVENCIONES; si el usuario da datos reales, usa recordar_dato en silencio."
         + " " + live_prompt.contexto_ambiental()
+        + bloque_version
     )
 
 
@@ -288,7 +280,7 @@ def configuracion_transcripcion():
             if not isinstance(campos_ric, dict) or "automatic_activity_detection" in campos_ric:
                 salida["realtime_input_config"] = ric(
                     automatic_activity_detection=types.AutomaticActivityDetection(
-                        silence_duration_ms=420, prefix_padding_ms=180))
+                        silence_duration_ms=1100, prefix_padding_ms=300))
         return salida
     except Exception:
         return {}
@@ -304,12 +296,13 @@ def trazar_transcripcion(rol: str, texto: str) -> str:
 
 def construir_instruccion_sistema(
     rapido: bool = False, primer_despertar: bool = False, nombre_usuario: str = "",
-    incluir_fecha: bool = True, incluir_memoria: bool = True, max_chars=None
+    incluir_fecha: bool = True, incluir_memoria: bool = True, max_chars=None,
+    primer_saludo: bool = True,
 ) -> str:
     """Carga identidad, guía y, si se pide, fecha y memoria; max_chars acota la base."""
     if rapido:
         return construir_instruccion_arranque_rapido(
-            primer_despertar, nombre_usuario, incluir_fecha=incluir_fecha)
+            primer_despertar, nombre_usuario, incluir_fecha=incluir_fecha, primer_saludo=primer_saludo)
     estilo = (
         "Eres Kaya, asistente personal con carácter propio. "
         "Hablas en español natural de Panamá con respuestas breves (1 a 2 frases por defecto)."
@@ -328,7 +321,7 @@ def construir_instruccion_sistema(
     hora_str = obtener_hora_local_breve() if incluir_fecha else ""
     contexto_tiempo = f"\n\n[Fecha y hora actual]: {hora_str}" if hora_str else ""
 
-    guia_vocal = live_prompt.guia_vocal()
+    guia_vocal = live_prompt.guia_vocal(primer_saludo=primer_saludo)
     memoria_txt = live_prompt.contexto_memoria() if incluir_memoria else ""
 
     limite = 4200 if max_chars is None else max(600, int(max_chars))

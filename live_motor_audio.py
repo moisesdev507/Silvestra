@@ -14,6 +14,57 @@ import puerta_audio_live
 class CapaAudioLive:
     """Métodos de captura/reproducción compartidos por SesionKayaLive."""
 
+    def _cola_mensajes_sistema(self):
+        """Cola thread-safe de textos de Sistema 2 pendientes de voz."""
+        cola = getattr(self, "_cola_sistema_propia", None)
+        if cola is None:
+            cola = queue.Queue()
+            self._cola_sistema_propia = cola
+        return cola
+
+    async def enviar_texto_live(self, session, texto):
+        """Envío seguro: text puro con turn_complete, nunca audio crudo (1007)."""
+        contenido = types.Content(
+            role="user", parts=[types.Part(text=str(texto))]
+        )
+        await session.send_client_content(turns=contenido, turn_complete=True)
+
+    def encolar_mensaje_sistema(self, texto):
+        """Encola un resultado S2 y despierta el puente si estaba en Reposo."""
+        texto = str(texto or "").strip()
+        if not texto or not getattr(self, "activo", False):
+            return False
+        self._cola_mensajes_sistema().put(texto)
+        puente = getattr(self, "_puente_webrtc", None)
+        if puente is not None and getattr(puente, "dormida", False):
+            try:
+                puente.dormida = False
+                puente.despertar()
+            except Exception:
+                pass
+        return True
+
+    async def drenar_mensajes_sistema(self, session):
+        """Entrega textos dentro del loop; reencola si la sesión se cierra."""
+        cola = self._cola_mensajes_sistema()
+        while getattr(self, "activo", False):
+            texto = None
+            try:
+                texto = await asyncio.to_thread(cola.get, timeout=0.1)
+                await self.enviar_texto_live(session, texto)
+                texto = None
+            except asyncio.CancelledError:
+                if texto is not None:
+                    cola.put(texto)
+                raise
+            except queue.Empty:
+                continue
+            except Exception as err:
+                print(f"[LIVE] Reencolando texto S2: {err}", flush=True)
+                if texto is not None:
+                    cola.put(texto)
+                await asyncio.sleep(0.25)
+
     def _paso_nivel_salida(self, energia: float) -> float:
         """Ataque rápido y caída gradual: el orbe sigue cada sílaba de Kaya."""
         actual = float(getattr(self, "_nivel_salida_suave", 0.0))
@@ -105,6 +156,22 @@ class CapaAudioLive:
         finally:
             self._stream_salida = live_audio.cerrar_stream(self._stream_salida)
 
+    def vaciar_colas_audio_entrada(self):
+        """Descarta fragmentos pendientes para evitar audio viejo en vuelo."""
+        try:
+            with self.cola_audio_entrada.mutex:
+                self.cola_audio_entrada.queue.clear()
+        except Exception:
+            pass
+        puente = getattr(self, "_puente_webrtc", None)
+        cola_p = getattr(puente, "cola_entrada", None)
+        if cola_p is not None and hasattr(cola_p, "mutex"):
+            try:
+                with cola_p.mutex:
+                    cola_p.queue.clear()
+            except Exception:
+                pass
+
     async def _tarea_envio_audio(self, session):
         puente = self._puente_webrtc
         cola = puente.cola_entrada if puente is not None else self.cola_audio_entrada
@@ -118,23 +185,16 @@ class CapaAudioLive:
                         if hasattr(self, "_al_dormir"):
                             self._al_dormir()
                         continue
-                    if data == getattr(live_webrtc, "SENAL_NUDGE", b"__WEBRTC_NUDGE__"):
-                        try:
-                            await session.send_client_content(
-                                turns=types.Content(role="user", parts=[types.Part.from_text(
-                                    text="[El usuario te dej? hablando sola y lleva varios segundos sin contestarte. Recl?male en broma o p?calo con confianza y humor paname?o natural en una sola frase corta y distinta cada vez (como una amiga cercana: por ejemplo decirle si te va a dejar en visto, si se qued? congelado, si le comieron la lengua los ratones o qu? le pasa), enganchando con el tema que hablaban.]"
-                                )]),
-                                turn_complete=True,
-                            )
-                        except Exception:
-                            pass
-                        continue
                     if puente.dormida:
                         puente.dormida = False
-                elif self.puerta.reproduciendo or self.compuerta.esta_en_ventana_eco():
+                if (
+                    getattr(self, "_estado_actual", "") == "pensando"
+                    or self.puerta.reproduciendo
+                    or self.compuerta.esta_en_ventana_eco()
+                ):
                     continue
                 await session.send_realtime_input(
-                    audio=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
+                    media=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
                 )
             except queue.Empty:
                 await asyncio.sleep(0.01)
