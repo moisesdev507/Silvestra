@@ -38,7 +38,7 @@ ENTORNOS = {
     "ID_TELEGRAM_DUENO": "TELEGRAM_DUENO_ID",
 }
 
-CABECERA_CONFIG = '''"""Configuración limpia de Kaya: las claves se leen de .env, nunca se distribuyen."""
+CABECERA_CONFIG = '''"""Configuración limpia de Kaya: las claves se leen de .env en cada acceso."""
 import os as _os
 
 try:
@@ -64,11 +64,38 @@ def _leer_env():
     return datos
 
 
-_ENV = _leer_env()
+_ATRIBUTOS = {
+    "CLAVE": "GROQ_API_KEY",
+    "CLAVE_GOOGLE": "GEMINI_API_KEY",
+    "GOOGLE_API_KEY": "GEMINI_API_KEY",
+    "GEMINI_API_KEY": "GEMINI_API_KEY",
+    "GROQ_API_KEY": "GROQ_API_KEY",
+    "DEEPGRAM_API_KEY": "DEEPGRAM_API_KEY",
+    "CLAVE_OPENROUTER": "OPENROUTER_API_KEY",
+    "CLAVE_CEREBRAS": "CEREBRAS_API_KEY",
+    "CLAVE_MISTRAL": "MISTRAL_API_KEY",
+    "CLAVE_NVIDIA": "NVIDIA_API_KEY",
+    "CLAVE_CLOUDFLARE": "CLOUDFLARE_API_TOKEN",
+    "ID_CUENTA_CLOUDFLARE": "CLOUDFLARE_ACCOUNT_ID",
+    "CLAVE_GITHUB": "GITHUB_TOKEN",
+    "CLAVE_SAMBANOVA": "SAMBANOVA_API_KEY",
+    "CLAVE_COHERE": "COHERE_API_KEY",
+    "TOKEN_TELEGRAM": "TELEGRAM_BOT_TOKEN",
+    "ID_TELEGRAM_DUENO": "TELEGRAM_DUENO_ID",
+}
 
 
 def _cfg(nombre, defecto=""):
-    return str(_ENV.get(nombre) or _os.environ.get(nombre) or defecto).strip()
+    datos = _leer_env()
+    return str(_os.environ.get(nombre) or datos.get(nombre) or defecto).strip()
+
+
+def __getattr__(nombre):
+    variable = _ATRIBUTOS.get(nombre)
+    if variable is None:
+        raise AttributeError(nombre)
+    valor = _cfg(variable)
+    return int(valor or 0) if nombre == "ID_TELEGRAM_DUENO" else valor
 
 
 '''
@@ -147,16 +174,19 @@ def _generar_config(origen, destino):
         plantilla = os.path.join(BASE, "config.example.py")
     with open(plantilla, "r", encoding="utf-8", errors="replace") as f:
         texto = f.read()
-    for nombre, variable in ENTORNOS.items():
-        valor = (f'int(_cfg("{variable}", "0") or 0)' if nombre == "ID_TELEGRAM_DUENO"
-                 else f'_cfg("{variable}")')
-        texto = re.sub(rf"(?m)^{re.escape(nombre)} = .*$",
-                       f"{nombre} = {valor}", texto, count=1)
-    extra = ("\n# Claves usadas por los motores de voz y Live\n"
-             "DEEPGRAM_API_KEY = _cfg(\"DEEPGRAM_API_KEY\")\n"
-             "GEMINI_API_KEY = _cfg(\"GEMINI_API_KEY\")\n"
-             "GROQ_API_KEY = _cfg(\"GROQ_API_KEY\")\n"
-             "GOOGLE_API_KEY = GEMINI_API_KEY\n")
+    mapa = dict(ENTORNOS)
+    mapa.update({
+        "GOOGLE_API_KEY": "GEMINI_API_KEY",
+        "GEMINI_API_KEY": "GEMINI_API_KEY",
+        "GROQ_API_KEY": "GROQ_API_KEY",
+        "DEEPGRAM_API_KEY": "DEEPGRAM_API_KEY",
+    })
+    for nombre in mapa:
+        texto = re.sub(rf"(?m)^{re.escape(nombre)} = .*\n?", "", texto)
+    for atributo, variable in sorted(mapa.items(), key=lambda par: -len(par[0])):
+        texto = re.sub(rf"(?<![A-Za-z0-9_]){re.escape(atributo)}(?![A-Za-z0-9_])",
+                       f'_cfg("{variable}")', texto)
+    extra = "\n# Las claves se resuelven en __getattr__, sin valores cacheados.\n"
     _escribir(os.path.join(destino, "config.py"), CABECERA_CONFIG + texto.rstrip() + "\n" + extra)
 
 

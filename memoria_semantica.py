@@ -77,8 +77,8 @@ def _clave_explicita():
     if valor:
         return valor
     try:
-        import config
-        return str(getattr(config, "GEMINI_API_KEY", "") or "").strip()
+        import claves_dinamicas
+        return claves_dinamicas.valor("GEMINI_API_KEY", "GOOGLE_API_KEY")
     except Exception:
         return ""
 

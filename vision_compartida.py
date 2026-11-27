@@ -13,17 +13,16 @@ PREGUNTA_DEFECTO = (
     "Describe qué hay actualmente en la pantalla y qué está haciendo el usuario"
 )
 MODELOS_GENAI = (
-    "gemini-flash-latest",
-    "gemini-2.5-flash",
     "gemini-flash-lite-latest",
+    "gemini-flash-latest",
     "gemini-2.5-flash-lite",
 )
 
 
 def _clave() -> str:
     try:
-        import config
-        return str(getattr(config, "CLAVE_GOOGLE", "") or "").strip()
+        import claves_dinamicas
+        return claves_dinamicas.valor("GEMINI_API_KEY", "CLAVE_GOOGLE")
     except Exception:
         return ""
 
@@ -57,7 +56,7 @@ def _modelos():
 def _prompt(pregunta: str) -> str:
     return (
         f"Petición del usuario: {pregunta}\n"
-        "Eres Kaya, asistente personal de Moisés. Observa la captura de pantalla y "
+        "Eres Kaya, asistente personal. Observa la captura de pantalla y "
         "responde en español natural, listo para hablar, en 2 o 3 frases cortas. "
         "Di qué ventana o aplicación está abierta, qué texto o error se ve y qué parece "
         "estar haciendo el usuario. Sin markdown, sin listas, sin URLs ni código."

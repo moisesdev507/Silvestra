@@ -269,7 +269,7 @@ def declarar_declaraciones_herramientas() -> List[types.Tool]:
         types.FunctionDeclaration(
             name="ejecutar_accion_pc",
             description=(
-                "Ejecuta cualquier acción local en la PC de Moisés: abrir o cerrar programas, "
+                "Ejecuta cualquier acción local en esta PC: abrir o cerrar programas, "
                 "subir/bajar volumen, reproducir música en YouTube, revisar correos, consultar o crear recordatorios, "
                 "consultar agenda de Google Calendar, leer o redactar en el diario personal, o revisar ideas pendientes."
             ),

@@ -6,7 +6,8 @@ from google.genai import types
 import ciclo_sueno_kaya
 import estado_emocional_kaya
 import identidad_origen
-import live_audio, live_estado, live_herramientas, live_turno, live_webrtc, memoria_contexto, puerta_audio_live
+import live_audio, live_estado, live_entrega, live_herramientas, live_turno, live_webrtc, memoria_contexto, puerta_audio_live
+from live_entrega import registrar_sesion_activa, sesion_activa
 from live_motor_audio import CapaAudioLive
 
 MODELO_DEFECTO = "gemini-2.5-flash-native-audio-latest"
@@ -46,6 +47,8 @@ class SesionKayaLive(CapaAudioLive):
         self._rate_entrada = live_audio.RATE_ENTRADA
         self._t_ultimo_log_voz, self._en_rafaga_voz = 0.0, False
         self._estado_actual, self._candado = "reposo", threading.RLock()
+        self._tareas_envio, self._bloqueo_envio = set(), threading.RLock()
+        self._primer_saludo_live = True
 
     def _notificar_estado(self, estado: str):
         with self._candado:
@@ -107,7 +110,9 @@ class SesionKayaLive(CapaAudioLive):
         acumulador = live_turno.AcumuladorTurnos()
 
         while self.activo:
-            cfg = live_turno.construir_config(self.voz, rapido, despertar, nombre_actual)
+            cfg = live_turno.construir_config(
+                self.voz, rapido, despertar, nombre_actual,
+                primer_saludo=bool(self._primer_saludo_live))
             try:
                 async with client.aio.live.connect(model=self.modelo, config=cfg) as session:
                     self._session_genai = session
@@ -132,6 +137,7 @@ class SesionKayaLive(CapaAudioLive):
                                 )
                             except Exception as e:
                                 print(f"[LIVE] Error enviando orden inicial: {e}", flush=True)
+                    self._primer_saludo_live = False
 
                     tarea_audio = asyncio.create_task(self._tarea_envio_audio(session))
                     tarea_dog = asyncio.create_task(self._tarea_watchdog())
@@ -183,6 +189,7 @@ class SesionKayaLive(CapaAudioLive):
                             if tc:
                                 self._notificar_estado("pensando")
                                 self.puerta.notificar_actividad()
+                                self.vaciar_colas_audio_entrada()
                                 resps = []
                                 for call in tc.function_calls:
                                     res_call = await live_herramientas.despachar_herramienta_asincrona(call.name, call.args)
@@ -190,6 +197,7 @@ class SesionKayaLive(CapaAudioLive):
                                         name=call.name, id=call.id,
                                         response={"result": res_call}))
                                 if resps:
+                                    self.vaciar_colas_audio_entrada()
                                     await session.send_tool_response(function_responses=resps)
                                     live_estado.reanudar_escucha(self)
                     finally:
@@ -214,6 +222,7 @@ class SesionKayaLive(CapaAudioLive):
         if self.activo:
             return True
         self.activo = True
+        registrar_sesion_activa(self)
         self.compuerta.registrar_info_inicio()
         self.puerta.reiniciar()
         with self.cola_audio_entrada.mutex:
@@ -266,29 +275,16 @@ class SesionKayaLive(CapaAudioLive):
         self._hilo_loop.start()
         return True
 
-    def enviar_texto(self, texto: str) -> bool:
-        if not self.activo or not self._loop or not self._session_genai:
-            return False
-        def _enviar():
-            try:
-                asyncio.create_task(
-                    self._session_genai.send_client_content(
-                        turns=types.Content(role="user", parts=[types.Part.from_text(text=str(texto))]),
-                        turn_complete=True,
-                    )
-                )
-            except Exception as err:
-                print(f"[LIVE] Error texto: {err}", flush=True)
-        try:
-            self._loop.call_soon_threadsafe(_enviar)
-            return True
-        except Exception:
-            return False
+    def enviar_texto(self, texto: str, turn_complete: bool = True) -> bool:
+        """Inyecta un turno completo en la sesión viva sin esperar otra voz."""
+        return live_entrega.enviar_texto(self, texto, turn_complete=turn_complete)
 
     def detener(self):
         if not self.activo:
             return
         self.activo = False
+        if live_entrega._sesion_registrada() is self:
+            registrar_sesion_activa(None)
         self.puerta.desactivar()
         self._notificar_estado("reposo")
         if self._puente_webrtc is not None:

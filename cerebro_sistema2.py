@@ -112,27 +112,40 @@ def _entregar_cola(coordinador, texto, app=None):
         return False
 
 
-def _entregar_live_seguro(coordinador, texto):
-    """Entrega directa y thread-safe; despierta Reposo Azul si hace falta."""
+def _entregar_live_seguro(coordinador, texto, app=None):
+    """Inyecta el resultado en la sesión viva; si no hay, cae a la cola de voz."""
     mensaje = str(texto or "").strip()
-    if not mensaje or coordinador is None:
+    if not mensaje:
         return False
-    sesion = getattr(coordinador, "sesion_live", None)
-    if not getattr(sesion, "activo", False):
-        return _entregar_cola(coordinador, mensaje)
-    puente = getattr(sesion, "_puente_webrtc", None)
-    if puente is not None and getattr(puente, "dormida", False):
-        try:
-            puente.dormida = False
-            puente.despertar()
-        except Exception:
-            pass
+    sesion = None
     try:
-        if bool(sesion.enviar_texto(mensaje)):
-            return True
+        import live_motor
+        sesion = live_motor.sesion_activa()
     except Exception:
         pass
-    return _entregar_cola(coordinador, mensaje)
+    if sesion is None and coordinador is not None:
+        candidata = getattr(coordinador, "sesion_live", None)
+        if getattr(candidata, "activo", False):
+            sesion = candidata
+    if sesion is not None:
+        try:
+            puente = getattr(sesion, "_puente_webrtc", None)
+            if puente is not None and getattr(puente, "dormida", False):
+                try:
+                    puente.despertar()
+                except Exception:
+                    pass
+                puente.dormida = False
+            import live_estado
+            live_estado.reanudar_escucha(sesion)
+        except Exception:
+            pass
+        try:
+            if bool(sesion.enviar_texto(mensaje)):
+                return True
+        except Exception:
+            pass
+    return _entregar_cola(coordinador, mensaje, app=app)
 
 
 def _trabajo(tarea_id, objetivo, origen, contexto_extra):
@@ -164,8 +177,7 @@ def _trabajo(tarea_id, objetivo, origen, contexto_extra):
         pass
     try:
         coordinador = getattr(app, "coordinador_live", None)
-        entregado = (_entregar_live_seguro(coordinador, final) if coordinador is not None
-                     else _entregar_cola(None, final, app=app))
+        entregado = _entregar_live_seguro(coordinador, final, app=app)
         _publicar_estado(tarea_id, entregado=bool(entregado))
     except Exception:
         _publicar_estado(tarea_id, entregado=False)

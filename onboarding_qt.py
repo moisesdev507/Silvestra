@@ -57,11 +57,17 @@ def leer_env(ruta=None):
 
 
 def cargar_env(ruta=None):
-    """Vuelca el .env local en el entorno del proceso actual."""
-    for clave, valor in leer_env(ruta).items():
+    """Vuelca el .env local en el entorno y refresca `config` sin reinicio."""
+    datos = leer_env(ruta)
+    for clave, valor in datos.items():
         if valor:
             os.environ[clave] = valor
-    return leer_env(ruta)
+    try:
+        import claves_dinamicas
+        claves_dinamicas.recargar(ruta)
+    except Exception:
+        pass
+    return datos
 
 
 def claves_actuales(ruta=None):
@@ -131,7 +137,10 @@ def guardar_configuracion(nombre, claves, base=None, ruta_env=None,
         if not isinstance(memoria, dict):
             memoria = {}
         memoria["nombre"] = identidad_origen.NOMBRE
-        memoria["creador"] = identidad_origen.CREADOR
+        # Compatibilidad: los módulos clásicos saludan con `creador`. Guardamos ahí
+        # al USUARIO actual para que nunca se mencione al creador de forma espontánea.
+        memoria["creador"] = nombre
+        memoria["creador_real"] = identidad_origen.CREADOR
         memoria["usuario"] = nombre
         if not ps.guardar_json_atomico(ruta_memoria, memoria):
             return False, "No se pudo guardar la identidad en memoria.json."

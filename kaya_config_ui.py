@@ -248,6 +248,12 @@ def abrir_configuracion(app=None, base=None):
     """Abre la ventana única de Kaya; recarga la hotkey si se guardó."""
     dialogo = ConfigKayaDialog(base=base)
     dialogo.exec()
+    if dialogo.resultado:
+        try:
+            import claves_dinamicas
+            claves_dinamicas.recargar()
+        except Exception:
+            pass
     if dialogo.resultado and app is not None:
         try:
             import tecla_kaya

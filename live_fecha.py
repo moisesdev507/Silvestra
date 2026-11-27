@@ -10,7 +10,7 @@ MESES_ES = (
 )
 
 
-def instruccion_con_hora_local(rapido: bool, primer_despertar: bool, nombre_usuario: str) -> str:
+def instruccion_con_hora_local(rapido: bool, primer_despertar: bool, nombre_usuario: str, primer_saludo: bool = True) -> str:
     """Identidad + guía sin fecha ni memoria: añade una sola fecha local.
 
     La memoria/ficha/hilo se inyecta después desde la única compilación de
@@ -23,6 +23,7 @@ def instruccion_con_hora_local(rapido: bool, primer_despertar: bool, nombre_usua
         incluir_fecha=False,
         incluir_memoria=False,
         max_chars=3000,
+        primer_saludo=primer_saludo,
     )
     ahora = datetime.now()
     fecha = (

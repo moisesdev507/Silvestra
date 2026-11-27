@@ -131,8 +131,8 @@ def analizar_pantalla(pregunta: str = "") -> str:
         return "No pude capturar la pantalla en este momento."
     clave = ""
     try:
-        import config
-        clave = getattr(config, "CLAVE_GOOGLE", "") or ""
+        import claves_dinamicas
+        clave = claves_dinamicas.valor("GEMINI_API_KEY", "CLAVE_GOOGLE")
     except Exception:
         clave = ""
     if not clave or not str(clave).strip():

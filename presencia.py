@@ -178,7 +178,7 @@ def instalar(app):
     acciones.registrar(
         "activar_presencia",
         lambda: gestor.accion_activar_presencia(),
-        "activa la detección de presencia de Moisés con la cámara para coordinar la laptop y la tablet (úsala si te piden activar presencia o vigilar si estoy aquí)",
+        "activa la detección de presencia del usuario con la cámara para coordinar la laptop y la tablet (úsala si te piden activar presencia o vigilar si estoy aquí)",
     )
     acciones.registrar(
         "desactivar_presencia",

@@ -101,16 +101,40 @@ def emitir(app=None, forzar=False):
             return False
     orden = f"Di en voz alta, breve y natural: {mensaje}"
     entregado = False
+    sesion = None
+    try:
+        import live_motor
+        sesion = live_motor.sesion_activa()
+    except Exception:
+        pass
+    if sesion is not None:
+        try:
+            puente = getattr(sesion, "_puente_webrtc", None)
+            if puente is not None and getattr(puente, "dormida", False):
+                try:
+                    puente.despertar()
+                except Exception:
+                    pass
+                puente.dormida = False
+            import live_estado
+            live_estado.reanudar_escucha(sesion)
+            entregado = bool(sesion.enviar_texto(orden, turn_complete=False))
+        except Exception:
+            entregado = False
     cl = getattr(app, "coordinador_live", None)
-    if cl is not None:
+    if not entregado and cl is not None:
         try:
             if cl.esta_live_activo():
                 # Reposo Azul: despierta el micrófono y deja pasar la voz.
-                sesion = getattr(cl, "sesion_live", None)
-                puente = getattr(sesion, "_puente_webrtc", None)
-                if puente is not None:
+                sesion_cl = getattr(cl, "sesion_live", None)
+                puente = getattr(sesion_cl, "_puente_webrtc", None)
+                if puente is not None and getattr(puente, "dormida", False):
+                    try:
+                        puente.despertar()
+                    except Exception:
+                        pass
                     puente.dormida = False
-                entregado = bool(cl.enviar_orden(orden))
+                entregado = bool(cl.enviar_orden(orden, turn_complete=False))
             elif cl.es_modo_principal():
                 entregado = bool(cl.intentar_activar_live(orden))
         except Exception:

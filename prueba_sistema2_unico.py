@@ -1,4 +1,5 @@
 """Pruebas de la Fase 2 del Cerebro Único (Sistema 2 asíncrono)."""
+import asyncio
 import contextlib
 import json
 import os
@@ -8,13 +9,14 @@ import threading
 import time
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import capacidades_extra
 import cerebro_planificador
 import cerebro_sistema2
 import cerebro_unico
 import herramientas_cerebro
+import live_motor
 
 
 def _frases(texto):
@@ -157,6 +159,34 @@ class TestSistema2Unico(unittest.TestCase):
         sesion.enviar_texto.assert_called_once_with("Hola de S2")
         puente.despertar.assert_not_called()
         cola.put.assert_not_called()
+
+    def test_entrega_por_sesion_registrada_sin_coordinador(self):
+        sesion = SimpleNamespace(activo=True, _puente_webrtc=None,
+                                 enviar_texto=MagicMock(return_value=True))
+        app = SimpleNamespace(cola=MagicMock())
+        with patch.object(live_motor, "sesion_activa", return_value=sesion):
+            self.assertTrue(cerebro_sistema2._entregar_live_seguro(
+                None, "Ya terminé", app=app))
+        sesion.enviar_texto.assert_called_once_with("Ya terminé")
+        app.cola.put.assert_not_called()
+
+    def test_enviar_texto_inyecta_turno_completo(self):
+        sesion = live_motor.SesionKayaLive()
+        bucle = asyncio.new_event_loop()
+        sesion._loop = bucle
+        sesion.activo = True
+        sesion._session_genai = MagicMock(send_client_content=AsyncMock())
+        sesion.puerta = MagicMock()
+        try:
+            self.assertTrue(sesion.enviar_texto("Resultado final en voz alta."))
+            bucle.run_until_complete(asyncio.sleep(0.01))
+            argumentos = sesion._session_genai.send_client_content.await_args.kwargs
+            self.assertTrue(argumentos["turn_complete"])
+            self.assertEqual(argumentos["turns"].parts[0].text, "Resultado final en voz alta.")
+            self.assertEqual(len(sesion._tareas_envio), 0)
+        finally:
+            sesion.activo = False
+            bucle.close()
 
     def test_e_herramienta_inmediata_y_declarada(self):
         with patch.object(cerebro_sistema2, "lanzar_tarea_sistema2",

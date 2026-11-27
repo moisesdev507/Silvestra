@@ -42,7 +42,7 @@ def _capturar_autoaprendizaje(modulo):
         capturas.append((texto, canal, hilo))
         return hilo
 
-    return patch.object(modulo.memoria_unificada, "aprender_del_turno_async",
+    return patch.object(memoria_unificada, "aprender_del_turno_async",
                         side_effect=capturar), capturas
 
 

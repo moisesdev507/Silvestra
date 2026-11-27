@@ -300,11 +300,11 @@ class CoordinadorLiveSilvestra:
             print("[COORDINADOR] Sesión Gemini Live iniciada exitosamente.", flush=True)
             return True
 
-    def enviar_orden(self, texto: str) -> bool:
+    def enviar_orden(self, texto: str, turn_complete: bool = False) -> bool:
         """Envía una orden por texto a la sesión Live en curso."""
         with self._bloqueo:
             if self.sesion_live and self.sesion_live.activo:
-                return self.sesion_live.enviar_texto(texto)
+                return self.sesion_live.enviar_texto(texto, turn_complete=turn_complete)
         return False
 
     def esta_live_activo(self) -> bool:

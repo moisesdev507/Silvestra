@@ -80,7 +80,8 @@ def preguntar_proposito(app):
     proposito = app.cara.preguntar("Mi nacimiento", "¿Cuál es mi propósito? ¿Para qué existo?")
     app.memoria.nacer(app._nombre, app._creador, proposito)
     app.cara.poner_viva(True)
-    app.decir(f"Entendido. Gracias por darme vida, {app.memoria.creador}.", 3500)
+    quien = identidad_origen.nombre_usuario() or getattr(app.memoria, "usuario", "")
+    app.decir(f"Entendido. Quedo lista{', ' + quien if quien else ''}.", 3500)
 
 
 def saludar(app):

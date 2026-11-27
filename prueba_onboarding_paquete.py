@@ -138,7 +138,12 @@ class PaqueteTests(unittest.TestCase):
         for nombre in ("main.py", "config.py", "config.example.py", "requirements.txt",
                        ".env.example", "Iniciar_Kaya.bat", "LEEME_INSTALACION.txt"):
             self.assertTrue(os.path.exists(os.path.join(self.paquete, nombre)), nombre)
-        self.assertIn("_cfg(", texto_de(os.path.join(self.paquete, "config.py")))
+        config_generado = texto_de(os.path.join(self.paquete, "config.py"))
+        self.assertIn("_cfg(", config_generado)
+        self.assertIn("__getattr__", config_generado)
+        self.assertFalse([ln for ln in config_generado.splitlines()
+                          if ln.startswith(("CLAVE =", "CLAVE_GOOGLE =",
+                                            "GEMINI_API_KEY =", "GROQ_API_KEY ="))])
         self.assertTrue(os.path.exists(os.path.join(
             self.paquete, "modelos", "silero_vad.onnx")))
         pasos = [ln for ln in texto_de(os.path.join(

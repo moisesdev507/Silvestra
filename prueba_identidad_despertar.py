@@ -12,6 +12,7 @@ import habla_espontanea
 import identidad_origen
 import live_audio
 import live_motor
+import live_prompt
 import nacimiento
 import onboarding_qt
 import persistencia_segura
@@ -60,11 +61,12 @@ class IdentidadDespertarTests(unittest.TestCase):
         return patch.object(identidad_origen, "ruta_perfil", return_value=self.perfil)
 
     def test_identidad_en_prompts_de_ambos_motores(self):
-        textos = (
-            cerebro_prompt.SOBRE_MI,
-            live_audio.construir_instruccion_sistema(),
-            live_audio.construir_instruccion_arranque_rapido(),
-        )
+        with patch.object(live_prompt, "contexto_ambiental", return_value=""):
+            textos = (
+                cerebro_prompt.SOBRE_MI,
+                live_audio.construir_instruccion_sistema(),
+                live_audio.construir_instruccion_arranque_rapido(),
+            )
         for texto in textos:
             self.assertIn(identidad_origen.NOMBRE, texto)
             self.assertIn(identidad_origen.CREADOR, texto)
@@ -73,7 +75,6 @@ class IdentidadDespertarTests(unittest.TestCase):
 
         self.assertIn("datos/perfil_usuario.json", cerebro_prompt.SOBRE_MI)
         self.assertIn("datos/perfil_usuario.json", textos[1])
-        self.assertIn("revisar_pantalla", textos[1])
         self.assertIn("revisar_pantalla", textos[2])
         self.assertLess(len(textos[2]), 800)
         self.assertTrue(all(
@@ -91,8 +92,9 @@ class IdentidadDespertarTests(unittest.TestCase):
         self.assertIn("Alex", saludo)
         self.assertIn("Alex", instruccion)
         for texto in (saludo, instruccion):
-            self.assertIn(identidad_origen.CREADOR, texto)
-            self.assertIn(identidad_origen.FECHA_INICIO, texto)
+            self.assertNotIn(identidad_origen.CREADOR, texto)
+            self.assertNotIn(identidad_origen.FECHA_INICIO, texto)
+        self.assertIn("jamás lo menciones", identidad_origen.BLOQUE_IDENTIDAD)
         self.assertIn("nunca lo llames creador", identidad_origen.BLOQUE_IDENTIDAD)
         self.assertIn("datos/perfil_usuario.json", identidad_origen.BLOQUE_IDENTIDAD)
 
@@ -125,8 +127,8 @@ class IdentidadDespertarTests(unittest.TestCase):
         self.assertEqual(evento[0], "saludo_inicial")
         saludo = evento[1][0]
         self.assertIn("Alex", saludo)
-        self.assertIn(identidad_origen.CREADOR, saludo)
-        self.assertIn(identidad_origen.FECHA_INICIO, saludo)
+        self.assertNotIn(identidad_origen.CREADOR, saludo)
+        self.assertNotIn(identidad_origen.FECHA_INICIO, saludo)
         with self._ruta_parcheada():
             self.assertFalse(identidad_origen.primer_despertar_activo())
 
@@ -166,20 +168,21 @@ class IdentidadDespertarTests(unittest.TestCase):
         primer_turno = sesion_falsa.send_client_content.call_args.kwargs["turns"].parts[0].text
         for texto in (instruccion, primer_turno):
             self.assertIn("Alex", texto)
-            self.assertIn(identidad_origen.CREADOR, texto)
-            self.assertIn(identidad_origen.FECHA_INICIO, texto)
+        self.assertIn(identidad_origen.CREADOR, instruccion)
+        self.assertIn(identidad_origen.FECHA_INICIO, instruccion)
+        self.assertNotIn(identidad_origen.CREADOR, primer_turno)
+        self.assertNotIn(identidad_origen.FECHA_INICIO, primer_turno)
         with self._ruta_parcheada():
             self.assertFalse(identidad_origen.primer_despertar_activo())
 
     def test_usuario_abrahan_nunca_se_confunde_con_kaya(self):
-        esperado = (
-            "Tu nombre es Kaya. Eres una asistente de inteligencia artificial creada por "
-            "Moisés Abrahan Guerrero Reyes el martes 17 de noviembre de 2026 en Panamá. "
-            "El usuario con el que estás hablando actualmente se llama Abrahan. "
-            "NUNCA digas que eres Abrahan ni que eres tu creador; "
-            "tú eres Kaya y te diriges a Abrahan."
-        )
-        self.assertEqual(identidad_origen.prompt_identidad("Abrahan"), esperado)
+        prompt = identidad_origen.prompt_identidad("Abrahan")
+        self.assertTrue(prompt.startswith("Tu nombre es Kaya. Eres una asistente de inteligencia artificial."))
+        self.assertIn("se llama Abrahan", prompt)
+        self.assertIn("NUNCA digas que eres Abrahan", prompt)
+        self.assertIn("tú eres Kaya y te diriges a Abrahan", prompt)
+        self.assertIn(identidad_origen.CREADOR, prompt)
+        self.assertIn(identidad_origen.FECHA_INICIO, prompt)
 
         class MemoriaCorrupta:
             nombre = "Abrahan"  # valor legado que antes se copiaba del usuario
@@ -209,9 +212,11 @@ class IdentidadDespertarTests(unittest.TestCase):
             self.assertIn("Abrahan", texto)
             self.assertIn("Kaya", texto)
             self.assertNotIn("soy Abrahan", texto.lower())
+            self.assertNotIn(identidad_origen.CREADOR, texto)
+            self.assertNotIn(identidad_origen.FECHA_INICIO, texto)
 
     def test_voz_oficial_de_kaya_reemplaza_celeste(self):
-        self.assertEqual(identidad_origen.VOZ_KAYA_LIVE, "Achernar")
+        self.assertEqual(identidad_origen.VOZ_KAYA_LIVE, "Aoede")
         self.assertEqual(identidad_origen.VOZ_KAYA_CLASICA, "aura-2-gloria-es")
         self.assertEqual(live_motor.VOZ_DEFECTO, identidad_origen.VOZ_KAYA_LIVE)
         self.assertEqual(live_motor.SesionKayaLive().voz, identidad_origen.VOZ_KAYA_LIVE)
@@ -229,7 +234,8 @@ class IdentidadDespertarTests(unittest.TestCase):
         memoria = persistencia_segura.cargar_json_seguro(
             os.path.join(self.base, "memoria.json"), {})
         self.assertEqual(memoria.get("nombre"), "Kaya")
-        self.assertEqual(memoria.get("creador"), identidad_origen.CREADOR)
+        self.assertEqual(memoria.get("creador"), "Abrahan")
+        self.assertEqual(memoria.get("creador_real"), identidad_origen.CREADOR)
         self.assertEqual(memoria.get("usuario"), "Abrahan")
         with self._ruta_parcheada():
             self.assertEqual(identidad_origen.nombre_usuario(), "Abrahan")

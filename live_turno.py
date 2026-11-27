@@ -16,9 +16,9 @@ def bloque_memoria(max_chars=520):
         return ""
 
 
-def construir_config(voz, rapido=False, despertar=False, nombre=""):
+def construir_config(voz, rapido=False, despertar=False, nombre="", primer_saludo: bool = True):
     """Config Live: una sola fecha y un único bloque cognitivo (ficha, hilo, memoria)."""
-    base = live_fecha.instruccion_con_hora_local(rapido, despertar, nombre)
+    base = live_fecha.instruccion_con_hora_local(rapido, despertar, nombre, primer_saludo=primer_saludo)
     memoria = bloque_memoria()
     instruccion = base + "\n" + memoria
     return types.LiveConnectConfig(

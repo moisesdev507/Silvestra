@@ -15,14 +15,10 @@ _CACHE = OrderedDict()
 
 def _clave():
     try:
-        import config
-        for nombre in ("CLAVE_GOOGLE", "GOOGLE_API_KEY", "GEMINI_API_KEY"):
-            valor = str(getattr(config, nombre, "") or "").strip()
-            if valor:
-                return valor
+        import claves_dinamicas
+        return claves_dinamicas.valor("GEMINI_API_KEY", "CLAVE_GOOGLE")
     except Exception:
-        pass
-    return ""
+        return ""
 
 
 def obtener_embedding(texto, tipo_tarea="RETRIEVAL_DOCUMENT"):

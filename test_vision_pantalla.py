@@ -25,7 +25,7 @@ class TestVisionPantalla(unittest.TestCase):
 
     def test_clave_vacia(self):
         """Sin clave de Google Gemini devuelve mensaje claro sin lanzar excepción."""
-        with patch("config.CLAVE_GOOGLE", "", create=True):
+        with patch("claves_dinamicas.valor", return_value=""), patch("config.CLAVE_GOOGLE", "", create=True):
             with patch("vision_pantalla.capturar_pantalla_b64", return_value="base64dummy"):
                 res = vision_pantalla.analizar_pantalla("qué ves")
                 self.assertIn("falta la clave de Google Gemini", res)

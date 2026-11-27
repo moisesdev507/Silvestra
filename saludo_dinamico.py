@@ -8,6 +8,7 @@ import os
 import random
 import re
 
+import claves_dinamicas
 import config
 import estado
 import httpx
@@ -208,6 +209,7 @@ def generar_saludo_dinamico(creador=identidad_origen.USUARIO_SIN_NOMBRE, timeout
         f"La hora local real exacta es {hora_str} y la franja actual es ESTRICTAMENTE '{franja}'. "
         "REGLAS CRÍTICAS: "
         f"- NUNCA contradigas la franja actual '{franja}' (si es madrugada o noche, prohibido decir 'buenas tardes' o 'al mediodía'). "
+        "- NUNCA menciones quién te creó, tu fecha de inicio ni tu origen; solo si te lo preguntan de forma explícita. "
         "- Si hay un correo relevante o evento en el briefing, menciónalo con naturalidad brevemente. "
         "- Si no hay avisos urgentes, saluda cálida y directamente invitando a retomar lo pendiente. "
         "- Cero asteriscos, cero listas, cero citas numéricas. "
@@ -223,7 +225,7 @@ def generar_saludo_dinamico(creador=identidad_origen.USUARIO_SIN_NOMBRE, timeout
         "Genera tu saludo cálido ahora."
     )
 
-    clave_groq = str(getattr(config, "CLAVE", "") or os.environ.get("GROQ_API_KEY", "")).strip()
+    clave_groq = claves_dinamicas.valor("GROQ_API_KEY", "CLAVE")
     motivo_fallo = ""
     if clave_groq:
         url_groq = "https://api.groq.com/openai/v1/chat/completions"
@@ -259,8 +261,8 @@ def generar_saludo_dinamico(creador=identidad_origen.USUARIO_SIN_NOMBRE, timeout
             except Exception as e:
                 motivo_fallo = f"Groq error ({mod}): {type(e).__name__}"
 
-    clv_cf = str(getattr(config, "CLAVE_CLOUDFLARE", "") or os.environ.get("CLAVE_CLOUDFLARE", "")).strip()
-    acc_cf = str(getattr(config, "ID_CUENTA_CLOUDFLARE", "") or os.environ.get("ID_CUENTA_CLOUDFLARE", "")).strip()
+    clv_cf = claves_dinamicas.valor("CLOUDFLARE_API_TOKEN", "CLAVE_CLOUDFLARE")
+    acc_cf = claves_dinamicas.valor("CLOUDFLARE_ACCOUNT_ID", "ID_CUENTA_CLOUDFLARE")
     if clv_cf and acc_cf:
         url_cf = f"https://api.cloudflare.com/client/v4/accounts/{acc_cf}/ai/v1/chat/completions"
         headers_cf = {"Authorization": f"Bearer {clv_cf}", "Content-Type": "application/json"}

@@ -17,6 +17,7 @@ def _sin_red():
     return (
         patch.object(saludo_dinamico.config, "CLAVE", ""),
         patch.object(saludo_dinamico.config, "CLAVE_CLOUDFLARE", ""),
+        patch.object(saludo_dinamico.claves_dinamicas, "valor", return_value=""),
         patch.dict("os.environ", {}, clear=True),
         patch.object(saludo_dinamico.bp, "recopilar_briefing_arranque", lambda **_: {}),
         patch.object(saludo_dinamico.estado, "cargar", lambda: {}),
@@ -95,9 +96,10 @@ class TestSaludoVersionCompartida(unittest.TestCase):
             evento = app.cola.get_nowait()
         saludo = evento[1][0]
         self.assertEqual(evento[0], "saludo_inicial")
-        for esperado in ("Alex", identidad_origen.CREADOR,
-                         identidad_origen.FECHA_INICIO, "versión compartida con amigos"):
+        for esperado in ("Alex", "versión compartida con amigos"):
             self.assertIn(esperado, saludo)
+        for prohibido in (identidad_origen.CREADOR, identidad_origen.FECHA_INICIO):
+            self.assertNotIn(prohibido, saludo)
 
     def test_primer_despertar_sin_nota_en_desarrollo(self):
         base = tempfile.mkdtemp(prefix="kaya_saludo_")
