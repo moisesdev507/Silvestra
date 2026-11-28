@@ -222,6 +222,8 @@ class PuenteWebRTC:
                                 self._emitir_estado(str(data.get("v", "escuchando")))
                             elif tipo == "nivel":
                                 self._emitir_nivel(float(data.get("v", 0.0)))
+                            elif tipo == "interrupted":
+                                self.interrumpir_salida()
                             elif tipo == "wake":
                                 if self.dormida:
                                     self.dormida = False

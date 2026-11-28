@@ -176,32 +176,44 @@ class CapaAudioLive:
     async def _tarea_envio_audio(self, session):
         puente = self._puente_webrtc
         cola = puente.cola_entrada if puente is not None else self.cola_audio_entrada
-        while self.activo:
-            try:
-                data = await asyncio.to_thread(cola.get, timeout=0.1)
-                if not isinstance(data, (bytes, bytearray)) or len(data) == 0:
-                    continue  # frames vacíos provocan cierre 1007 en Gemini
-                if puente is not None:
-                    if data == live_webrtc.SENAL_SLEEP:
-                        if hasattr(self, "_al_dormir"):
-                            self._al_dormir()
+        self._tarea_audio_viva = True
+        try:
+            while self.activo:
+                try:
+                    data = await asyncio.to_thread(cola.get, timeout=0.1)
+                    if not isinstance(data, (bytes, bytearray)) or len(data) == 0:
                         continue
-                    if puente.dormida:
-                        puente.dormida = False
-                        live_estado.reanudar_escucha(self)
-                        print("[LIVE][AUDIO] Audio enviado a Gemini tras despertar.", flush=True)
-                if (
-                    getattr(self, "_estado_actual", "") == "pensando"
-                    or self.puerta.reproduciendo
-                    or self.compuerta.esta_en_ventana_eco()
-                ):
-                    continue
-                await session.send_realtime_input(
-                    audio=types.Blob(data=data, mime_type="audio/pcm")
-                )
-                live_estado.notificar_actividad_audio(self)
-            except queue.Empty:
-                await asyncio.sleep(0.01)
-            except Exception as e:
-                print(f"[LIVE][AUDIO] Error enviando audio a Gemini: {e}", flush=True)
-                break
+                    if puente is not None:
+                        if data == live_webrtc.SENAL_SLEEP:
+                            self._en_reposo_azul = True
+                            if hasattr(self, "_al_dormir"):
+                                self._al_dormir()
+                            continue
+                        if getattr(self, "_en_reposo_azul", False) or getattr(puente, "dormida", False):
+                            self._en_reposo_azul = False
+                            puente.dormida = False
+                            live_estado.reanudar_escucha(self)
+                            print("[LIVE][AUDIO] Audio enviado a Gemini tras despertar.", flush=True)
+                        if getattr(self, "_estado_actual", "") == "pensando":
+                            continue
+                    else:
+                        if (
+                            getattr(self, "_estado_actual", "") == "pensando"
+                            or self.puerta.reproduciendo
+                            or self.compuerta.esta_en_ventana_eco()
+                        ):
+                            continue
+                    await session.send_realtime_input(
+                        audio=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
+                    )
+                    self._t_ultimo_envio_audio = time.time()
+                    live_estado.notificar_actividad_audio(self)
+                except queue.Empty:
+                    await asyncio.sleep(0.01)
+                except Exception as e:
+                    self._tarea_audio_viva = False
+                    print(f"[LIVE][AUDIO] Error enviando audio a Gemini: {e}. Forzando reconexión...", flush=True)
+                    live_estado.forzar_reconexion(self)
+                    break
+        finally:
+            self._tarea_audio_viva = False

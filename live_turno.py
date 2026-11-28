@@ -41,7 +41,7 @@ def construir_config(voz, rapido=False, despertar=False, nombre="", primer_salud
     try:
         realtime_input_config = types.RealtimeInputConfig(
             automatic_activity_detection=types.AutomaticActivityDetection(
-                silence_duration_ms=500,
+                silence_duration_ms=850,
                 prefix_padding_ms=180,
                 end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
             )

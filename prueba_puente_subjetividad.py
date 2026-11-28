@@ -242,9 +242,31 @@ class TestPuenteSubjetividad(unittest.TestCase):
         self.assertIsNotNone(config.realtime_input_config)
         aad = config.realtime_input_config.automatic_activity_detection
         self.assertIsNotNone(aad)
-        self.assertEqual(aad.silence_duration_ms, 500)
+        self.assertEqual(aad.silence_duration_ms, 850)
         self.assertEqual(aad.end_of_speech_sensitivity, types.EndSensitivity.END_SENSITIVITY_HIGH)
         self.assertEqual(aad.prefix_padding_ms, 180)
+
+    def test_watchdog_cola_atascada_fuerza_reconexion(self) -> None:
+        sesion = MagicMock()
+        sesion.activo = True
+        sesion._estado_actual = "escuchando"
+        puente_mock = MagicMock()
+        puente_mock.cola_entrada = MagicMock()
+        puente_mock.cola_entrada.qsize.return_value = 130
+        sesion._puente_webrtc = puente_mock
+
+        liberado = live_estado.vigilar_bloqueo(sesion)
+        self.assertTrue(liberado)
+        sesion.vaciar_colas_audio_entrada.assert_called_once()
+
+    def test_watchdog_tarea_audio_muerta_fuerza_reconexion(self) -> None:
+        sesion = MagicMock()
+        sesion.activo = True
+        sesion._tarea_audio_viva = False
+
+        liberado = live_estado.vigilar_bloqueo(sesion)
+        self.assertTrue(liberado)
+        sesion.vaciar_colas_audio_entrada.assert_called_once()
 
 
 if __name__ == "__main__":

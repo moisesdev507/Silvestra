@@ -1,6 +1,7 @@
 """Transiciones de estado y watchdog de Live sin tocar widgets ni bloquear audio."""
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
@@ -9,6 +10,25 @@ def notificar_actividad_audio(sesion: Any) -> None:
     """Actualiza el reloj de actividad con cada paquete de audio enviado o recibido."""
     if sesion is not None:
         sesion._t_inicio_bloqueo = time.time()
+
+
+def forzar_reconexion(sesion: Any) -> bool:
+    """Cierra el WebSocket de Live para que _ejecutar_sesion reconecte limpiamente."""
+    if sesion is None:
+        return False
+    sesion._t_inicio_bloqueo = None
+    s = getattr(sesion, "_session_genai", None)
+    if s is not None:
+        ws = getattr(s, "_ws", None)
+        if ws is not None:
+            loop = getattr(sesion, "_loop", None)
+            if loop is not None and loop.is_running():
+                try:
+                    asyncio.run_coroutine_threadsafe(ws.close(), loop)
+                    return True
+                except Exception:
+                    pass
+    return False
 
 
 def reanudar_escucha(sesion: Any) -> bool:
@@ -64,9 +84,38 @@ def limpiar_para_reconexion(sesion: Any) -> None:
 
 
 def vigilar_bloqueo(sesion: Any, timeout_seg: float = 14.0) -> bool:
-    """Protege el micrófono: si queda trabado en 'hablando'/'pensando', lo libera."""
+    """Protege el micrófono: libera si se traba o fuerza reconexión si la sesión muere."""
     if sesion is None or not getattr(sesion, "activo", False):
         return False
+
+    # 1. Detectar si la tarea de audio terminó
+    if getattr(sesion, "_tarea_audio_viva", True) is False:
+        print("[LIVE] Watchdog: tarea de audio terminada. Forzando reconexión limpia...", flush=True)
+        limpiar_para_reconexion(sesion)
+        forzar_reconexion(sesion)
+        return True
+
+    # 2. Detectar cola de entrada atascada (consumidor bloqueado o socket muerto)
+    puente = getattr(sesion, "_puente_webrtc", None)
+    if puente is not None:
+        cola_ent = getattr(puente, "cola_entrada", None)
+        fn_qsize = getattr(cola_ent, "qsize", None)
+        if callable(fn_qsize):
+            try:
+                tam_cola = int(fn_qsize())
+                if tam_cola > 120:
+                    print(
+                        f"[LIVE] Watchdog: cola de entrada atascada ({tam_cola} frames sin consumir). "
+                        "Forzando reconexión limpia...",
+                        flush=True,
+                    )
+                    limpiar_para_reconexion(sesion)
+                    forzar_reconexion(sesion)
+                    return True
+            except Exception:
+                pass
+
+    # 3. Detectar estado trabado en 'hablando' o 'pensando'
     estado = getattr(sesion, "_estado_actual", "")
     if estado in ("hablando", "pensando"):
         t_inicio = getattr(sesion, "_t_inicio_bloqueo", None)
@@ -88,4 +137,10 @@ def vigilar_bloqueo(sesion: Any, timeout_seg: float = 14.0) -> bool:
     return False
 
 
-__all__ = ["limpiar_para_reconexion", "notificar_actividad_audio", "reanudar_escucha", "vigilar_bloqueo"]
+__all__ = [
+    "forzar_reconexion",
+    "limpiar_para_reconexion",
+    "notificar_actividad_audio",
+    "reanudar_escucha",
+    "vigilar_bloqueo",
+]

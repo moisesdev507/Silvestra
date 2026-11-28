@@ -13,18 +13,18 @@ HTML_PUENTE = """<!doctype html><html><head><meta charset="utf-8"></head>
 <body style="background:#0b0f17;color:#94a3b8"><div id="st">Iniciando...</div>
 <script>
 const st=document.getElementById("st"),wsPort=location.hash.slice(1);
-let ws,ctx,nextT=0,sources=[],despierto=true,dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.012,framesWake=0,framesVoz=0,pausasVoz=0,preroll=[],colaVoz=0,reconectando=null;
+let ws,ctx,nextT=0,sources=[],despierto=true,dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.012,framesWake=0,framesVoz=0,pausasVoz=0,framesInter=0,preroll=[],colaVoz=0,reconectando=null;
 function sendCtrl(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));}
 function limpiarAudio(){sources.forEach(s=>{try{s.stop()}catch{}});sources=[];if(ctx)nextT=ctx.currentTime;}
-function activarEscucha(){dormida=false;despierto=true;framesWake=0;framesVoz=0;pausasVoz=0;ultimoHabla=performance.now();sendCtrl({type:"estado",v:"escuchando"});if(ws&&ws.readyState===1){preroll.forEach(b=>ws.send(b));preroll=[];}}
-function despertar(){if(!dormida){ultimoHabla=performance.now();return;}dormida=false;despierto=true;framesWake=0;framesVoz=3;pausasVoz=0;colaVoz=22;ultimoHabla=performance.now();sendCtrl({type:"wake"});sendCtrl({type:"estado",v:"escuchando"});if(ws&&ws.readyState===1){preroll.forEach(b=>ws.send(b));preroll=[];}}
+function activarEscucha(){dormida=false;despierto=true;framesWake=0;framesVoz=0;pausasVoz=0;framesInter=0;ultimoHabla=performance.now();sendCtrl({type:"estado",v:"escuchando"});if(ws&&ws.readyState===1){preroll.forEach(b=>ws.send(b));preroll=[];}}
+function despertar(){if(!dormida){ultimoHabla=performance.now();return;}dormida=false;despierto=true;framesWake=0;framesVoz=3;pausasVoz=0;framesInter=0;colaVoz=22;ultimoHabla=performance.now();sendCtrl({type:"wake"});sendCtrl({type:"estado",v:"escuchando"});if(ws&&ws.readyState===1){preroll.forEach(b=>ws.send(b));preroll=[];}}
 function playPcm24k(buf){
   if(!ctx){colaPreCtx.push(buf);return;}
   const i16=new Int16Array(buf),f32=new Float32Array(i16.length);
   for(let i=0;i<i16.length;i++)f32[i]=i16[i]/32768;
   const ab=ctx.createBuffer(1,f32.length,24000);ab.getChannelData(0).set(f32);
   const src=ctx.createBufferSource();src.buffer=ab;src.connect(ctx.destination);
-  const t=Math.max(ctx.currentTime,nextT);src.start(t);nextT=t+ab.duration;
+  const t=(nextT<ctx.currentTime)?(ctx.currentTime+0.09):nextT;src.start(t);nextT=t+ab.duration;
   sources.push(src);sendCtrl({type:"estado",v:"hablando"});
   const fin=()=>{sources=sources.filter(x=>x!==src);if(!sources.length)activarEscucha();};
   src.onended=fin;setTimeout(fin,Math.round(ab.duration*1000)+1500);
@@ -36,7 +36,7 @@ function ajustar16k(f32,inRate){
   return out;
 }
 async function iniciar(){
-  const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
+  const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
   ctx=new AudioContext({sampleRate:16000});await ctx.resume();
   function conectar(){
     if(reconectando){clearTimeout(reconectando);reconectando=null;}
@@ -72,8 +72,22 @@ async function iniciar(){
       if(rms>uWake){framesWake++;}else{framesWake=0;}
     }
     const umbral=dormida?uWake:uActivo;
+    if(sources.length>0){
+      const uBarge=Math.max(umbral*2.8,0.055);
+      if(rms>uBarge){
+        framesInter++;
+        if(framesInter>=3){
+          limpiarAudio();
+          sendCtrl({type:"interrupted"});
+          framesInter=0;
+        }
+      }else{
+        framesInter=0;
+      }
+    }else{
+      framesInter=0;
+    }
     if(rms>umbral){
-      if(sources.length>0){limpiarAudio();sendCtrl({type:"interrupted"});}
       const estabaMudo=!dormida&&colaVoz===0;
       framesVoz++;pausasVoz=0;colaVoz=22;
       if(!dormida){
