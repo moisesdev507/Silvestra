@@ -5,6 +5,12 @@ import time
 from typing import Any
 
 
+def notificar_actividad_audio(sesion: Any) -> None:
+    """Actualiza el reloj de actividad con cada paquete de audio enviado o recibido."""
+    if sesion is not None:
+        sesion._t_inicio_bloqueo = time.time()
+
+
 def reanudar_escucha(sesion: Any) -> bool:
     """Vuelve a 'escuchando' tras interrupciones, turnos o herramientas."""
     if sesion is None:
@@ -82,4 +88,4 @@ def vigilar_bloqueo(sesion: Any, timeout_seg: float = 14.0) -> bool:
     return False
 
 
-__all__ = ["limpiar_para_reconexion", "reanudar_escucha", "vigilar_bloqueo"]
+__all__ = ["limpiar_para_reconexion", "notificar_actividad_audio", "reanudar_escucha", "vigilar_bloqueo"]

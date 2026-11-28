@@ -17,90 +17,7 @@ import websockets
 import webrtc_ventana as wv
 
 SENAL_SLEEP = b"__WEBRTC_SLEEP__"
-
-HTML_PUENTE = """<!doctype html><html><head><meta charset="utf-8"></head>
-<body style="background:#0b0f17;color:#94a3b8"><div id="st">Iniciando...</div>
-<script>
-const st=document.getElementById("st"),wsPort=location.hash.slice(1);
-let ws,ctx,nextT=0,sources=[],despierto=true,dormida=false,ultimoHabla=performance.now(),colaPreCtx=[],piso=0.012,framesWake=0,framesVoz=0,pausasVoz=0,preroll=[],colaVoz=0;
-function sendCtrl(o){if(ws&&ws.readyState===1)ws.send(JSON.stringify(o));}
-function limpiarAudio(){sources.forEach(s=>{try{s.stop()}catch{}});sources=[];if(ctx)nextT=ctx.currentTime;}
-function activarEscucha(){dormida=false;despierto=true;framesWake=0;framesVoz=0;pausasVoz=0;ultimoHabla=performance.now();sendCtrl({type:"estado",v:"escuchando"});if(ws&&ws.readyState===1){preroll.forEach(b=>ws.send(b));preroll=[];}}
-function despertar(){if(!dormida){ultimoHabla=performance.now();return;}dormida=false;despierto=true;framesWake=0;framesVoz=3;pausasVoz=0;colaVoz=22;ultimoHabla=performance.now();sendCtrl({type:"wake"});sendCtrl({type:"estado",v:"escuchando"});if(ws&&ws.readyState===1){preroll.forEach(b=>ws.send(b));preroll=[];}}
-function playPcm24k(buf){
-  if(!ctx){colaPreCtx.push(buf);return;}
-  const i16=new Int16Array(buf),f32=new Float32Array(i16.length);
-  for(let i=0;i<i16.length;i++)f32[i]=i16[i]/32768;
-  const ab=ctx.createBuffer(1,f32.length,24000);ab.getChannelData(0).set(f32);
-  const src=ctx.createBufferSource();src.buffer=ab;src.connect(ctx.destination);
-  const t=Math.max(ctx.currentTime,nextT);src.start(t);nextT=t+ab.duration;
-  sources.push(src);sendCtrl({type:"estado",v:"hablando"});
-  const fin=()=>{sources=sources.filter(x=>x!==src);if(!sources.length)activarEscucha();};
-  src.onended=fin;setTimeout(fin,Math.round(ab.duration*1000)+1500);
-}
-function ajustar16k(f32,inRate){
-  if(inRate===16000)return f32;
-  const r=inRate/16000,len=Math.round(f32.length/r),out=new Float32Array(len);
-  for(let i=0;i<len;i++)out[i]=f32[Math.min(f32.length-1,Math.floor(i*r))];
-  return out;
-}
-async function iniciar(){
-  const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
-  ctx=new AudioContext({sampleRate:16000});await ctx.resume();
-  function conectar(){
-    ws=new WebSocket("ws://127.0.0.1:"+wsPort);ws.binaryType="arraybuffer";
-    ws.onopen=()=>{activarEscucha();colaPreCtx.forEach(b=>playPcm24k(b));colaPreCtx=[];};
-    ws.onclose=()=>{ws=null;setTimeout(conectar,1200);};
-    ws.onerror=()=>{try{ws.close();}catch{}};
-    ws.onmessage=e=>{
-      if(e.data instanceof ArrayBuffer){playPcm24k(e.data);return;}
-      const m=JSON.parse(e.data);
-      if(m.type==="interrupted")limpiarAudio();
-      if(m.type==="wake")despertar();
-      if(m.type==="escuchando")activarEscucha();
-      if(m.type==="reposo"){despierto=false;dormida=true;framesWake=0;framesVoz=0;pausasVoz=0;colaVoz=0;}
-    };
-  }
-  conectar();
-  const src=ctx.createMediaStreamSource(stream),proc=ctx.createScriptProcessor(1024,1,1);
-  src.connect(proc);proc.connect(ctx.destination);
-  st.textContent="WebRTC activo";
-  proc.onaudioprocess=ev=>{
-    if(ctx&&ctx.state==="suspended"){try{ctx.resume();}catch{}}
-    if(!ws||ws.readyState!==1)return;
-    const d=ajustar16k(ev.inputBuffer.getChannelData(0),ctx.sampleRate);
-    let sum=0;const pcm=new Int16Array(d.length);
-    for(let i=0;i<d.length;i++){const v=Math.max(-1,Math.min(1,d[i]));sum+=v*v;pcm[i]=v<0?v*32768:v*32767;}
-    const rms=Math.sqrt(sum/d.length),ahora=performance.now();
-    if(!dormida&&sources.length===0&&rms<piso*1.15)piso=Math.min(0.007,piso*0.98+rms*0.02);
-    const uActivo=Math.max(0.0065,piso*1.65),uWake=Math.max(0.0135,piso*2.1);
-    if(dormida){
-      preroll.push(pcm.buffer);if(preroll.length>8)preroll.shift();
-      if(rms>uWake){framesWake++;}else{framesWake=0;}
-    }
-    const umbral=dormida?uWake:uActivo;
-    if(rms>umbral){
-      const estabaMudo=!dormida&&colaVoz===0;
-      framesVoz++;pausasVoz=0;colaVoz=22;
-      if(!dormida){
-        if(framesVoz>=2)ultimoHabla=ahora;sendCtrl({type:"nivel",v:Math.min(1,rms*6)});
-        if(estabaMudo){preroll.forEach(b=>ws.send(b));preroll=[];}
-      }
-    }else{
-      if(framesVoz>0&&pausasVoz<1)pausasVoz++;else{framesVoz=0;pausasVoz=0;}
-      if(colaVoz>0)colaVoz--;
-    }
-    if(sources.length>0)ultimoHabla=ahora;
-    if(!dormida&&ahora-ultimoHabla>9000){
-      despierto=false;dormida=true;framesWake=0;framesVoz=0;pausasVoz=0;colaVoz=0;
-      sendCtrl({type:"sleep"});sendCtrl({type:"estado",v:"reposo"});
-      return;
-    }
-    if(!dormida){ws.send(colaVoz>0?pcm.buffer:new Int16Array(pcm.length).buffer);}else if(framesWake>=3&&rms>uWake){despertar();ws.send(pcm.buffer);}
-  };
-}
-iniciar().catch(e=>{st.textContent="Error: "+e;sendCtrl({type:"error",msg:String(e)});});
-</script></body></html>"""
+HTML_PUENTE = wv.HTML_PUENTE
 
 
 def buscar_navegador_webrtc() -> Optional[str]:
@@ -143,6 +60,10 @@ class PuenteWebRTC:
         self.activo = False
         self.dormida = False
         self._ultimo_habla = time.time()
+        self._ultimo_estado: Optional[str] = None
+        self._t_desconexion_ws: Optional[float] = None
+        self._t_ultimo_reintento_nav = 0.0
+        self._reintentos_nav = 0
         self._httpd = None
         self._proc = None
         self._loop = None
@@ -153,21 +74,27 @@ class PuenteWebRTC:
         self._url = ""
 
     def _emitir_estado(self, est: str):
-        self.dormida = est == "reposo"
-        if est == "escuchando":
+        est_limpio = str(est or "").strip().lower()
+        if not est_limpio:
+            return
+        self.dormida = (est_limpio == "reposo")
+        if est_limpio == "escuchando":
             self._ultimo_habla = time.time()
+        if est_limpio == self._ultimo_estado:
+            return
+        self._ultimo_estado = est_limpio
         try:
             import puente_subjetividad
             p = puente_subjetividad.obtener_puente()
-            if est == "reposo":
+            if est_limpio == "reposo":
                 p.al_entrar_reposo()
-            elif est in ("escuchando", "hablando"):
+            elif est_limpio in ("escuchando", "hablando"):
                 p.al_despertar_o_hablar()
         except Exception:
             pass
         if callable(self.on_estado):
             try:
-                self.on_estado(est)
+                self.on_estado(est_limpio)
             except Exception:
                 pass
 
@@ -237,13 +164,16 @@ class PuenteWebRTC:
 
             async def _handler_ws(ws):
                 self._ws_cliente = ws
+                self._t_desconexion_ws = None
+                self._reintentos_nav = 0
                 print("[LIVE][WEBRTC] Puente de audio limpio conectado (16kHz).", flush=True)
                 self.activar_escucha()
 
                 async def _vigilante():
                     while self.activo:
                         await asyncio.sleep(0.5)
-                        if not self.dormida and (time.time() - self._ultimo_habla > 9.8):
+                        ahora = time.time()
+                        if not self.dormida and (ahora - self._ultimo_habla > 9.8):
                             self.dormida = True
                             print("[LIVE][WEBRTC] 9s en silencio -> Reposo Azul (0 tokens).", flush=True)
                             self._encolar_entrada(SENAL_SLEEP)
@@ -253,9 +183,18 @@ class PuenteWebRTC:
                                     await self._ws_cliente.send(json.dumps({"type": "reposo"}))
                             except Exception:
                                 pass
-                        if self._proc is not None and self._proc.poll() is not None:
-                            print("[LIVE][WEBRTC] Navegador terminado. Reiniciando proceso...", flush=True)
-                            self._lanzar_navegador()
+                        if self._ws_cliente is None:
+                            if self._t_desconexion_ws is None:
+                                self._t_desconexion_ws = ahora
+                            elif ahora - self._t_desconexion_ws > 20.0:
+                                if (self._reintentos_nav < 2) and (ahora - self._t_ultimo_reintento_nav >= 30.0):
+                                    self._t_ultimo_reintento_nav = ahora
+                                    self._reintentos_nav += 1
+                                    print(f"[LIVE][WEBRTC] WebSocket sin respuesta >20s. Reintento navegador {self._reintentos_nav}/2...", flush=True)
+                                    self._lanzar_navegador()
+                        else:
+                            self._t_desconexion_ws = None
+                            self._reintentos_nav = 0
 
                 t_vigilante = asyncio.create_task(_vigilante())
                 async def _salida():

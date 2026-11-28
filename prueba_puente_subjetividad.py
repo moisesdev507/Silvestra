@@ -174,6 +174,43 @@ class TestPuenteSubjetividad(unittest.TestCase):
         self.assertTrue(resultado)
         sesion_ws.ws.send.assert_called_once_with('{"type": "KeepAlive"}')
 
+    def test_throttle_registrar_interaccion(self) -> None:
+        h = Homeostasis(ruta_archivo=os.path.join(self.temp_dir.name, "h_throttle.json"))
+        h.registrar_interaccion("alegre")
+        t1 = h._t_ultimo_guardado_inter
+        self.assertGreater(t1, 0.0)
+
+        # Inmediato después (< 5s): no debe actualizar _t_ultimo_guardado_inter
+        h.registrar_interaccion("calmado")
+        t2 = h._t_ultimo_guardado_inter
+        self.assertEqual(t1, t2)
+
+    def test_notificar_actividad_audio_renueva_reloj(self) -> None:
+        sesion = MagicMock()
+        sesion.activo = True
+        sesion._estado_actual = "hablando"
+        sesion._t_inicio_bloqueo = time.time() - 10.0
+
+        live_estado.notificar_actividad_audio(sesion)
+        self.assertGreater(sesion._t_inicio_bloqueo, time.time() - 1.0)
+        # Al haberse renovado, no debe liberar el micrófono
+        liberado = live_estado.vigilar_bloqueo(sesion, timeout_seg=14.0)
+        self.assertFalse(liberado)
+
+    def test_webrtc_deduplicacion_estado(self) -> None:
+        from live_webrtc import PuenteWebRTC
+        estados = []
+        puente_webrtc = PuenteWebRTC(on_estado=lambda e: estados.append(e))
+
+        puente_webrtc._emitir_estado("reposo")
+        puente_webrtc._emitir_estado("reposo")
+        puente_webrtc._emitir_estado("reposo")
+        self.assertEqual(estados, ["reposo"])
+
+        puente_webrtc._emitir_estado("escuchando")
+        puente_webrtc._emitir_estado("escuchando")
+        self.assertEqual(estados, ["reposo", "escuchando"])
+
 
 if __name__ == "__main__":
     unittest.main()

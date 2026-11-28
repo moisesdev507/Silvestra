@@ -133,9 +133,13 @@ class Homeostasis:
             self._guardar(self._estado)
 
     def registrar_interaccion(self, tono: str = "neutral") -> None:
-        """Actualiza la interacción y modula el balance homeostático."""
+        """Actualiza la interacción y modula el balance homeostático con throttle de 5s."""
         with self._lock:
-            self._estado["ultima_interaccion"] = time.time()
+            ahora = time.time()
+            self._estado["ultima_interaccion"] = ahora
+            if ahora - getattr(self, "_t_ultimo_guardado_inter", 0.0) < 5.0:
+                return
+            self._t_ultimo_guardado_inter = ahora
             e = float(self._estado.get("energia", 0.8))
             c = float(self._estado.get("curiosidad", 0.7))
             k = float(self._estado.get("calma", 0.8))

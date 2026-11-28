@@ -162,6 +162,7 @@ class SesionKayaLive(CapaAudioLive):
                                 if mt:
                                     for part in mt.parts:
                                         if getattr(part, "inline_data", None) and part.inline_data.data:
+                                            live_estado.notificar_actividad_audio(self)
                                             self._notificar_nivel_salida(part.inline_data.data)
                                             if self._puente_webrtc is not None:
                                                 self._puente_webrtc.enviar_audio_salida(part.inline_data.data)

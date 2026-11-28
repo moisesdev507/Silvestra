@@ -205,10 +205,11 @@ class PuenteSubjetividad:
             with self._lock:
                 self._en_consolidacion = False
 
-    def al_cerrar(self, timeout_seg: float = 2.0) -> None:
-        """Cierre ordenado al salir de la aplicación."""
+    def al_cerrar(self, timeout_seg: float = 1.0) -> None:
+        """Cierre ordenado y rápido (<= 1.5s) al salir de la aplicación."""
+        t_max = min(float(timeout_seg or 1.0), 1.5)
         try:
-            self.motor_pensamiento.detener(timeout=1.0)
+            self.motor_pensamiento.detener(timeout=0.6)
         except Exception:
             pass
 
@@ -225,7 +226,7 @@ class PuenteSubjetividad:
 
             hilo = threading.Thread(target=_consolidar, daemon=True, name="Kaya-CierreDiario")
             hilo.start()
-            hilo.join(timeout=timeout_seg)
+            hilo.join(timeout=t_max)
 
         try:
             self.homeostasis.registrar_cierre()
