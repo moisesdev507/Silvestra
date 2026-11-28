@@ -115,6 +115,14 @@ class MotorProactivo:
                 except Exception:
                     pass
 
+        try:
+            import live_entrega
+            s_live = live_entrega.sesion_activa()
+            if s_live is not None and getattr(s_live, "activo", False):
+                return False, "live_activo"
+        except Exception:
+            pass
+
         return True, "ok"
 
     def _obtener_resumen_recordatorios(self):
@@ -197,7 +205,8 @@ class MotorProactivo:
             return None
 
         creador = getattr(getattr(app, "memoria", None), "creador", "Moisés") or "Moisés"
-        msg = f"{creador}, son pasadas de las dos de la madrugada. Recuerda guardar tus avances y descansar un rato."
+        hora_exacta = ahora_dt.strftime("%H:%M")
+        msg = f"{creador}, son las {hora_exacta}. Recuerda guardar tus avances y descansar un rato."
         self.ultimo_aviso_nocturno_fecha = hoy_str
         return msg, "calida"
 
@@ -300,6 +309,14 @@ def obtener_motor_proactivo():
 def evaluar_proactividad(app=None, motivo=None, ventana=None, forzar_cooldown=False):
     """Punto de entrada seguro y no bloqueante para evaluar y emitir proactividad."""
     try:
+        try:
+            import live_entrega
+            s_live = live_entrega.sesion_activa()
+            if s_live is not None and getattr(s_live, "activo", False):
+                return False, ""
+        except Exception:
+            pass
+
         motor = obtener_motor_proactivo()
         with _bloqueo:
             res = motor.evaluar_oportunidad(app=app, motivo=motivo, ventana=ventana, forzar_cooldown=forzar_cooldown)

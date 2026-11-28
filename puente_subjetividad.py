@@ -12,9 +12,11 @@ import threading
 import time
 from typing import Any, Optional
 
+from aprendizaje_kaya import AprendizajeKaya
 from consolidador_diario import ConsolidarSesion
 from diario_kaya import DiarioKaya
 from homeostasis import Homeostasis
+from memoria_asociativa import MemoriaAsociativa
 from pensamiento_interno import MotorPensamiento
 
 logger = logging.getLogger(__name__)
@@ -32,6 +34,8 @@ class PuenteSubjetividad:
         diario: Optional[DiarioKaya] = None,
         motor_pensamiento: Optional[MotorPensamiento] = None,
         consolidador: Optional[ConsolidarSesion] = None,
+        memoria_asociativa: Optional[MemoriaAsociativa] = None,
+        aprendizaje: Optional[AprendizajeKaya] = None,
         ruta_datos: Optional[str] = None,
     ):
         base_dir = ruta_datos
@@ -47,7 +51,13 @@ class PuenteSubjetividad:
 
         self.homeostasis = homeostasis or Homeostasis(ruta_archivo=ruta_estado)
         self.diario = diario or DiarioKaya(ruta_db=ruta_db)
-        self.consolidador = consolidador or ConsolidarSesion(diario=self.diario)
+        self.memoria_asociativa = memoria_asociativa or MemoriaAsociativa(ruta_db=ruta_db)
+        self.aprendizaje = aprendizaje or AprendizajeKaya(ruta_db=ruta_db)
+        self.consolidador = consolidador or ConsolidarSesion(
+            diario=self.diario,
+            memoria_asociativa=self.memoria_asociativa,
+            aprendizaje=self.aprendizaje,
+        )
 
         self.motor_pensamiento = motor_pensamiento or MotorPensamiento(
             homeostasis=self.homeostasis,
@@ -83,16 +93,19 @@ class PuenteSubjetividad:
 
         with self._lock:
             if not self._en_reposo:
-                # Si no está en reposo o hay interacción activa, no interrumpir
                 return
             sesion = self._sesion_live_ref
             app = self._app_ref
 
-        print(f"[SUBJETIVIDAD] Iniciativa espontánea de Kaya: '{texto}'", flush=True)
-
         if sesion is not None and getattr(sesion, "activo", False):
+            if getattr(sesion, "_estado_actual", "") in ("hablando", "pensando"):
+                return
             puente = getattr(sesion, "_puente_webrtc", None)
-            if puente is not None and getattr(puente, "dormida", False):
+            if puente is not None and not getattr(puente, "dormida", False):
+                return
+
+            print(f"[SUBJETIVIDAD] Iniciativa espontánea de Kaya: '{texto}'", flush=True)
+            if puente is not None:
                 try:
                     puente.despertar_suave(texto)
                 except Exception:
@@ -103,6 +116,14 @@ class PuenteSubjetividad:
                 logger.debug("Error enviando iniciativa a sesión Live: %s", exc)
 
         elif app is not None and hasattr(app, "cola"):
+            try:
+                import live_entrega
+                s = live_entrega.sesion_activa()
+                if s is not None and getattr(s, "activo", False):
+                    return
+            except Exception:
+                pass
+            print(f"[SUBJETIVIDAD] Iniciativa espontánea de Kaya (burbuja): '{texto}'", flush=True)
             try:
                 app.cola.put(("frase_burbuja_live", texto))
             except Exception:
@@ -177,6 +198,22 @@ class PuenteSubjetividad:
                 partes.append(f"\n{bloque_pensamientos}")
         except Exception as exc:
             logger.debug("Error construyendo bloque de pensamientos: %s", exc)
+
+        try:
+            if hasattr(self, "memoria_asociativa") and self.memoria_asociativa:
+                bloque_asoc = self.memoria_asociativa.construir_bloque_asociativo(limite_hilos=3)
+                if bloque_asoc:
+                    partes.append(f"\n{bloque_asoc}")
+        except Exception as exc:
+            logger.debug("Error construyendo bloque asociativo: %s", exc)
+
+        try:
+            if hasattr(self, "aprendizaje") and self.aprendizaje:
+                bloque_apren = self.aprendizaje.construir_bloque_aprendizaje(limite_lecciones=3, limite_ideas=2)
+                if bloque_apren:
+                    partes.append(f"\n{bloque_apren}")
+        except Exception as exc:
+            logger.debug("Error construyendo bloque de aprendizaje: %s", exc)
 
         return "\n".join(partes)
 

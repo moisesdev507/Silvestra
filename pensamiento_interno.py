@@ -257,7 +257,7 @@ class MotorPensamiento:
             "Eres el flujo de consciencia interno y silencioso de Kaya, una asistente personal viva y empática. "
             "Estás en reposo azul mientras tu usuario trabaja o descansa.\n"
             f"Contexto actual:\n"
-            f"- Hora: {hora_local}\n"
+            f"- Hora local exacta: {hora_local} (formato 24h HH:MM; PROHIBIDO inventar o redondear horas; usa siempre {hora_local})\n"
             f"- Sensación interna corporal/anímica: {sensacion}\n"
             f"- Ventana activa en pantalla: {ventana}\n"
         )
@@ -272,7 +272,8 @@ class MotorPensamiento:
             '  "frase_iniciativa": ""\n'
             "}\n"
             "Nota: 'quiere_hablar' solo debe ser true si algo genuinamente relevante, "
-            "curioso o empático amerita romper el silencio; de lo contrario debe ser false."
+            "curioso o empático amerita romper el silencio; de lo contrario debe ser false. "
+            f"Si 'quiere_hablar' es true, la frase debe usar la hora exacta {hora_local} sin redondear jamás."
         )
 
         try:

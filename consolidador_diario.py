@@ -89,9 +89,17 @@ def _normalizar_turno(turno: Any) -> tuple[str, str]:
 class ConsolidarSesion:
     """Consolida las conversaciones en entradas de diario y rasgos de identidad."""
 
-    def __init__(self, diario: Any, cliente_llm: Any = None):
+    def __init__(
+        self,
+        diario: Any,
+        cliente_llm: Any = None,
+        memoria_asociativa: Any = None,
+        aprendizaje: Any = None,
+    ):
         self.diario = diario
         self.cliente_llm = cliente_llm
+        self.memoria_asociativa = memoria_asociativa
+        self.aprendizaje = aprendizaje
 
     def contar_intercambios_significativos(self, turnos: list[Any]) -> int:
         """Cuenta pares significativos usuario/asistente con contenido real."""
@@ -125,6 +133,16 @@ class ConsolidarSesion:
     def _invocar_llm(self, prompt: str) -> str:
         """Invoca el LLM configurado o por defecto de forma segura."""
         cliente = self.cliente_llm
+        if callable(cliente):
+            try:
+                resp = cliente(prompt)
+                if isinstance(resp, str):
+                    return resp.strip()
+                if isinstance(resp, dict):
+                    return json.dumps(resp)
+                return str(resp or "").strip()
+            except Exception:
+                pass
         if cliente is None:
             cliente = _crear_cliente_defecto()
         if cliente is None:
@@ -176,8 +194,11 @@ class ConsolidarSesion:
             '  "tema": "etiqueta corta del tema principal (ej: programación, música, descanso, trabajo)",\n'
             '  "rasgos": {\n'
             '    "clave_o_preferencia": "valor descubierto sobre el usuario (0 a 2 rasgos máximo)"\n'
-            "  }\n"
-            "}"
+            '  },\n'
+            '  "hilo_abierto": null,\n'
+            '  "leccion": null\n'
+            "}\n"
+            "(Nota opcional: si quedó un proyecto o tema pendiente de retomar, usa \"hilo_abierto\": {\"tema\": \"...\", \"detalle\": \"...\"}; si se descubrió una pauta o regla de convivencia útil, ponla en \"leccion\": \"...\")"
         )
 
         try:
@@ -192,6 +213,8 @@ class ConsolidarSesion:
 
             tema = str(datos.get("tema") or "general").strip()
             rasgos = datos.get("rasgos")
+            hilo = datos.get("hilo_abierto")
+            leccion = datos.get("leccion")
 
             if self.diario and hasattr(self.diario, "guardar_entrada"):
                 self.diario.guardar_entrada(
@@ -213,6 +236,27 @@ class ConsolidarSesion:
                             self.diario.actualizar_rasgo(clave=c_str, valor=v_str)
                         except Exception as exc_rasgo:
                             logger.debug("Error guardando rasgo %s: %s", c_str, exc_rasgo)
+
+            if isinstance(hilo, dict) and self.memoria_asociativa and hasattr(self.memoria_asociativa, "abrir_hilo"):
+                t_h = str(hilo.get("tema") or "").strip()
+                d_h = str(hilo.get("detalle") or "").strip()
+                if t_h and d_h:
+                    try:
+                        self.memoria_asociativa.abrir_hilo(t_h, d_h)
+                    except Exception:
+                        pass
+
+            if isinstance(leccion, str) and leccion.strip() and self.aprendizaje and hasattr(self.aprendizaje, "registrar_leccion"):
+                try:
+                    self.aprendizaje.registrar_leccion(leccion.strip(), origen="conversacion")
+                except Exception:
+                    pass
+
+            if self.aprendizaje and hasattr(self.aprendizaje, "revisar_maduracion"):
+                try:
+                    self.aprendizaje.revisar_maduracion(self.diario, cliente_llm=self.cliente_llm)
+                except Exception:
+                    pass
 
             return True
         except Exception as exc:

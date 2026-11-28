@@ -1,93 +1,217 @@
-"""Memoria Asociativa Profunda para Lyris // Silvestra.
+"""Memoria asociativa e hilos abiertos de conversación para Kaya (Fase 4B).
 
-Cruza en una sola llamada compacta (<= 600 caracteres) recuerdos activos,
-síntesis temáticas de sueño cognitivo, relaciones del Grafo de Conocimiento
-y fragmentos indexados del RAG de proyectos sin inflar los tokens del prompt.
+Permite recuperar recuerdos pasados por afinidad conceptual y mantener un
+registro persistente de temas o proyectos pendientes de retomar.
 """
 from __future__ import annotations
 
+import contextlib
+import datetime
 import os
 import re
 import sqlite3
 import threading
-from typing import Any, List
+import time
+import unicodedata
+from typing import Any, Optional
 
-_bloqueo = threading.RLock()
+STOPWORDS = {
+    "de", "la", "que", "el", "en", "y", "a", "los", "del", "se", "las", "por",
+    "un", "para", "con", "no", "una", "su", "al", "lo", "como", "mas", "pero",
+    "sus", "le", "ya", "o", "este", "si", "porque", "esta", "entre", "cuando",
+    "muy", "sin", "sobre", "tambien", "me", "hasta", "hay", "donde", "quien",
+    "desde", "todo", "nos", "durante", "todos", "uno", "les", "ni", "contra",
+    "otros", "ese", "eso", "ante", "ellos", "e", "esto", "mi", "antes", "algunos",
+    "unos", "yo", "otro", "otras", "otra", "tanto", "esa", "estos", "mucho",
+    "quienes", "nada", "muchos", "cual", "poco", "ella", "estar", "estas", "algo",
+    "nosotros", "mis", "tu", "te", "ti", "hoy", "ayer", "bien", "hola",
+}
 
 
-def _extraer_palabras_clave(texto: str) -> List[str]:
-    palabras = re.findall(r"[a-záéíóúüñ0-9]{3,}", (texto or "").lower())
-    ignorar = {"para", "como", "este", "esta", "sobre", "entre", "tiene", "hace", "donde", "cual", "quien"}
-    return [p for p in palabras if p not in ignorar][:4]
+def _normalizar_texto(texto: str) -> list[str]:
+    """Limpia tildes, pasa a minúsculas y extrae palabras clave útiles (>= 3 chars)."""
+    if not texto:
+        return []
+    s = unicodedata.normalize("NFKD", str(texto).lower())
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    tokens = re.findall(r"[a-z0-9_]{3,}", s)
+    return [t for t in tokens if t not in STOPWORDS]
 
 
-def buscar_contexto_asociativo(
-    consulta: str,
-    limite: int = 3,
-    db_path: str = "silvestra_memoria.db",
-) -> str:
-    """Retorna un bloque asociativo unificado (<= 600 caracteres) cruzando múltiples fuentes."""
-    if not consulta or len(consulta.strip()) < 3:
-        return ""
+class MemoriaAsociativa:
+    """Gestor thread-safe de asociaciones semánticas e hilos abiertos."""
 
-    secciones: List[str] = []
-    palabras = _extraer_palabras_clave(consulta)
-
-    # 1. Consultar síntesis temáticas en memoria_resumenes
-    resumen_txt = ""
-    if os.path.exists(db_path) or ":memory:" in db_path:
-        with _bloqueo:
+    def __init__(self, ruta_db: Optional[str] = None):
+        if not ruta_db:
+            base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "datos")
             try:
-                con = sqlite3.connect(db_path, timeout=3.0)
-                cur = con.cursor()
-                tablas = {t[0] for t in cur.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
-                if "memoria_resumenes" in tablas:
-                    clauses = " OR ".join(["sintesis LIKE ?"] * len(palabras)) if palabras else "1=1"
-                    params = [f"%{p}%" for p in palabras] if palabras else []
-                    sql = f"SELECT tema, sintesis FROM memoria_resumenes WHERE {clauses} ORDER BY id DESC LIMIT 1"
-                    fila = cur.execute(sql, params).fetchone()
-                    if fila:
-                        resumen_txt = f"{fila[0]}: {fila[1]}"
-                con.close()
+                os.makedirs(base, exist_ok=True)
             except Exception:
                 pass
+            ruta_db = os.path.join(base, "diario_kaya.db")
+        self.ruta_db = ruta_db
+        self._lock = threading.RLock()
+        self._inicializar_tabla()
 
-    if resumen_txt:
-        if len(resumen_txt) > 160:
-            resumen_txt = resumen_txt[:157] + "..."
-        secciones.append(f"Síntesis: {resumen_txt}")
+    @contextlib.contextmanager
+    def _conectar(self):
+        with self._lock:
+            conn = sqlite3.connect(self.ruta_db, timeout=10.0)
+            conn.row_factory = sqlite3.Row
+            try:
+                yield conn
+                conn.commit()
+            finally:
+                conn.close()
 
-    # 2. Consultar Grafo de Conocimiento (cerebro_grafo)
-    try:
-        import cerebro_grafo
-        grafo_ctx = cerebro_grafo.consultar_contexto_grafo(consulta, limite=2)
-        if grafo_ctx:
-            clean_g = grafo_ctx.replace("\n", " | ").strip()
-            if len(clean_g) > 180:
-                clean_g = clean_g[:177] + "..."
-            secciones.append(f"Grafo: {clean_g}")
-    except Exception:
-        pass
+    def _inicializar_tabla(self):
+        with self._conectar() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS hilos_abiertos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tema TEXT NOT NULL,
+                    detalle TEXT NOT NULL,
+                    estado TEXT DEFAULT 'abierto',
+                    creado_en TEXT NOT NULL,
+                    actualizado_en TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_hilos_estado ON hilos_abiertos (estado, actualizado_en DESC)"
+            )
 
-    # 3. Consultar RAG de Proyectos (cerebro_rag)
-    try:
-        import cerebro_rag
-        rag_ctx = cerebro_rag.consultar_rag(consulta, limite=1)
-        if rag_ctx:
-            # Extraer solo el contenido esencial del chunk
-            lineas_rag = [l.strip() for l in rag_ctx.splitlines() if l.strip() and not l.startswith("[RAG") and not l.startswith("Archivo:")]
-            txt_rag = " ".join(lineas_rag)
-            if len(txt_rag) > 160:
-                txt_rag = txt_rag[:157] + "..."
-            if txt_rag:
-                secciones.append(f"Proyecto: {txt_rag}")
-    except Exception:
-        pass
+    def buscar_recuerdos_relacionados(self, texto_consulta: str, limite: int = 3) -> list[dict[str, Any]]:
+        """Recupera recuerdos del diario cuya temática o reflexión coincide con la consulta."""
+        tokens_q = set(_normalizar_texto(texto_consulta))
+        if not tokens_q:
+            return []
 
-    if not secciones:
-        return ""
+        candidatos = []
+        try:
+            with self._conectar() as conn:
+                filas = conn.execute(
+                    """
+                    SELECT id, fecha_iso, tema_principal, estado_animo,
+                           reflexion_primera_persona
+                    FROM entradas_diario
+                    ORDER BY id DESC LIMIT 60
+                    """
+                ).fetchall()
+        except Exception:
+            return []
 
-    resultado = "[MEMORIA ASOCIATIVA PROFUNDA]\n" + "\n".join(f"• {s}" for s in secciones)
-    if len(resultado) > 600:
-        resultado = resultado[:597] + "..."
-    return resultado
+        if not filas:
+            return []
+
+        max_id = max(int(f["id"]) for f in filas)
+        for f in filas:
+            t_tema = set(_normalizar_texto(f["tema_principal"] or ""))
+            t_ref = set(_normalizar_texto(f["reflexion_primera_persona"] or ""))
+
+            coincidencias_tema = len(tokens_q & t_tema)
+            coincidencias_ref = len(tokens_q & t_ref)
+
+            if not coincidencias_tema and not coincidencias_ref:
+                continue
+
+            score_coincidencia = (coincidencias_tema * 2.5) + (coincidencias_ref * 1.0)
+            score_recencia = float(f["id"]) / float(max(1, max_id))
+            score_total = (score_coincidencia * 0.75) + (score_recencia * 0.25)
+
+            candidatos.append((
+                score_total,
+                {
+                    "id": f["id"],
+                    "fecha": f["fecha_iso"],
+                    "tema": f["tema_principal"],
+                    "reflexion": f["reflexion_primera_persona"],
+                    "emocion": f["estado_animo"],
+                }
+            ))
+
+        candidatos.sort(key=lambda x: x[0], reverse=True)
+        return [c[1] for c in candidatos[:limite]]
+
+    def abrir_hilo(self, tema: str, detalle: str) -> int:
+        """Registra o actualiza un hilo abierto evitando duplicados temáticos."""
+        t_limpio = str(tema or "").strip()
+        d_limpio = str(detalle or "").strip()
+        if not t_limpio:
+            return 0
+
+        ahora_iso = datetime.datetime.now().isoformat()
+        tokens_nuevo = set(_normalizar_texto(t_limpio))
+
+        with self._conectar() as conn:
+            filas = conn.execute(
+                "SELECT id, tema FROM hilos_abiertos WHERE estado = 'abierto'"
+            ).fetchall()
+            for f in filas:
+                tokens_exist = set(_normalizar_texto(f["tema"]))
+                inter = tokens_nuevo & tokens_exist
+                if (tokens_exist and len(inter) >= max(1, len(tokens_exist) - 1)) or f["tema"].lower() == t_limpio.lower():
+                    conn.execute(
+                        "UPDATE hilos_abiertos SET detalle = ?, actualizado_en = ? WHERE id = ?",
+                        (d_limpio, ahora_iso, f["id"]),
+                    )
+                    return int(f["id"])
+
+            cur = conn.execute(
+                """
+                INSERT INTO hilos_abiertos (tema, detalle, estado, creado_en, actualizado_en)
+                VALUES (?, ?, 'abierto', ?, ?)
+                """,
+                (t_limpio, d_limpio, ahora_iso, ahora_iso),
+            )
+            return int(cur.lastrowid or 0)
+
+    def cerrar_hilo(self, hilo_id: int) -> bool:
+        """Cierra un hilo abierto por su identificador numérico."""
+        ahora_iso = datetime.datetime.now().isoformat()
+        with self._conectar() as conn:
+            cur = conn.execute(
+                "UPDATE hilos_abiertos SET estado = 'cerrado', actualizado_en = ? WHERE id = ?",
+                (ahora_iso, int(hilo_id)),
+            )
+            return cur.rowcount > 0
+
+    def obtener_hilos_abiertos(self, limite: int = 4) -> list[dict[str, Any]]:
+        """Devuelve los hilos abiertos más recientes."""
+        with self._conectar() as conn:
+            filas = conn.execute(
+                """
+                SELECT id, tema, detalle, creado_en, actualizado_en
+                FROM hilos_abiertos
+                WHERE estado = 'abierto'
+                ORDER BY actualizado_en DESC LIMIT ?
+                """,
+                (max(1, int(limite)),),
+            ).fetchall()
+            return [dict(f) for f in filas]
+
+    def construir_bloque_asociativo(
+        self, contexto_actual: str = "", limite_recuerdos: int = 2, limite_hilos: int = 3
+    ) -> str:
+        """Genera un bloque compacto en primera persona con hilos y recuerdos afines."""
+        partes = []
+        hilos = self.obtener_hilos_abiertos(limite=limite_hilos)
+        if hilos:
+            lineas_h = []
+            for h in hilos:
+                lineas_h.append(f"- Sobre '{h['tema']}': {h['detalle']}")
+            partes.append("[TEMAS E HILOS PENDIENTES QUE RECUERDO]\n" + "\n".join(lineas_h))
+
+        if contexto_actual:
+            recuerdos = self.buscar_recuerdos_relacionados(contexto_actual, limite=limite_recuerdos)
+            if recuerdos:
+                lineas_r = []
+                for r in recuerdos:
+                    lineas_r.append(f"- Sobre {r['tema']} ({r['fecha']}): \"{r['reflexion']}\"")
+                partes.append("[RECUERDOS RELACIONADOS CON LO QUE VEO/HABLAMOS]\n" + "\n".join(lineas_r))
+
+        return "\n\n".join(partes)
+
+
+__all__ = ["MemoriaAsociativa"]
