@@ -210,7 +210,7 @@ def buscar_iscc():
 
 def comprimir(carpeta, ruta_zip):
     """Comprime toda la carpeta del ejecutable conservando 'Kaya/' como raíz."""
-    with zipfile.ZipFile(ruta_zip, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as zf:
+    with zipfile.ZipFile(ruta_zip, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for raiz, _, archivos in os.walk(carpeta):
             for nombre in archivos:
                 ruta = os.path.join(raiz, nombre)
