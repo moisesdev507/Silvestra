@@ -73,20 +73,13 @@ class SesionKayaLive(CapaAudioLive):
         ciclo_sueno_kaya.al_dormir(memoria_contexto.turnos_recientes())
 
     async def _tarea_watchdog(self):
-        if self._puente_webrtc is not None:
-            while self.activo:
-                await asyncio.sleep(1.0)
-            return
         while self.activo:
-            await asyncio.sleep(0.5)
-            if self.puerta.debe_cerrar():
+            await asyncio.sleep(1.0)
+            live_estado.vigilar_bloqueo(self)
+            if self._puente_webrtc is None and self.puerta.debe_cerrar():
                 print(f"[LIVE] Inactividad {self.timeout_silencio:.1f}s: cierre Live.", flush=True)
                 self.detener()
-                if callable(self.on_cierre_automatico):
-                    try:
-                        self.on_cierre_automatico()
-                    except Exception:
-                        pass
+                self._llamar_cb(self.on_cierre_automatico)
                 break
 
     async def _ejecutar_sesion(self):
@@ -205,7 +198,8 @@ class SesionKayaLive(CapaAudioLive):
             except Exception as e:
                 if not self.activo or es_error_cuota(e):
                     raise
-                print(f"[LIVE] Reconectando Live: {e}", flush=True)
+                print(f"[LIVE] Reconectando Live ({e}): limpiando estado.", flush=True)
+                live_estado.limpiar_para_reconexion(self)
                 await asyncio.sleep(0.8)
 
     def iniciar(self) -> bool:
@@ -216,6 +210,11 @@ class SesionKayaLive(CapaAudioLive):
             return True
         self.activo = True
         registrar_sesion_activa(self)
+        try:
+            import puente_subjetividad as ps
+            ps.obtener_puente().registrar_sesion_live(self)
+        except Exception:
+            pass
         self.compuerta.registrar_info_inicio()
         self.puerta.reiniciar()
         with self.cola_audio_entrada.mutex:
@@ -276,6 +275,11 @@ class SesionKayaLive(CapaAudioLive):
         if not self.activo:
             return
         self.activo = False
+        try:
+            import puente_subjetividad as ps
+            ps.obtener_puente().registrar_sesion_live(None)
+        except Exception:
+            pass
         if live_entrega._sesion_registrada() is self:
             registrar_sesion_activa(None)
         self.puerta.desactivar()
@@ -299,7 +303,6 @@ class SesionKayaLive(CapaAudioLive):
             live_audio.cerrar_sesion_live(self._session_genai, self._loop)
 
     def alternar_microfono(self) -> bool:
-        """Cierra o abre la captura Live; devuelve True si queda abierta."""
         if self.activo:
             self.detener()
             return False

@@ -17,6 +17,7 @@ ENDPOINTING_MS = 900
 TIMEOUT_APERTURA = 3.0
 TIMEOUT_CIERRE = 2.0
 MENSAJE_FINALIZE = '{"type": "Finalize"}'
+MENSAJE_KEEPALIVE = '{"type": "KeepAlive"}'
 
 try:
     from identidad_kaya import KEYTERM_DEEPGRAM as KEYTERM
@@ -145,6 +146,16 @@ class SesionStreaming:
                 print("[oido] WS cerrado por Deepgram (1000): usando resultados recibidos.", flush=True)
             else:
                 print(f"[oido] WS cortado ({str(exc)[:80]}): usando HTTP al cerrar.", flush=True)
+
+    def mantener_vivo(self) -> bool:
+        """Envía KeepAlive a Deepgram para evitar timeout de inactividad."""
+        if not self.activa or self.ws is None:
+            return False
+        try:
+            self.ws.send(MENSAJE_KEEPALIVE)
+            return True
+        except Exception:
+            return False
 
     def _acumular_texto(self, texto):
         """Ensambla los resultados finales sin repetir el texto ya recibido."""

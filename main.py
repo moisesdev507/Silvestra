@@ -215,6 +215,11 @@ class Silvestra:
             actualizador.instalar(self)
         except Exception:
             pass
+        try:
+            import puente_subjetividad as ps
+            ps.obtener_puente().registrar_app(self)
+        except Exception:
+            pass
 
     # ---------- Hablar y acciones ----------
     def puede_hablar_sola(self):
@@ -389,6 +394,11 @@ class Silvestra:
                 self.coordinador_live.cerrar()
             except Exception:
                 pass
+        try:
+            import puente_subjetividad as ps
+            ps.obtener_puente().al_cerrar()
+        except Exception:
+            pass
         for objeto, metodo, args in (
             (getattr(self, "palabra_clave", None), "detener", ()),
             (getattr(self, "invocacion", None), "detener", ()),

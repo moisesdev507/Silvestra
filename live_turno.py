@@ -17,10 +17,17 @@ def bloque_memoria(max_chars=520):
 
 
 def construir_config(voz, rapido=False, despertar=False, nombre="", primer_saludo: bool = True):
-    """Config Live: una sola fecha y un único bloque cognitivo (ficha, hilo, memoria)."""
+    """Config Live: una sola fecha y un único bloque cognitivo (ficha, hilo, memoria, subjetividad)."""
     base = live_fecha.instruccion_con_hora_local(rapido, despertar, nombre, primer_saludo=primer_saludo)
     memoria = bloque_memoria()
     instruccion = base + "\n" + memoria
+    try:
+        import puente_subjetividad
+        sub = puente_subjetividad.obtener_puente().construir_contexto_identidad()
+        if sub:
+            instruccion += "\n" + sub
+    except Exception:
+        pass
     return types.LiveConnectConfig(
         response_modalities=["AUDIO"],
         speech_config=types.SpeechConfig(
@@ -70,6 +77,16 @@ class AcumuladorTurnos:
             cerebro_unico.procesar_turno_cognitivo("usuario", usuario, origen="live")
         if kaya:
             cerebro_unico.procesar_turno_cognitivo("kaya", kaya, origen="live")
+        if usuario or kaya:
+            try:
+                import puente_subjetividad
+                p = puente_subjetividad.obtener_puente()
+                if usuario:
+                    p.registrar_turno("usuario", usuario)
+                if kaya:
+                    p.registrar_turno("kaya", kaya)
+            except Exception:
+                pass
         return bool(usuario or kaya)
 
 
