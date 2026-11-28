@@ -211,6 +211,41 @@ class TestPuenteSubjetividad(unittest.TestCase):
         puente_webrtc._emitir_estado("escuchando")
         self.assertEqual(estados, ["reposo", "escuchando"])
 
+    def test_construir_saludo_arranque(self) -> None:
+        # Primera invocación: debe dar frase de 3 a 8 palabras
+        saludo = self.puente.construir_saludo_arranque()
+        self.assertTrue(bool(saludo))
+        palabras = saludo.split()
+        self.assertGreaterEqual(len(palabras), 3)
+        self.assertLessEqual(len(palabras), 8)
+
+        # Segunda invocación: solo una vez por arranque
+        saludo2 = self.puente.construir_saludo_arranque()
+        self.assertEqual(saludo2, "")
+
+        # Si el último cierre fue hace menos de 3 minutos (<180s)
+        puente2 = PuenteSubjetividad(
+            homeostasis=self.homeostasis,
+            diario=self.diario,
+            motor_pensamiento=self.motor,
+            ruta_datos=self.temp_dir.name,
+        )
+        self.homeostasis._estado["ultimo_cierre"] = time.time() - 30.0
+        saludo_rapido = puente2.construir_saludo_arranque()
+        self.assertEqual(saludo_rapido, "De vuelta por aquí.")
+
+    def test_construir_config_con_realtime_input(self) -> None:
+        import live_turno
+        from google.genai import types
+
+        config = live_turno.construir_config(voz="Aoede", primer_saludo=True)
+        self.assertIsNotNone(config.realtime_input_config)
+        aad = config.realtime_input_config.automatic_activity_detection
+        self.assertIsNotNone(aad)
+        self.assertEqual(aad.silence_duration_ms, 500)
+        self.assertEqual(aad.end_of_speech_sensitivity, types.EndSensitivity.END_SENSITIVITY_HIGH)
+        self.assertEqual(aad.prefix_padding_ms, 180)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -73,6 +73,7 @@ async function iniciar(){
     }
     const umbral=dormida?uWake:uActivo;
     if(rms>umbral){
+      if(sources.length>0){limpiarAudio();sendCtrl({type:"interrupted"});}
       const estabaMudo=!dormida&&colaVoz===0;
       framesVoz++;pausasVoz=0;colaVoz=22;
       if(!dormida){

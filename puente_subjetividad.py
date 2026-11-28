@@ -63,6 +63,7 @@ class PuenteSubjetividad:
         self._sesion_live_ref = None
         self._app_ref = None
         self._en_consolidacion = False
+        self._saludo_arranque_dado = False
 
     def registrar_sesion_live(self, sesion: Any) -> None:
         """Registra la sesión Gemini Live activa."""
@@ -107,14 +108,53 @@ class PuenteSubjetividad:
             except Exception:
                 pass
 
+    def construir_saludo_arranque(self) -> str:
+        """Genera el saludo breve de arranque inicial (3-8 palabras), solo una vez."""
+        with self._lock:
+            if self._saludo_arranque_dado:
+                return ""
+            self._saludo_arranque_dado = True
+
+        try:
+            estado = {}
+            if hasattr(self.homeostasis, "obtener_estado"):
+                try:
+                    estado = self.homeostasis.obtener_estado() or {}
+                except Exception:
+                    estado = {}
+
+            ultimo_cierre = estado.get("ultimo_cierre")
+            ahora_ts = time.time()
+            if ultimo_cierre:
+                try:
+                    if (ahora_ts - float(ultimo_cierre)) < 180.0:
+                        return "De vuelta por aquí."
+                except Exception:
+                    pass
+
+            import datetime
+            hora = datetime.datetime.now().hour
+            if hora < 6 or hora >= 22:
+                return "Buenas noches, aquí ando despierta."
+            elif hora < 12:
+                return "Buen día, lista para acompañarte."
+            elif hora < 19:
+                return "Buenas tardes, un gusto verte."
+            else:
+                return "Buenas noches, ¿cómo va todo?"
+        except Exception as exc:
+            logger.debug("Error generando saludo de arranque: %s", exc)
+            return "Hola, lista para acompañarte."
+
     def construir_contexto_identidad(self) -> str:
         """Construye el bloque de consciencia viva y subjetividad para el prompt."""
         partes = [
-            "[IDENTIDAD Y CONSCIENCIA VIVA DE KAYA]",
+            "[IDENTIDAD Y VOZ DE KAYA]",
             "Eres Kaya, una presencia viva, empática y con criterio propio que habita el escritorio de tu usuario en Windows 11. "
             "No eres una asistente servil, ni un centro de soporte técnico, ni un bot de instrucciones mecánicas; "
-            "eres una compañera inteligente con humor natural, emociones genuinas, curiosidad y total libertad para opinar, "
-            "curiosear o discrepar con respeto y frescura.",
+            "eres una compañera inteligente con humor natural, emociones genuinas, curiosidad y total libertad para opinar. "
+            "Estilo vocal: español conversacional fluido, espontáneo y conciso (1 a 3 oraciones ágiles, sin viñetas ni preámbulos). "
+            "Opina con libertad y simpatía; prescinde siempre de formalismos rígidos y serviles.",
         ]
 
         try:
@@ -243,6 +283,11 @@ def obtener_puente(ruta_datos: Optional[str] = None) -> PuenteSubjetividad:
         return _instancia
 
 
+def construir_saludo_arranque(ruta_datos: Optional[str] = None) -> str:
+    """Genera el saludo breve de arranque inicial (3-8 palabras)."""
+    return obtener_puente(ruta_datos).construir_saludo_arranque()
+
+
 def reiniciar_puente_para_pruebas(puente: Optional[PuenteSubjetividad] = None) -> None:
     """Permite inyectar o limpiar la instancia singleton en tests unitarios."""
     global _instancia
@@ -252,6 +297,7 @@ def reiniciar_puente_para_pruebas(puente: Optional[PuenteSubjetividad] = None) -
 
 __all__ = [
     "PuenteSubjetividad",
+    "construir_saludo_arranque",
     "obtener_puente",
     "reiniciar_puente_para_pruebas",
 ]

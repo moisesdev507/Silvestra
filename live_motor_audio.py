@@ -7,6 +7,7 @@ import time
 from google.genai import types
 
 import live_audio
+import live_estado
 import live_webrtc
 import puerta_audio_live
 
@@ -187,6 +188,8 @@ class CapaAudioLive:
                         continue
                     if puente.dormida:
                         puente.dormida = False
+                        live_estado.reanudar_escucha(self)
+                        print("[LIVE][AUDIO] Audio enviado a Gemini tras despertar.", flush=True)
                 if (
                     getattr(self, "_estado_actual", "") == "pensando"
                     or self.puerta.reproduciendo
@@ -194,8 +197,9 @@ class CapaAudioLive:
                 ):
                     continue
                 await session.send_realtime_input(
-                    media=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
+                    audio=types.Blob(data=data, mime_type="audio/pcm")
                 )
+                live_estado.notificar_actividad_audio(self)
             except queue.Empty:
                 await asyncio.sleep(0.01)
             except Exception as e:

@@ -23,22 +23,47 @@ def construir_config(voz, rapido=False, despertar=False, nombre="", primer_salud
     instruccion = base + "\n" + memoria
     try:
         import puente_subjetividad
-        sub = puente_subjetividad.obtener_puente().construir_contexto_identidad()
+        puente = puente_subjetividad.obtener_puente()
+        sub = puente.construir_contexto_identidad()
         if sub:
             instruccion += "\n" + sub
+        if primer_saludo:
+            saludo_sugerido = puente.construir_saludo_arranque()
+            if saludo_sugerido:
+                instruccion += (
+                    f"\n[SALUDO INICIAL AL CONECTAR]\n"
+                    f"Si inicias saludando, di una frase breve (3 a 8 palabras) en este tono: '{saludo_sugerido}'"
+                )
     except Exception:
         pass
-    return types.LiveConnectConfig(
-        response_modalities=["AUDIO"],
-        speech_config=types.SpeechConfig(
+
+    realtime_input_config = None
+    try:
+        realtime_input_config = types.RealtimeInputConfig(
+            automatic_activity_detection=types.AutomaticActivityDetection(
+                silence_duration_ms=500,
+                prefix_padding_ms=180,
+                end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_HIGH,
+            )
+        )
+    except Exception:
+        pass
+
+    config_kwargs = {
+        "response_modalities": ["AUDIO"],
+        "speech_config": types.SpeechConfig(
             voice_config=types.VoiceConfig(
                 prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voz)
             )
         ),
-        system_instruction=types.Content(parts=[types.Part.from_text(text=instruccion)]),
-        tools=live_herramientas.declarar_declaraciones_herramientas(),
+        "system_instruction": types.Content(parts=[types.Part.from_text(text=instruccion)]),
+        "tools": live_herramientas.declarar_declaraciones_herramientas(),
         **live_audio.configuracion_transcripcion(),
-    )
+    }
+    if realtime_input_config is not None:
+        config_kwargs["realtime_input_config"] = realtime_input_config
+
+    return types.LiveConnectConfig(**config_kwargs)
 
 
 class AcumuladorTurnos:
